@@ -13,7 +13,7 @@ public static class IdentitySetup
     public static void Configure(IdentityOptions options)
     {
         // At least 12 characters, no character-class rules; UsernamePasswordValidator adds the
-        // "must not contain the user name" rule.
+        // "must not contain the user name" rule and CommonPasswordValidator refuses easy-to-guess passwords.
         options.Password.RequiredLength = MinimumPasswordLength;
         options.Password.RequireDigit = false;
         options.Password.RequireLowercase = false;

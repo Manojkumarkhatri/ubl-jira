@@ -100,8 +100,8 @@ dotnet test --project tests/Upms.Domain.Tests                  # unit
 dotnet test --project tests/Upms.Application.Tests             # services on a real SQL Server
 dotnet test --project tests/Upms.Web.Tests                     # components and host security
 dotnet test --project tests/Upms.Architecture.Tests            # module boundaries
-dotnet test --solution Upms.slnx --filter "FullyQualifiedName~US3_"   # one story's acceptance tests
-pwsh tests/Upms.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install   # once: browsers for Playwright
+dotnet test --project tests/Upms.Application.Tests -- --filter-method "*US3_*"   # one story's acceptance tests
+pwsh tests/Upms.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install chromium   # once: browser for Playwright
 dotnet test --project tests/Upms.E2E.Tests                     # journeys + axe accessibility scans
 ```
 
@@ -122,15 +122,23 @@ dotnet ef migrations has-pending-model-changes --project src/Upms.Infrastructure
 ## 7. Performance check (SC-002)
 
 ```bash
-dotnet run --project tools/Upms.Seed -- --users 2000 --projects 200 --tasks 500000
+# Either let the test start and seed its own SQL Server container (about 2 minutes of seeding):
 dotnet test --project tests/Upms.Performance.Tests
+# or seed a database once and reuse it for repeated runs:
+dotnet run --project tools/Upms.Seed -- --connection "<connection string>" --migrate --users 2000 --projects 1000 --tasks 500000
+UPMS_PERF_CONNECTION="<connection string>" dotnet test --project tests/Upms.Performance.Tests
 ```
+
+Settings: `UPMS_PERF_USERS` (300), `UPMS_PERF_SECONDS` (120 measured after a 20-second warm-up),
+`UPMS_PERF_WORK_ITEMS` (500000). The report is written to
+`tests/Upms.Performance.Tests/bin/Debug/net10.0/sc002-report.md`.
 
 **Expected**: with 300 simulated concurrent users, p95 ≤ 1 second for project list and board loads (up
 to 500 visible cards), inline creation, card move, drawer open and saving a task edit.
 
 ## 8. Restore drill (SC-009, SC-010)
 
-Follow `docs/operations/backup-restore.md` (created during implementation): restore the latest backups
-to a fresh SQL Server, point a new app instance at it, and confirm that no more than 1 hour of changes
-is missing and the restore took under 4 hours. Do this once before the pilot.
+Follow [docs/operations/backup-restore.md](../../docs/operations/backup-restore.md): restore the latest
+backups to a fresh SQL Server, point a new app instance at it, and confirm that no more than 1 hour of
+changes is missing and the restore took under 4 hours. Do this once before the pilot, on the production
+backups.

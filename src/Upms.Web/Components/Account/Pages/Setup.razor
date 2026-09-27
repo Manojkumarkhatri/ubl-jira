@@ -20,7 +20,10 @@
         <DataAnnotationsValidator />
         <div class="field">
             <label for="setup-token">Setup token</label>
-            <InputText type="password" @bind-Value="Input.SetupToken" id="setup-token" class="input" autocomplete="off" aria-required="true" />
+            <div class="password-row">
+                <InputText type="password" @bind-Value="Input.SetupToken" id="setup-token" class="input" maxlength="128" autocomplete="off" aria-required="true" />
+                <button type="button" class="btn btn-sm btn-ghost" data-password-toggle="setup-token" aria-controls="setup-token" aria-pressed="false">Show password</button>
+            </div>
             <ValidationMessage For="() => Input.SetupToken" class="error-text" />
         </div>
         <div class="field">
@@ -41,13 +44,20 @@
         </div>
         <div class="field">
             <label for="setup-password">Password</label>
-            <InputText type="password" @bind-Value="Input.Password" id="setup-password" class="input" autocomplete="new-password" aria-required="true" aria-describedby="setup-password-hint" />
+            <div class="password-row">
+                <InputText type="password" @bind-Value="Input.Password" id="setup-password" class="input" maxlength="128" autocomplete="new-password" aria-required="true" aria-describedby="setup-password-hint" />
+                <button type="button" class="btn btn-sm btn-ghost" data-password-toggle="setup-password" aria-controls="setup-password" aria-pressed="false">Show password</button>
+            </div>
+            <span class="hint password-strength" data-password-strength="setup-password" aria-live="polite"></span>
             <span id="setup-password-hint" class="hint">At least 12 characters, not containing the user name.</span>
             <ValidationMessage For="() => Input.Password" class="error-text" />
         </div>
         <div class="field">
             <label for="setup-confirm">Confirm the password</label>
-            <InputText type="password" @bind-Value="Input.ConfirmPassword" id="setup-confirm" class="input" autocomplete="new-password" aria-required="true" />
+            <div class="password-row">
+                <InputText type="password" @bind-Value="Input.ConfirmPassword" id="setup-confirm" class="input" maxlength="128" autocomplete="new-password" aria-required="true" />
+                <button type="button" class="btn btn-sm btn-ghost" data-password-toggle="setup-confirm" aria-controls="setup-confirm" aria-pressed="false">Show password</button>
+            </div>
             <ValidationMessage For="() => Input.ConfirmPassword" class="error-text" />
         </div>
         <button type="submit" class="btn btn-primary btn-block">Create the administrator</button>
@@ -110,7 +120,7 @@
         public string Email { get; set; } = "";
 
         [Required(ErrorMessage = "Enter a password.")]
-        [StringLength(256, MinimumLength = 12, ErrorMessage = "The password must have at least 12 characters.")]
+        [StringLength(128, MinimumLength = 12, ErrorMessage = "The password must have 12–128 characters.")]
         public string Password { get; set; } = "";
 
         [Compare(nameof(Password), ErrorMessage = "The two passwords do not match.")]

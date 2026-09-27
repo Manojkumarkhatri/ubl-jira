@@ -32,6 +32,12 @@ internal sealed class SecurityHeadersMiddleware(RequestDelegate next, IWebHostEn
                 headers.StrictTransportSecurity = "max-age=31536000; includeSubDomains";
             }
 
+            // Pages show project data: browsers must not keep copies (ASVS 8.2.1). Static files set their own caching.
+            if (!headers.ContainsKey(Microsoft.Net.Http.Headers.HeaderNames.CacheControl))
+            {
+                headers.CacheControl = "no-store";
+            }
+
             return Task.CompletedTask;
         });
         return next(context);

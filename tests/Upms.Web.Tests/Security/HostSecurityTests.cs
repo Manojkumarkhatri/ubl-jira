@@ -94,6 +94,61 @@ public sealed class HostSecurityTests(WebDatabaseFixture database) : IAsyncLifet
     }
 
     [Fact]
+    public async Task Pages_are_not_cached_and_responses_name_no_server_software()
+    {
+        using var client = _factory.CreateHttpsClient();
+
+        using var response = await client.GetAsync(new Uri("/Account/Login", UriKind.Relative), Ct);
+
+        Assert.True(response.Headers.CacheControl?.NoStore, "Pages must not be stored by the browser (ASVS 8.2.1).");
+        Assert.False(response.Headers.Contains("Server"));
+    }
+
+    [Fact]
+    public async Task The_session_cookie_is_host_only_secure_http_only_and_same_site()
+    {
+        await _factory.CreateUserAsync("carla", "my own long passphrase");
+        using var client = _factory.CreateHttpsClient();
+
+        using var login = await UpmsWebApplicationFactory.PostLoginAsync(client, "carla", "my own long passphrase");
+
+        var cookie = Assert.Single(login.Headers.GetValues("Set-Cookie"), c => c.StartsWith("__Host-upms.auth=", StringComparison.Ordinal));
+        var attributes = cookie.Split(';').Select(a => a.Trim().ToLowerInvariant()).ToList();
+        Assert.Contains("secure", attributes);
+        Assert.Contains("httponly", attributes);
+        Assert.Contains("samesite=lax", attributes);
+        Assert.Contains("path=/", attributes);
+        Assert.DoesNotContain(attributes, a => a.StartsWith("domain=", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_copy_of_the_session_cookie_stops_working_after_signing_out()
+    {
+        await _factory.CreateUserAsync("dina", "my own long passphrase");
+        using var client = _factory.CreateHttpsClient();
+        using var login = await UpmsWebApplicationFactory.PostLoginAsync(client, "dina", "my own long passphrase");
+        var copied = Assert.Single(login.Headers.GetValues("Set-Cookie"), c => c.StartsWith("__Host-upms.auth=", StringComparison.Ordinal)).Split(';')[0];
+        var page = await client.GetStringAsync(new Uri("/account/profile", UriKind.Relative), Ct);
+
+        // Sign out through the layout's anti-forgery-protected form.
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = UpmsWebApplicationFactory.HiddenValue(page, "__RequestVerificationToken"),
+            ["returnUrl"] = "Account/Login",
+        });
+        using var logout = await client.PostAsync(new Uri("/Account/Logout", UriKind.Relative), form, Ct);
+        Assert.Equal(HttpStatusCode.Redirect, logout.StatusCode);
+
+        using var replay = _factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/account/profile");
+        request.Headers.Add("Cookie", copied);
+        using var response = await replay.SendAsync(request, Ct);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.StartsWith("https://localhost/Account/Login", response.Headers.Location!.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Cross_origin_requests_to_the_Blazor_hub_are_rejected()
     {
         using var client = _factory.CreateHttpsClient();

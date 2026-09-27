@@ -47,6 +47,36 @@
     if (el) el.focus();
   };
 
+  // Password fields (OWASP ASVS 2.1.8, 2.1.12): "Show password" reveals what was typed, and new passwords get a
+  // strength hint. Listeners are on the document, so pages loaded by enhanced navigation work too.
+  document.addEventListener('click', (e) => {
+    const toggle = e.target && e.target.closest ? e.target.closest('[data-password-toggle]') : null;
+    const input = toggle && document.getElementById(toggle.getAttribute('data-password-toggle'));
+    if (!input) return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
+  });
+
+  upms.passwordStrength = (value) => {
+    if (!value) return '';
+    if (value.length < 12) return 'Too short: use at least 12 characters.';
+    if (new Set(value.toLowerCase()).size <= 3) return 'Weak: too repetitive.';
+    const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(value)).length;
+    const words = value.trim().split(/\s+/).length;
+    if (value.length >= 16 && (words >= 3 || kinds >= 3)) return 'Strong.';
+    return 'Fair: a few more words make it stronger.';
+  };
+
+  document.addEventListener('input', (e) => {
+    const input = e.target;
+    if (!input || !input.id || !window.CSS) return;
+    const hint = document.querySelector('[data-password-strength="' + CSS.escape(input.id) + '"]');
+    if (!hint) return;
+    const text = upms.passwordStrength(input.value);
+    if (hint.textContent !== text) hint.textContent = text; // only changes are announced
+  });
+
   // Firefox starts a drag only when drag data is set, which Blazor cannot do from .NET (research R15).
   document.addEventListener('dragstart', (e) => {
     const source = e.target && e.target.closest ? e.target.closest('[data-drag-key]') : null;

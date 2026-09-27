@@ -221,16 +221,16 @@ lost, and a non-owner cannot change columns (spec US3).
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T104 Write the data-driven `tests/Upms.Application.Tests/Security/PermissionMatrixTests.cs`, exercising every row of `specs/002-kanban-project-core/contracts/permissions.md` against the real services for each role (SC-007)
-- [ ] T105 [P] Build `tools/Upms.Seed/Program.cs` (`--users`, `--projects`, `--tasks`; realistic mix of statuses, sub-tasks, comments and history; bulk inserts)
-- [ ] T106 Write `tests/Upms.Performance.Tests/Sc002LoadTests.cs` (category `Performance`): 300 concurrent simulated users on 500,000 seeded work items; assert p95 ≤ 1 second for project list load, board load (up to 500 visible cards), inline creation, card move, drawer open and saving a task edit (SC-002, constitution performance baseline); tune queries and indexes until it passes
-- [ ] T107 [P] Add `tests/Upms.E2E.Tests/ResponsiveAndKeyboardTests.cs`: the project list, board, drawer and column settings are usable at 360 px wide, and each story's main path completes with the keyboard only (FR-042, SC-008)
-- [ ] T108 [P] Write `docs/operations/deployment.md` (Linux container and Windows Server/IIS with WebSockets; configuration keys; data protection certificate; TLS; uptime monitoring and alerting on `/health/ready` for SC-009)
-- [ ] T109 [P] Write `docs/operations/backup-restore.md` (daily full, 6-hourly differential and 15-minute log backups; restore runbook; drill record template) for SC-009 and SC-010
-- [ ] T110 [P] Write `docs/pilot/phase1-pilot-plan.md` defining how SC-001, SC-003 and SC-011 are measured in the 2-week pilot (timed tasks and a survey)
-- [ ] T111 Review Phase 1 against OWASP ASVS Level 2, record it in `docs/security/phase1-asvs-review.md`, and fix findings (constitution III)
+- [X] T104 Write the data-driven `tests/Upms.Application.Tests/Security/PermissionMatrixTests.cs`, exercising every row of `specs/002-kanban-project-core/contracts/permissions.md` against the real services for each role (SC-007)
+- [X] T105 [P] Build `tools/Upms.Seed/Program.cs` (`--users`, `--projects`, `--tasks`; realistic mix of statuses, sub-tasks, comments and history; bulk inserts)
+- [X] T106 Write `tests/Upms.Performance.Tests/Sc002LoadTests.cs` (category `Performance`): 300 concurrent simulated users on 500,000 seeded work items; assert p95 ≤ 1 second for project list load, board load (up to 500 visible cards), inline creation, card move, drawer open and saving a task edit (SC-002, constitution performance baseline); tune queries and indexes until it passes
+- [X] T107 [P] Add `tests/Upms.E2E.Tests/ResponsiveAndKeyboardTests.cs`: the project list, board, drawer and column settings are usable at 360 px wide, and each story's main path completes with the keyboard only (FR-042, SC-008)
+- [X] T108 [P] Write `docs/operations/deployment.md` (Linux container and Windows Server/IIS with WebSockets; configuration keys; data protection certificate; TLS; uptime monitoring and alerting on `/health/ready` for SC-009)
+- [X] T109 [P] Write `docs/operations/backup-restore.md` (daily full, 6-hourly differential and 15-minute log backups; restore runbook; drill record template) for SC-009 and SC-010
+- [X] T110 [P] Write `docs/pilot/phase1-pilot-plan.md` defining how SC-001, SC-003 and SC-011 are measured in the 2-week pilot (timed tasks and a survey)
+- [X] T111 Review Phase 1 against OWASP ASVS Level 2, record it in `docs/security/phase1-asvs-review.md`, and fix findings (constitution III)
 - [ ] T112 Do a manual screen-reader pass (NVDA with Edge) on the Phase 1 screens, record it in `docs/accessibility/phase1-screen-reader-review.md`, and fix findings (constitution VI)
-- [ ] T113 Update `README.md` with local setup (linking quickstart.md) and test commands
+- [X] T113 Update `README.md` with local setup (linking quickstart.md) and test commands
 - [ ] T114 Run every step of `specs/002-kanban-project-core/quickstart.md`, including the restore drill, and record the results
 
 ---
@@ -397,3 +397,22 @@ Decisions made while implementing, recorded so the documents match the code:
 - **Column settings screen** (T103): the Columns section of the project settings lists the columns from left
   to right with type, limit, "Move left", "Move right", Rename and Delete; rows can also be dragged. New
   columns default to the position before the first "done" column.
+- **Permission matrix** (T104): `PermissionMatrixTests` reads the table from `contracts/permissions.md`, so a row
+  without test operations fails; 32 operations × 5 roles run against the real services. A signed-in user who is
+  refused a comment change gets `CommentNotOwned`; every other refusal is `Forbidden`.
+- **Seed data** (T105): `tools/Upms.Seed` bulk-copies work items, history and comments with pre-assigned IDs
+  (sub-tasks reference their parents in the same batch) and keeps foreign keys trusted. The largest project gets
+  1,200 tasks, so its board shows about 500 cards.
+- **Performance** (T106): the first 300-user run missed SC-002 (p95 2.3–5.4 s) because the project list counted
+  open work by scanning `WorkItems`. Migration `PerformanceIndexes` adds `IX_WorkItems_Status_Live`,
+  `IX_WorkItems_Subtasks_Live` (both filtered to live rows) and covering columns on `IX_WorkItems_Board`. After it,
+  on one 4-vCPU host running both SQL Server and the load, p95 was 109–199 ms for all six actions at 300 users and
+  499,000 work items. The suite measures service calls in-process (the Blazor rendering on top is small).
+- **Screen width and keyboard** (T107): hidden labels inside the board no longer widen the page at 360 px (the
+  board region is a containing block); focus follows a card after "Move to", and a column after "Move left/right".
+- **Security review** (T111): see `docs/security/phase1-asvs-review.md`: 13 findings fixed (among them the
+  `__Host-` session cookie, a 12-hour session limit, server-side rejection of cookies after sign-out, a
+  common-password check, `no-store` pages and access-refusal logging); 4 items are open, 2 of them Level 2
+  requirements that need a decision (multi-factor for administrators, managing one's own sessions).
+- **Screen-reader review** (T112): the automated pre-check is done and its findings fixed
+  (`docs/accessibility/phase1-screen-reader-review.md`); the manual NVDA pass needs a person and is still open.

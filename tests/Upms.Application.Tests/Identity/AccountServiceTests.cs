@@ -103,6 +103,32 @@ public sealed class AccountServiceTests(SqlServerFixture fixture) : IntegrationT
         Assert.DoesNotContain("a brand new passphrase", audit.Details ?? "", StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("qwerty123456")]       // on the list of common passwords from breach data
+    [InlineData("1QAZ2WSX3EDC")]       // the same, ignoring case
+    [InlineData("zzzzzzzzzzzzzz")]     // one repeated character
+    [InlineData("123456789012")]       // a straight run
+    [InlineData("amina loves tea!")]   // the person's own name (display name "Amina Tester")
+    public async Task Common_and_easy_to_guess_passwords_are_refused(string password)
+    {
+        var result = await CallAsync<IAccountService, Result>(s => s.ChangePasswordAsync(TestData.DefaultPassword, password, Ct));
+
+        Assert.Equal(ErrorKind.Validation, result.Error?.Kind);
+        Assert.Contains("too common or too easy to guess", string.Join(" ", result.Error!.FieldErrors!.Values.SelectMany(m => m)),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Passwords_of_up_to_128_characters_are_accepted_and_longer_ones_refused()
+    {
+        var phrase = string.Concat(Enumerable.Repeat("the quick brown fox jumps over a lazy dog ", 4));
+        var tooLong = await CallAsync<IAccountService, Result>(s => s.ChangePasswordAsync(TestData.DefaultPassword, phrase[..129], Ct));
+        var longest = await CallAsync<IAccountService, Result>(s => s.ChangePasswordAsync(TestData.DefaultPassword, phrase[..128], Ct));
+
+        Assert.Equal(ErrorKind.Validation, tooLong.Error?.Kind);
+        Assert.True(longest.IsSuccess, longest.Error?.Message);
+    }
+
     [Fact]
     public async Task Changing_a_temporary_password_clears_the_forced_change()
     {

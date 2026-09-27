@@ -34,6 +34,7 @@ public static class InfrastructureServiceCollectionExtensions
             .AddSignInManager<AuditingSignInManager>()
             .AddDefaultTokenProviders()
             .AddPasswordValidator<UsernamePasswordValidator>()
+            .AddPasswordValidator<CommonPasswordValidator>()
             .AddUserValidator<UserRulesValidator>()
             .AddClaimsPrincipalFactory<UpmsClaimsPrincipalFactory>();
 

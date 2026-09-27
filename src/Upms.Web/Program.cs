@@ -11,6 +11,7 @@ using Upms.Web.Security;
 
 // Composition root (research R4): the only place in Upms.Web that uses Upms.Infrastructure.
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false); // no product details in responses
 
 builder.AddUpmsObservability();
 

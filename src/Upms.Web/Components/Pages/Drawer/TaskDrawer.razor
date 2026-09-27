@@ -25,7 +25,8 @@
         <span class="spacer"></span>
         @if (_details?.CanDelete == true)
         {
-            <button type="button" class="btn btn-ghost btn-sm btn-danger" data-testid="delete-task" disabled="@_busy" @onclick="AskDeleteAsync">Delete</button>
+            <button type="button" class="btn btn-ghost btn-sm btn-danger" data-testid="delete-task" disabled="@_busy"
+                    aria-label="Delete @_details.Key" @onclick="AskDeleteAsync">Delete</button>
         }
         <button type="button" class="icon-btn" aria-label="Close task details" @onclick="CloseAsync">×</button>
     </div>

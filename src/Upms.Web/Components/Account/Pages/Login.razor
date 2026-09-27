@@ -33,7 +33,10 @@
     </div>
     <div class="field">
         <label for="login-password">Password</label>
-        <InputText type="password" @bind-Value="Input.Password" id="login-password" class="input" autocomplete="current-password" aria-required="true" />
+        <div class="password-row">
+            <InputText type="password" @bind-Value="Input.Password" id="login-password" class="input" maxlength="128" autocomplete="current-password" aria-required="true" />
+            <button type="button" class="btn btn-sm btn-ghost" data-password-toggle="login-password" aria-controls="login-password" aria-pressed="false">Show password</button>
+        </div>
         <ValidationMessage For="() => Input.Password" class="error-text" />
     </div>
     <button type="submit" class="btn btn-primary btn-block">Sign in</button>
@@ -68,6 +71,14 @@
 
     private async Task LoginUserAsync()
     {
+        if (Input.Password.Length > User.PasswordMaxLength)
+        {
+            // No password is this long; refusing before hashing keeps huge inputs from costing CPU (ASVS 2.1.2).
+            _errorMessage = "The user name or password is not correct.";
+            Input.Password = "";
+            return;
+        }
+
         var result = await SignInManager.PasswordSignInAsync(Input.UserName.Trim(), Input.Password,
             isPersistent: false, lockoutOnFailure: true);
         if (result.Succeeded)

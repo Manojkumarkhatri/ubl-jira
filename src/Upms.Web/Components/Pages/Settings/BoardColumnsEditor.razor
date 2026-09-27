@@ -1,6 +1,7 @@
 @using Upms.Application.Projects
 @using Upms.Domain.Common
 @inject IBoardColumnService Columns
+@inject IJSRuntime JS
 
 @* Board columns (FR-034 to FR-041): add, rename, reorder by dragging or with "Move left" and "Move right",
    type, work-in-progress limit and delete with a destination. Every change applies for everyone. *@
@@ -69,19 +70,19 @@
                                 <option value="@category.ToString()">@CategoryName(category)</option>
                             }
                         </select>
-                        <label class="limit-label" for="column-@column.Id-limit">Limit</label>
+                        <label class="limit-label" for="column-@column.Id-limit">Limit<span class="sr-only"> for @column.Name</span></label>
                         <input id="column-@column.Id-limit" class="input input-sm limit-input" type="number" min="1" max="99" inputmode="numeric"
-                               placeholder="None" value="@column.WipLimit" disabled="@_busy" @onchange="e => SetLimitAsync(column, e)"
-                               aria-describedby="column-@column.Id-name" />
+                               placeholder="None" value="@column.WipLimit" disabled="@_busy" @onchange="e => SetLimitAsync(column, e)" />
                     </div>
                     <div class="column-actions">
-                        <button type="button" class="btn btn-sm" disabled="@(first || _busy)" aria-describedby="column-@column.Id-name"
-                                @onclick="() => MoveAsync(column, column.Position - 1)">Move left</button>
-                        <button type="button" class="btn btn-sm" disabled="@(last || _busy)" aria-describedby="column-@column.Id-name"
-                                @onclick="() => MoveAsync(column, column.Position + 1)">Move right</button>
-                        <button type="button" class="btn btn-sm btn-ghost" disabled="@_busy" aria-describedby="column-@column.Id-name"
-                                @onclick="() => StartRename(column)">Rename</button>
-                        <button type="button" class="btn btn-sm btn-ghost btn-danger" disabled="@_busy" aria-describedby="column-@column.Id-name"
+                        @* Names carry the column ("Move left: To Do"), so lists of buttons in a screen reader are clear. *@
+                        <button type="button" id="column-@column.Id-left" class="btn btn-sm" disabled="@(first || _busy)"
+                                aria-label="Move left: @column.Name" @onclick="() => MoveAsync(column, column.Position - 1)">Move left</button>
+                        <button type="button" id="column-@column.Id-right" class="btn btn-sm" disabled="@(last || _busy)"
+                                aria-label="Move right: @column.Name" @onclick="() => MoveAsync(column, column.Position + 1)">Move right</button>
+                        <button type="button" id="column-@column.Id-rename" class="btn btn-sm btn-ghost" disabled="@_busy"
+                                aria-label="Rename: @column.Name" @onclick="() => StartRename(column)">Rename</button>
+                        <button type="button" class="btn btn-sm btn-ghost btn-danger" disabled="@_busy" aria-label="Delete: @column.Name"
                                 @onclick="() => AskDelete(column)">Delete</button>
                     </div>
                     @if (!column.IsEmpty)
@@ -190,6 +191,7 @@
     private BoardColumnView? _dragging;
     private long? _dropTarget;
     private (long ColumnId, StatusCategory Category)? _pendingCategory;
+    private string? _focusAfterRender;
     private bool _busy;
 
     [Parameter, EditorRequired]
@@ -205,6 +207,22 @@
         else
         {
             _error = result.Error!.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keyboard users keep their place: moved rows are re-inserted, and renaming swaps the button for a box.
+        if (_focusAfterRender is { } id)
+        {
+            _focusAfterRender = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
         }
     }
 
@@ -293,10 +311,12 @@
         _renamingId = column.Id;
         _renameDraft = column.Name;
         _renameError = null;
+        _focusAfterRender = $"column-{column.Id}-name-input";
     }
 
     private void CancelRename()
     {
+        _focusAfterRender = _renamingId is { } id ? $"column-{id}-rename" : null;
         _renamingId = null;
         _renameError = null;
     }
@@ -320,6 +340,7 @@
         {
             _renamingId = null;
             _renameError = null;
+            _focusAfterRender = $"column-{column.Id}-rename";
         }
         else if (error.Kind == ErrorKind.Conflict)
         {
@@ -333,9 +354,16 @@
 
     private async Task MoveAsync(BoardColumnView column, int position)
     {
+        var towardsStart = position < column.Position;
         var error = await RunAsync(version => Columns.MoveAsync(ProjectKey, column.Id, position, version, CancellationToken.None),
             $"Moved {column.Name} to position {position + 1} of {_view!.Columns.Count}.");
         ShowRowError(column, error);
+        if (_view.Columns.FirstOrDefault(c => c.Id == column.Id) is { } moved)
+        {
+            // The same button again, or the other one when the column reached the end of the board.
+            var atEdge = towardsStart ? moved.Position == 0 : moved.Position == _view.Columns.Count - 1;
+            _focusAfterRender = $"column-{column.Id}-{(towardsStart != atEdge ? "left" : "right")}";
+        }
     }
 
     private async Task DropOnAsync(BoardColumnView target)

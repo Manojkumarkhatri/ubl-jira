@@ -128,7 +128,7 @@ main:focus { outline: none; }
 .alert-warn { background: var(--warn-soft); border-color: var(--warn); }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .form-card { padding: 18px 20px 6px; margin-bottom: 16px; max-width: 760px; }
-.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.table-wrap { position: relative; overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .tbl { width: 100%; border-collapse: collapse; }
 .tbl th, .tbl td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .tbl th { font-size: 12px; color: var(--text-2); background: var(--surface-2); }
@@ -197,7 +197,7 @@ dialog.modal::backdrop { background: rgba(9, 12, 16, .45); }
 }
 
 /* ---------- Board (research R15, R19) ---------- */
-.board-wrap { overflow-x: auto; padding-bottom: 8px; }
+.board-wrap { overflow-x: auto; padding-bottom: 8px; position: relative; } /* contains the hidden labels too */
 .board-wrap:focus-visible { outline-offset: 4px; }
 .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; align-items: start; min-width: min-content; }
 .col { background: var(--surface-2); border-radius: var(--radius); display: flex; flex-direction: column; max-height: calc(100vh - 190px); min-width: 260px; }
@@ -325,3 +325,9 @@ dialog.drawer dialog.modal { width: min(420px, calc(100vw - 32px)); }
   .column-row { grid-template-columns: 20px minmax(0, 1fr); }
   .column-fields, .column-actions { grid-column: 2; justify-content: flex-start; }
 }
+
+/* ---------- Password fields (ASVS 2.1.8, 2.1.12) ---------- */
+.password-row { display: flex; gap: 6px; align-items: center; }
+.password-row .input { flex: 1; min-width: 0; }
+.password-row .btn { flex: none; }
+.password-strength:empty { display: none; }

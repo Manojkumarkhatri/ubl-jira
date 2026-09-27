@@ -6,9 +6,9 @@ using Upms.Domain.Identity;
 
 namespace Upms.Infrastructure.Identity;
 
-/// <summary>Adds the display name, the forced-password-change flag and a per-sign-in session ID to the
-/// cookie. Roles are not stored in the cookie: rights are read from the database on every call (R7).</summary>
-public sealed class UpmsClaimsPrincipalFactory(UserManager<User> userManager, IOptions<IdentityOptions> options)
+/// <summary>Adds the display name, the forced-password-change flag, a per-sign-in session ID and the sign-in
+/// time to the cookie. Roles are not stored in the cookie: rights are read from the database on every call (R7).</summary>
+public sealed class UpmsClaimsPrincipalFactory(UserManager<User> userManager, IOptions<IdentityOptions> options, TimeProvider time)
     : UserClaimsPrincipalFactory<User>(userManager, options)
 {
     protected override async Task<ClaimsIdentity> GenerateClaimsAsync(User user)
@@ -16,6 +16,8 @@ public sealed class UpmsClaimsPrincipalFactory(UserManager<User> userManager, IO
         var identity = await base.GenerateClaimsAsync(user);
         identity.AddClaim(new Claim(UpmsClaimTypes.DisplayName, user.DisplayName));
         identity.AddClaim(new Claim(UpmsClaimTypes.SessionId, Guid.NewGuid().ToString("N")));
+        identity.AddClaim(new Claim(UpmsClaimTypes.SignedInAt,
+            time.GetUtcNow().ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), ClaimValueTypes.Integer64));
         if (user.MustChangePassword)
         {
             identity.AddClaim(new Claim(UpmsClaimTypes.MustChangePassword, "true"));

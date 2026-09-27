@@ -13,4 +13,8 @@
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Identity\CommonPasswords.txt" LogicalName="Upms.CommonPasswords.txt" />
+  </ItemGroup>
+
 </Project>

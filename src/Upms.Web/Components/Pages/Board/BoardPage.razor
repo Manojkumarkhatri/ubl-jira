@@ -106,7 +106,7 @@ else
     {
         if (_focusCardKey is { } key && string.IsNullOrEmpty(TaskKey))
         {
-            // Focus returns to the card whose drawer was closed, even if its column changed meanwhile.
+            // Focus returns to the card whose drawer was closed or that was just moved, wherever it is now.
             _focusCardKey = null;
             try
             {
@@ -161,9 +161,12 @@ else
         }
     }
 
-    // The keyboard "Move to" menu issues the same call as a drop (FR-019).
-    private Task MoveFromMenuAsync((CardView Card, MoveRequest Request) move) =>
-        MoveAsync(move.Card, move.Request.ColumnId, move.Request.Placement);
+    // The keyboard "Move to" menu issues the same call as a drop (FR-019); focus follows the card to its new place.
+    private async Task MoveFromMenuAsync((CardView Card, MoveRequest Request) move)
+    {
+        await MoveAsync(move.Card, move.Request.ColumnId, move.Request.Placement);
+        _focusCardKey = move.Card.Key;
+    }
 
     private async Task MoveAsync(CardView card, long columnId, CardPlacement placement)
     {

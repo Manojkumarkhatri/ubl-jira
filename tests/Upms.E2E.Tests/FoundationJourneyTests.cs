@@ -26,6 +26,12 @@ public sealed partial class FoundationJourneyTests(AppFixture app) : BrowserTest
         await Assertions.Expect(page).ToHaveURLAsync(ChangePasswordUrl());
         await page.GetByLabel("Temporary password").FillAsync(temporary);
         await page.GetByLabel("New password", new() { Exact = true }).FillAsync("a password of my own");
+        await Assertions.Expect(page.Locator("[data-password-strength='cp-new']")).ToHaveTextAsync("Strong."); // ASVS 2.1.8
+        var show = page.Locator("[data-password-toggle='cp-new']");
+        await show.ClickAsync(); // ASVS 2.1.12
+        await Assertions.Expect(page.GetByLabel("New password", new() { Exact = true })).ToHaveAttributeAsync("type", "text");
+        await Assertions.Expect(show).ToHaveAttributeAsync("aria-pressed", "true");
+        await page.AssertNoAccessibilityViolationsAsync();
         await page.GetByLabel("Confirm the new password").FillAsync("a password of my own");
         await page.GetByRole(AriaRole.Button, new() { Name = "Save the new password" }).ClickAsync();
 

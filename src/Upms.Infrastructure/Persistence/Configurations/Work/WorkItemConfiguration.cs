@@ -34,11 +34,21 @@ internal sealed class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.HasMany(w => w.Changes).WithOne().HasForeignKey(c => c.WorkItemId).OnDelete(DeleteBehavior.Restrict);
         builder.Navigation(w => w.Changes).HasField("_changes").UsePropertyAccessMode(PropertyAccessMode.Field);
 
-        // The board: top-level, non-deleted items of a column in rank order (research R19).
+        // The board: top-level, non-deleted items of a column in rank order (research R19), covering the card fields
+        // so a 500-card board is read from the index alone (SC-002).
         builder.HasIndex(w => new { w.ProjectId, w.StatusId, w.Rank })
             .HasDatabaseName("IX_WorkItems_Board")
-            .HasFilter("[IsDeleted] = 0 AND [ParentId] IS NULL");
+            .HasFilter("[IsDeleted] = 0 AND [ParentId] IS NULL")
+            .IncludeProperties(w => new { w.Key, w.Title, w.Priority, w.ResolvedAt, w.RowVersion });
         builder.HasIndex(w => w.ParentId);
         builder.HasIndex(w => new { w.ProjectId, w.ResolvedAt });
+
+        // Counts without reading the table (SC-002): open work per column for the project list (FR-013), and the
+        // done/total sub-task counts on every card (FR-017).
+        builder.HasIndex(w => w.StatusId, "IX_WorkItems_Status_Live").HasFilter("[IsDeleted] = 0");
+        builder.HasIndex(w => new { w.ParentId, w.StatusId }, "IX_WorkItems_Subtasks_Live")
+            .HasFilter("[IsDeleted] = 0 AND [ParentId] IS NOT NULL");
+        // Deleted items keep their status, so moving a column's items and its foreign key need every row.
+        builder.HasIndex(w => w.StatusId, "IX_WorkItems_StatusId");
     }
 }

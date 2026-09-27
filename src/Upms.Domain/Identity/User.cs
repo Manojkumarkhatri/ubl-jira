@@ -12,6 +12,9 @@ public class User : IdentityUser<Guid>
     public const int DisplayNameMaxLength = 100;
     public const int TimeZoneIdMaxLength = 64;
 
+    /// <summary>Longer passwords are refused (OWASP ASVS 2.1.2); at least 64 characters are always allowed.</summary>
+    public const int PasswordMaxLength = 128;
+
     /// <summary>Characters allowed in user names: letters, digits, ".", "-" and "_".</summary>
     public const string AllowedUserNameCharacters =
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_";

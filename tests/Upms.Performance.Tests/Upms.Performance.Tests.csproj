@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Opt-in load tests for SC-002 (category "Performance"). -->
+  <!-- Opt-in load tests for SC-002 (category "Performance"); see LoadTestSettings for the knobs. -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Upms.Infrastructure\Upms.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\tools\Upms.Seed\Upms.Seed.csproj" />
   </ItemGroup>
 
   <ItemGroup>

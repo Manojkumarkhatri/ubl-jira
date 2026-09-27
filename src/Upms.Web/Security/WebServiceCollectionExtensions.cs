@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Identity;
@@ -32,7 +33,8 @@ public static class WebServiceCollectionExtensions
             .AddIdentityCookies();
         services.ConfigureApplicationCookie(options =>
         {
-            options.Cookie.Name = "upms.auth";
+            // "__Host-": the browser keeps the cookie to this exact site, over HTTPS, for all paths (ASVS 3.4.4).
+            options.Cookie.Name = "__Host-upms.auth";
             options.Cookie.HttpOnly = true;
             options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
             options.Cookie.SameSite = SameSiteMode.Lax;
@@ -43,22 +45,46 @@ public static class WebServiceCollectionExtensions
             // 30 minutes are enforced by the idle warning and the keep-alive endpoint.
             options.ExpireTimeSpan = TimeSpan.FromMinutes(OrganizationSettings.DefaultIdleTimeoutMinutes + 1);
             options.SlidingExpiration = true;
+
+            // Refuse a cookie whose session has ended (signed out, idle or older than 12 hours) before the usual
+            // security stamp check, so a copied cookie cannot be replayed.
+            var validateSecurityStamp = options.Events.OnValidatePrincipal;
+            options.Events.OnValidatePrincipal = async context =>
+            {
+                var services = context.HttpContext.RequestServices;
+                if (context.Principal is { } principal && SessionPolicy.HasEnded(principal,
+                        services.GetRequiredService<SessionActivityRegistry>(), services.GetRequiredService<TimeProvider>().GetUtcNow()))
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(IdentityConstants.ApplicationScheme);
+                    return;
+                }
+
+                await validateSecurityStamp(context);
+            };
         });
+
         services.Configure<SecurityStampValidatorOptions>(options =>
         {
             options.ValidationInterval = TimeSpan.FromMinutes(1);
             options.OnRefreshingPrincipal = context =>
             {
-                // Keep the session ID across refreshes so idle tracking survives stamp validation.
-                if (context.CurrentPrincipal?.FindFirst(UpmsClaimTypes.SessionId) is { } sessionId
-                    && context.NewPrincipal?.Identity is ClaimsIdentity identity)
+                // Keep the session ID and sign-in time across refreshes, so idle tracking and the 12-hour limit
+                // survive security stamp validation.
+                if (context.NewPrincipal?.Identity is ClaimsIdentity identity)
                 {
-                    if (identity.FindFirst(UpmsClaimTypes.SessionId) is { } generated)
+                    foreach (var type in new[] { UpmsClaimTypes.SessionId, UpmsClaimTypes.SignedInAt })
                     {
-                        identity.RemoveClaim(generated);
-                    }
+                        if (context.CurrentPrincipal?.FindFirst(type) is { } kept)
+                        {
+                            if (identity.FindFirst(type) is { } generated)
+                            {
+                                identity.RemoveClaim(generated);
+                            }
 
-                    identity.AddClaim(new Claim(UpmsClaimTypes.SessionId, sessionId.Value));
+                            identity.AddClaim(new Claim(type, kept.Value, kept.ValueType));
+                        }
+                    }
                 }
 
                 return Task.CompletedTask;
