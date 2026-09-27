@@ -4,7 +4,7 @@ using Upms.Domain.Work;
 
 namespace Upms.Application.Work;
 
-/// <summary>The Kanban board (FR-016 to FR-023).</summary>
+/// <summary>The Kanban board (FR-016 to FR-023; Phase 2 FR-003, FR-021, FR-022).</summary>
 public interface IBoardService
 {
     /// <param name="showAllDone">False shows only tasks completed in the last 14 days in "done" columns (FR-021).</param>
@@ -47,6 +47,7 @@ public sealed record BoardView(
     bool ShowingAllDone,
     int HiddenDoneCount,
     IReadOnlyList<ColumnView> Columns,
+    Guid ViewerId,
     bool CanRestoreDeleted = false,
     bool CanContribute = false);
 
@@ -62,6 +63,7 @@ public sealed record ColumnView(
     IReadOnlyList<CardView> Cards);
 
 /// <param name="Version">The row version the card was read with; moves send it back (FR-022).</param>
+/// <param name="Assignee">Shown as initials with the name as text (Phase 2 FR-021, FR-024).</param>
 public sealed record CardView(
     string Key,
     string Title,
@@ -69,4 +71,6 @@ public sealed record CardView(
     long ColumnId,
     int SubtasksDone,
     int SubtasksTotal,
-    byte[] Version);
+    byte[] Version,
+    AssigneeRef? Assignee,
+    DateOnly? DueDate);

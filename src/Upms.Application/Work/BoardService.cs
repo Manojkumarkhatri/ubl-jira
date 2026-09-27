@@ -15,6 +15,7 @@ internal sealed class BoardService(
     IWorkItemNumberAllocator numbers,
     CardRanker ranker,
     RankRebalancer rebalancer,
+    AssigneeReads assignees,
     TimeProvider time) : IBoardService
 {
     /// <summary>"Done" columns show tasks completed within this window unless all are requested (FR-021).</summary>
@@ -39,13 +40,25 @@ internal sealed class BoardService(
             query = query.Where(w => !doneIds.Contains(w.StatusId) || w.ResolvedAt >= cutoff);
         }
 
-        var cards = await query
+        var rows = await query
             .OrderBy(w => w.Rank).ThenBy(w => w.Id)
-            .Select(w => new CardView(w.Key, w.Title, w.Priority, w.StatusId,
-                db.WorkItems.Count(c => c.ParentId == w.Id && doneIds.Contains(c.StatusId)),
-                db.WorkItems.Count(c => c.ParentId == w.Id),
-                w.RowVersion))
+            .Select(w => new
+            {
+                w.Key,
+                w.Title,
+                w.Priority,
+                w.StatusId,
+                SubtasksDone = db.WorkItems.Count(c => c.ParentId == w.Id && doneIds.Contains(c.StatusId)),
+                SubtasksTotal = db.WorkItems.Count(c => c.ParentId == w.Id),
+                w.RowVersion,
+                w.AssigneeId,
+                w.DueDate,
+            })
             .ToListAsync(ct);
+        var people = await assignees.DescribeAsync(await assignees.TeamAsync(projectId, ct),
+            rows.Where(r => r.AssigneeId != null).Select(r => r.AssigneeId!.Value), ct);
+        var cards = rows.ConvertAll(r => new CardView(r.Key, r.Title, r.Priority, r.StatusId, r.SubtasksDone, r.SubtasksTotal,
+            r.RowVersion, r.AssigneeId is { } assigneeId ? people[assigneeId] : null, r.DueDate));
 
         var hiddenDone = showAllDone
             ? 0
@@ -59,7 +72,7 @@ internal sealed class BoardService(
                 s.WipLimit is { } limit && columnCards.Count > limit, columnCards);
         }).ToList();
         return new BoardView(info.Key, info.Name, info.BoardVersion, allowed.Value.CanManage, showAllDone, hiddenDone, columns,
-            CanRestoreDeleted: allowed.Value.IsAdministrator, CanContribute: allowed.Value.CanContribute);
+            allowed.Value.UserId, CanRestoreDeleted: allowed.Value.IsAdministrator, CanContribute: allowed.Value.CanContribute);
     }
 
     public async Task<Result<CardView>> CreateInlineAsync(string projectKey, long columnId, string title, CancellationToken ct)
@@ -98,7 +111,7 @@ internal sealed class BoardService(
         }
 
         await transaction.CommitAsync(ct);
-        return new CardView(item.Key, item.Title, item.Priority, item.StatusId, 0, 0, item.RowVersion);
+        return new CardView(item.Key, item.Title, item.Priority, item.StatusId, 0, 0, item.RowVersion, null, null);
     }
 
     public async Task<Result<CardView>> MoveCardAsync(string workItemKey, long toColumnId, CardPlacement placement,
@@ -210,8 +223,11 @@ internal sealed class BoardService(
             .Where(c => c.ParentId == item.Id)
             .Select(c => c.StatusId)
             .ToListAsync(ct);
+        var assignee = item.AssigneeId is { } assigneeId
+            ? (await assignees.DescribeAsync(await assignees.TeamAsync(item.ProjectId, ct), [assigneeId], ct))[assigneeId]
+            : null;
         return new CardView(item.Key, item.Title, item.Priority, item.StatusId, subtasks.Count(doneIds.Contains),
-            subtasks.Count, item.RowVersion);
+            subtasks.Count, item.RowVersion, assignee, item.DueDate);
     }
 
     private async Task<IReadOnlyList<string>> OpenSubtaskWarningAsync(WorkItem item, IReadOnlyList<StatusInfo> statuses,

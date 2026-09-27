@@ -9,9 +9,9 @@ using Upms.Domain.Work;
 
 namespace Upms.Performance.Tests;
 
-/// <summary>SC-002: with 300 concurrent users on 500,000 work items, the project list, a board of up to 500 visible
-/// cards, inline creation, a card move, opening the drawer, saving an edit and a membership change each respond
-/// within 1 second at the 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix
+/// <summary>SC-002: with 300 concurrent users on 500,000 work items, the project list, "My tasks", a board of up to
+/// 500 visible cards, inline creation, a card move, opening the drawer, saving an edit, assigning, setting dates and a
+/// membership change each respond within 1 second at the 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix
 /// of actions with 1 to 3 seconds of thinking time in a project they belong to (<see cref="LoadDatabase.Subjects"/>):
 /// every tenth user works on the largest board, and every tenth (offset by five) is a Project Admin who also changes
 /// the team.</summary>
@@ -21,7 +21,10 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
     private const double TargetMilliseconds = 1_000;
 
     private static readonly string[] Operations =
-        ["project list", "board load", "inline creation", "card move", "drawer open", "saving an edit", "membership change"];
+    [
+        "project list", "My tasks load", "board load", "inline creation", "card move", "drawer open", "saving an edit",
+        "assigning", "setting dates", "membership change",
+    ];
 
     [Fact(Timeout = 60 * 60 * 1000)]
     public async Task SC002_Main_actions_respond_within_one_second_at_the_95th_percentile()
@@ -93,10 +96,17 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
         private async Task ActAsync(CancellationToken ct)
         {
             var roll = _random.Next(100);
-            if (roll < 10)
+            if (roll < 8)
             {
                 await MeasureAsync("project list", () =>
                     harness.CallAsync<IProjectService, Result<Page<ProjectSummary>>>(_userId, s => s.ListAsync(new PageRequest(_random.Next(1, 21)), ct)));
+                return;
+            }
+
+            if (roll < 13)
+            {
+                await MeasureAsync("My tasks load", () =>
+                    harness.CallAsync<IMyTasksService, Result<Page<MyTaskRow>>>(_userId, s => s.ListAsync(PageRequest.First, ct)));
                 return;
             }
 
@@ -107,7 +117,7 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
             }
 
             var cards = _board.Columns.SelectMany(c => c.Cards).ToList();
-            if (roll < 65 || (roll < 80 && _details is null))
+            if (roll < 62 || (roll < 80 && _details is null))
             {
                 if (cards.Count > 0)
                 {
@@ -123,10 +133,18 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
             if (roll < 80)
             {
                 var details = _details!;
-                WorkItemEdit edit = _random.Next(2) == 0
-                    ? new WorkItemEdit.Priority(Priorities[_random.Next(Priorities.Length)])
-                    : new WorkItemEdit.Title($"{details.Title.Split(" (", 2)[0]} ({_random.Next(1_000)})");
-                var saved = await MeasureAsync("saving an edit", () =>
+                var (operation, edit) = roll switch
+                {
+                    < 70 => ("saving an edit", _random.Next(2) == 0
+                        ? new WorkItemEdit.Priority(Priorities[_random.Next(Priorities.Length)])
+                        : (WorkItemEdit)new WorkItemEdit.Title($"{details.Title.Split(" (", 2)[0]} ({_random.Next(1_000)})")),
+                    < 75 => ("assigning", new WorkItemEdit.Assignee(
+                        details.AssigneeOptions.Count == 0 || _random.Next(10) == 0
+                            ? null
+                            : details.AssigneeOptions[_random.Next(details.AssigneeOptions.Count)].UserId)),
+                    _ => ("setting dates", RandomDates()),
+                };
+                var saved = await MeasureAsync(operation, () =>
                     harness.CallAsync<IWorkItemService, Result<WorkItemDetails>>(_userId, s => s.UpdateAsync(details.Key, edit, details.Version, ct)));
                 _details = saved.Value;
                 return;
@@ -156,6 +174,13 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
             await MeasureAsync("inline creation", () =>
                 harness.CallAsync<IBoardService, Result<CardView>>(_userId, s => s.CreateInlineAsync(_projectKey, toDo, $"Load test task {_random.Next(100_000)}", ct)));
             await LoadBoardAsync(ct); // and after a new task
+        }
+
+        /// <summary>A due date within the next two months, often with a start date up to two weeks before it.</summary>
+        private WorkItemEdit.Dates RandomDates()
+        {
+            var due = new DateOnly(2026, 9, 27).AddDays(_random.Next(0, 60));
+            return new WorkItemEdit.Dates(_random.Next(100) < 60 ? due.AddDays(-_random.Next(0, 15)) : null, due);
         }
 
         /// <summary>Adds someone as a Viewer, and the next time removes them again, so the contributors the other

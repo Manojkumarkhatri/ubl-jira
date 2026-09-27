@@ -11,7 +11,11 @@ internal sealed class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 {
     public void Configure(EntityTypeBuilder<WorkItem> builder)
     {
-        builder.ToTable("WorkItems");
+        // Calendar dates in 2000–2099, the due date not before the start date (Phase 2 FR-018, research R8).
+        builder.ToTable("WorkItems", t => t.HasCheckConstraint("CK_WorkItems_Dates",
+            "([StartDate] IS NULL OR [StartDate] BETWEEN '2000-01-01' AND '2099-12-31') AND " +
+            "([DueDate] IS NULL OR [DueDate] BETWEEN '2000-01-01' AND '2099-12-31') AND " +
+            "([StartDate] IS NULL OR [DueDate] IS NULL OR [DueDate] >= [StartDate])"));
         builder.Property(w => w.Key).HasMaxLength(WorkItem.KeyMaxLength).IsUnicode(false).IsRequired();
         builder.HasIndex(w => w.Key).IsUnique();
         builder.HasIndex(w => new { w.ProjectId, w.Number }).IsUnique();
@@ -19,6 +23,8 @@ internal sealed class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.Property(w => w.Title).HasMaxLength(WorkItem.TitleMaxLength).IsRequired();
         builder.Property(w => w.Description);
         builder.Property(w => w.Priority).HasConversion<string>().HasMaxLength(8).IsUnicode(false);
+        builder.Property(w => w.StartDate).HasColumnType("date");
+        builder.Property(w => w.DueDate).HasColumnType("date");
 
         // Fractional index compared ordinally (research R14): binary collation.
         builder.Property(w => w.Rank).HasMaxLength(Rank.MaxLength).IsUnicode(false).UseCollation("Latin1_General_BIN2").IsRequired();
@@ -30,6 +36,7 @@ internal sealed class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.HasOne<WorkItem>().WithMany().HasForeignKey(w => w.ParentId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(w => w.CreatedById).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(w => w.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<User>().WithMany().HasForeignKey(w => w.AssigneeId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasMany(w => w.Changes).WithOne().HasForeignKey(c => c.WorkItemId).OnDelete(DeleteBehavior.Restrict);
         builder.Navigation(w => w.Changes).HasField("_changes").UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -39,7 +46,7 @@ internal sealed class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.HasIndex(w => new { w.ProjectId, w.StatusId, w.Rank })
             .HasDatabaseName("IX_WorkItems_Board")
             .HasFilter("[IsDeleted] = 0 AND [ParentId] IS NULL")
-            .IncludeProperties(w => new { w.Key, w.Title, w.Priority, w.ResolvedAt, w.RowVersion });
+            .IncludeProperties(w => new { w.Key, w.Title, w.Priority, w.ResolvedAt, w.RowVersion, w.AssigneeId, w.DueDate });
         builder.HasIndex(w => w.ParentId);
         builder.HasIndex(w => new { w.ProjectId, w.ResolvedAt });
 
@@ -48,6 +55,30 @@ internal sealed class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.HasIndex(w => w.StatusId, "IX_WorkItems_Status_Live").HasFilter("[IsDeleted] = 0");
         builder.HasIndex(w => new { w.ParentId, w.StatusId }, "IX_WorkItems_Subtasks_Live")
             .HasFilter("[IsDeleted] = 0 AND [ParentId] IS NOT NULL");
+
+        // The List view and the timeline read a project's live items from one index (Phase 2 research R11, R12).
+        builder.HasIndex(w => new { w.ProjectId, w.Number }, "IX_WorkItems_Project_Live")
+            .HasFilter("[IsDeleted] = 0")
+            .IncludeProperties(w => new
+            {
+                w.Key,
+                w.Title,
+                w.ParentId,
+                w.StatusId,
+                w.Priority,
+                w.AssigneeId,
+                w.StartDate,
+                w.DueDate,
+                w.UpdatedAt,
+                w.Rank,
+                w.RowVersion,
+            });
+
+        // "My tasks": a person's live assigned items; open ones have no ResolvedAt (Phase 2 research R13).
+        builder.HasIndex(w => new { w.AssigneeId, w.ProjectId }, "IX_WorkItems_Assignee_Live")
+            .HasFilter("[IsDeleted] = 0 AND [AssigneeId] IS NOT NULL")
+            .IncludeProperties(w => new { w.Key, w.Title, w.ParentId, w.StatusId, w.Priority, w.DueDate, w.ResolvedAt });
+
         // Deleted items keep their status, so moving a column's items and its foreign key need every row.
         builder.HasIndex(w => w.StatusId, "IX_WorkItems_StatusId");
     }

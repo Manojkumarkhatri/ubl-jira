@@ -54,6 +54,8 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await desk.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         var dialog = desk.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Small Screens");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("SML");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
         await desk.WaitForURLAsync("**/projects/SML/board");
@@ -136,6 +138,8 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Keyboard Drawer");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("KDR");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
         await page.WaitForURLAsync("**/projects/KDR/board");
@@ -188,6 +192,8 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Keyboard Columns");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("KCL");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
         await page.WaitForURLAsync("**/projects/KCL/board");

@@ -78,11 +78,13 @@ public interface IProjectTeam                                     // new contrac
     Task<IReadOnlyList<ProjectRef>> VisibleAmongAsync(Guid userId, IReadOnlyCollection<long> projectIds,
         CancellationToken ct);
 }
-public sealed record TeamMemberInfo(Guid UserId, string DisplayName, ProjectRole Role, bool IsActive)
-{
-    public bool CanWork => IsActive && Role != ProjectRole.Viewer;
-}
+// CanWork: an active Project Admin or Member. The role itself is not exposed, so the Work module never depends on
+// the Projects domain's ProjectRole (module rule).
+public sealed record TeamMemberInfo(Guid UserId, string DisplayName, bool CanWork);
 public sealed record ProjectRef(long Id, string Key, string Name);
+
+// IProjectWorkflow (Phase 1 contract) gains a batch read for "My tasks":
+//   Task<IReadOnlyDictionary<long, IReadOnlyList<StatusInfo>>> StatusesAsync(IReadOnlyCollection<long> projectIds, CancellationToken ct);
 ```
 
 ## Work module
@@ -97,6 +99,7 @@ public abstract record WorkItemEdit
 }
 
 public sealed record AssigneeRef(Guid UserId, string DisplayName, string Initials, bool CanWork);  // FR-021, FR-024
+                                            // Initials: first letters of the first and last words ("Amina Khan" → "AK")
 public sealed record AssigneeOption(Guid UserId, string DisplayName, bool IsMe);
 
 // WorkItemDetails gains:

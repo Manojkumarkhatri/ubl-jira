@@ -236,6 +236,25 @@ dialog.modal::backdrop { background: rgba(9, 12, 16, .45); }
 .pri { display: inline-flex; width: 16px; height: 16px; }
 .pri-highest { color: var(--pri-highest); } .pri-high { color: var(--pri-high); } .pri-medium { color: var(--pri-medium); }
 .pri-low { color: var(--pri-low); } .pri-lowest { color: var(--pri-lowest); }
+/* Phase 2: assignees, due dates and board filters (FR-020–FR-022, FR-024). Overdue is said in words, not by colour alone. */
+.assignee { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+.avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--link); font-size: 11px; font-weight: 700; }
+.assignee.is-gone .avatar { background: var(--surface-3); color: var(--text-2); text-decoration: line-through; }
+.gone-label { font-size: 11px; font-weight: 600; color: var(--warn); }
+.due { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.overdue-label { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 4px; background: var(--danger-soft); color: var(--danger); font-size: 11px; font-weight: 700; }
+.board-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; font-size: 13px; }
+.board-filters label { color: var(--text-2); font-weight: 600; font-size: 12px; }
+.board-filters .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--link); }
+.col-head .limit { margin-left: -2px; }
+.field-stack { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.field-stack .select, .field-stack .input { flex: 1 1 140px; min-width: 0; }
+.drawer-side input[type="date"] { min-height: 32px; padding: 4px 8px; }
+.my-tasks-group { margin-bottom: 20px; }
+.group-title { font-size: 16px; margin: 0 0 8px; }
+.group-title .key { font-weight: 600; margin-left: 4px; }
+.task-link { color: var(--text); text-decoration: none; font-weight: 500; overflow-wrap: anywhere; }
+.task-link:hover { color: var(--link); text-decoration: underline; }
 .inline-create { padding: 6px 8px 10px; }
 .inline-input { background: var(--surface); }
 /* The "Move to" list opens inside the card, so the column's own scrolling never clips it. */

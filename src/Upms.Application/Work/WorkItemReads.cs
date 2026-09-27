@@ -8,19 +8,22 @@ using Upms.Domain.Work;
 namespace Upms.Application.Work;
 
 /// <summary>Paged reads shared by the drawer's services: sub-tasks, comments and history.</summary>
-internal sealed class WorkItemReads(IAppDbContext db, IUserDirectory users)
+internal sealed class WorkItemReads(IAppDbContext db, IUserDirectory users, AssigneeReads assignees)
 {
-    public async Task<Page<SubtaskView>> SubtasksAsync(long parentId, IReadOnlyList<StatusInfo> statuses, PageRequest page,
-        CancellationToken ct)
+    /// <param name="team">The project's members, for the sub-tasks' assignees.</param>
+    public async Task<Page<SubtaskView>> SubtasksAsync(long parentId, IReadOnlyList<StatusInfo> statuses,
+        IReadOnlyList<TeamMemberInfo> team, PageRequest page, CancellationToken ct)
     {
         page = page.Normalized();
         var query = db.WorkItems.AsNoTracking().Where(w => w.ParentId == parentId);
         var total = await query.CountAsync(ct);
         var rows = await query.OrderBy(w => w.Rank).ThenBy(w => w.Id)
             .Skip(page.Skip).Take(page.PageSize)
-            .Select(w => new { w.Key, w.Title, w.StatusId, w.Priority, w.RowVersion })
+            .Select(w => new { w.Key, w.Title, w.StatusId, w.Priority, w.RowVersion, w.AssigneeId, w.DueDate })
             .ToListAsync(ct);
-        var items = rows.ConvertAll(r => new SubtaskView(r.Key, r.Title, ToOption(statuses, r.StatusId), r.Priority, r.RowVersion));
+        var people = await assignees.DescribeAsync(team, rows.Where(r => r.AssigneeId != null).Select(r => r.AssigneeId!.Value), ct);
+        var items = rows.ConvertAll(r => new SubtaskView(r.Key, r.Title, ToOption(statuses, r.StatusId), r.Priority, r.RowVersion,
+            r.AssigneeId is { } assigneeId ? people[assigneeId] : null, r.DueDate));
         return new Page<SubtaskView>(items, total, page.Page, page.PageSize);
     }
 

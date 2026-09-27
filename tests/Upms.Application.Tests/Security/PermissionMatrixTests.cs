@@ -30,15 +30,6 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
 {
     private const string NewPassword = "a brand new passphrase 77";
 
-    /// <summary>Rows whose operations arrive with Phase 2 User Story 2 (tasks.md T048); their cells are skipped until then.</summary>
-    private static readonly HashSet<string> PendingUntilUs2 = new(StringComparer.Ordinal)
-    {
-        "Assign tasks and set their dates (drawer or timeline)",
-        "See \"My tasks\" (own open assigned tasks in projects they can see)",
-    };
-
-    private const string PendingOperation = "(arrives with US2)";
-
     /// <summary>The operations that implement each row of the matrix.</summary>
     private static readonly Dictionary<string, (string Name, Operation Run)[]> Rows = new(StringComparer.Ordinal)
     {
@@ -95,6 +86,11 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
             ("move a card", (t, w) => t.Try<IBoardService, CardView>(s => s.MoveCardAsync("WEB-1", w.InProgress, CardPlacement.AtEnd, w.Task1Version, Ct))),
             ("reorder a card", (t, w) => t.Try<IBoardService, CardView>(s => s.MoveCardAsync("WEB-2", w.ToDo, CardPlacement.AtTop, w.Task2Version, Ct))),
         ],
+        ["Assign tasks and set their dates (drawer or timeline)"] =
+        [
+            ("assign a task", (t, w) => t.Edit(new WorkItemEdit.Assignee(w.Other.Id), w.Task1Version)),
+            ("set a task's dates", (t, w) => t.Edit(new WorkItemEdit.Dates(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10)), w.Task1Version)),
+        ],
         ["Add comments"] =
         [
             ("add a comment", (t, _) => t.Try<ICommentService, CommentView>(s => s.AddAsync("WEB-1", "Looks good", Ct))),
@@ -112,6 +108,10 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         [
             ("list deleted tasks", (t, _) => t.Try<IWorkItemService, Page<DeletedItemView>>(s => s.ListDeletedAsync("WEB", PageRequest.First, Ct))),
             ("restore a deleted task", (t, _) => t.Try<IWorkItemService>(s => s.RestoreAsync("WEB-3", Ct))),
+        ],
+        ["See \"My tasks\" (own open assigned tasks in projects they can see)"] =
+        [
+            ("see my tasks", (t, _) => t.Try<IMyTasksService, Page<MyTaskRow>>(s => s.ListAsync(PageRequest.First, Ct))),
         ],
         ["Manage accounts (list, add, reset password, deactivate, reactivate)"] =
         [
@@ -141,11 +141,8 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         var data = new TheoryData<string, string, Role, string>();
         foreach (var (action, cells) in ReadMatrix())
         {
-            var names = Rows.TryGetValue(action, out var operations)
-                ? operations.Select(o => o.Name).ToList()
-                : PendingUntilUs2.Contains(action) ? [PendingOperation] : null;
-            Assert.True(names is not null, $"No test operations for the permissions.md row \"{action}\".");
-            foreach (var name in names!)
+            Assert.True(Rows.TryGetValue(action, out var operations), $"No test operations for the permissions.md row \"{action}\".");
+            foreach (var name in operations.Select(o => o.Name))
             {
                 foreach (var role in Enum.GetValues<Role>())
                 {
@@ -161,11 +158,6 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
     [MemberData(nameof(Cells))]
     public async Task P2_SC003_Every_cell_of_the_permission_matrix_is_enforced(string action, string operation, Role role, string cell)
     {
-        if (operation == PendingOperation)
-        {
-            Assert.Skip("The operations for this row arrive with Phase 2 User Story 2.");
-        }
-
         var world = await SetUpAsync();
         ActAs(world.Caller(role));
 
@@ -242,6 +234,40 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         ActAs(world.Other);
         Assert.Equal(ErrorKind.NotFound, (await Try<IBoardService, BoardView>(s => s.GetAsync("WEB", false, Ct)))?.Kind);
         Assert.Equal(ErrorKind.NotFound, (await Try<IWorkItemService, WorkItemDetails>(s => s.GetAsync("WEB-1", Ct)))?.Kind);
+    }
+
+    [Fact]
+    public async Task Rule5_Only_active_Project_Admins_and_Members_can_be_assigned_and_stay_assigned_after_leaving()
+    {
+        var world = await SetUpAsync();
+        ActAs(world.Owner);
+
+        foreach (var person in new[] { world.Viewer, world.Outsider, world.Deactivated, world.Admin })
+        {
+            Assert.Equal(ErrorCodes.NotAssignable, (await Edit(new WorkItemEdit.Assignee(person.Id), world.Task1Version))?.Code);
+        }
+
+        Assert.Null(await Edit(new WorkItemEdit.Assignee(world.Other.Id), world.Task1Version));
+        Assert.Null(await Try<IProjectMemberService, TeamView>(s => s.RemoveAsync("WEB", world.Other.Id, world.MembersVersion, Ct)));
+        var details = (await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s => s.GetAsync("WEB-1", Ct))).ValueOrThrow();
+        Assert.Equal((world.Other.Id, false), (details.Assignee!.UserId, details.Assignee.CanWork));
+    }
+
+    [Fact]
+    public async Task Rule7_My_tasks_lists_only_projects_the_caller_can_still_see()
+    {
+        var world = await SetUpAsync();
+        ActAs(world.Owner);
+        Assert.Null(await Edit(new WorkItemEdit.Assignee(world.Other.Id), world.Task1Version));
+
+        ActAs(world.Other);
+        Assert.Equal(["WEB-1"], (await CallAsync<IMyTasksService, Result<Page<MyTaskRow>>>(s => s.ListAsync(PageRequest.First, Ct))).ValueOrThrow().Items.Select(r => r.Key));
+
+        ActAs(world.Owner);
+        Assert.Null(await Try<IProjectMemberService, TeamView>(s => s.RemoveAsync("WEB", world.Other.Id, world.MembersVersion, Ct)));
+
+        ActAs(world.Other);
+        Assert.Empty((await CallAsync<IMyTasksService, Result<Page<MyTaskRow>>>(s => s.ListAsync(PageRequest.First, Ct))).ValueOrThrow().Items);
     }
 
     private static IEnumerable<(string Action, string[] Cells)> ReadMatrix()

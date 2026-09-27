@@ -24,6 +24,7 @@ public static class WebServiceCollectionExtensions
         services.AddScoped<IdentityRedirectManager>();
         services.AddScoped<LiveAnnouncer>();
         services.AddScoped<ViewerTimeZone>();
+        services.AddScoped<ViewerToday>();
 
         services.AddAuthentication(options =>
             {
@@ -105,6 +106,7 @@ public static class WebServiceCollectionExtensions
         services.AddOperationScoped<Upms.Application.Work.IBoardService>();
         services.AddOperationScoped<Upms.Application.Work.IWorkItemService>();
         services.AddOperationScoped<Upms.Application.Work.ICommentService>();
+        services.AddOperationScoped<Upms.Application.Work.IMyTasksService>();
         return services;
     }
 

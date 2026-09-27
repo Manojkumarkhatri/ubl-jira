@@ -5,8 +5,11 @@ namespace Upms.Web.Tests.Fakes;
 
 public sealed class FakeAccountService : IAccountService
 {
+    /// <summary>The viewer's time zone (IANA ID).</summary>
+    public string TimeZoneId { get; set; } = "UTC";
+
     public Task<Result<MyProfile>> GetProfileAsync(CancellationToken ct) =>
-        Task.FromResult(Result<MyProfile>.Ok(new MyProfile(Guid.NewGuid(), "amina", "Amina Khan", "amina@example.com", null, "UTC", false)));
+        Task.FromResult(Result<MyProfile>.Ok(new MyProfile(Guid.NewGuid(), "amina", "Amina Khan", "amina@example.com", null, TimeZoneId, false)));
 
     public Task<Result> UpdateProfileAsync(string displayName, string? timeZoneId, CancellationToken ct) => Task.FromResult(Result.Ok());
 

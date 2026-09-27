@@ -1,0 +1,31 @@
+@using Upms.Application.Work
+
+@* A task's assignee: their initials, with the full name as text (Phase 2 FR-021), and a note in words when they can
+   no longer work on the project (FR-024). *@
+@if (Assignee is { } assignee)
+{
+    <span class="assignee @(assignee.CanWork ? "" : "is-gone")" title="@assignee.DisplayName" data-testid="assignee">
+        <span class="avatar" aria-hidden="true">@assignee.Initials</span>
+        @if (ShowName)
+        {
+            <span class="assignee-name">@assignee.DisplayName</span>
+        }
+        else
+        {
+            <span class="sr-only">Assigned to @assignee.DisplayName</span>
+        }
+        @if (!assignee.CanWork)
+        {
+            <span class="gone-label">no longer on the project</span>
+        }
+    </span>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public AssigneeRef? Assignee { get; set; }
+
+    /// <summary>Shows the name next to the initials instead of only to screen readers.</summary>
+    [Parameter]
+    public bool ShowName { get; set; }
+}

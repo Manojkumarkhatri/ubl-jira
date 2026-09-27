@@ -20,6 +20,10 @@ public abstract class BunitTestBase : BunitContext
         Time = new FakeTimeProvider(Start);
         Services.AddSingleton<TimeProvider>(Time);
         Services.AddSingleton<ICurrentUser>(CurrentUser);
+        // The viewer's time zone and today (UTC unless a test registers another account service).
+        Services.AddSingleton<Upms.Application.Identity.IAccountService>(new FakeAccountService());
+        Services.AddScoped<Upms.Web.Components.Shared.ViewerTimeZone>();
+        Services.AddScoped<Upms.Web.Components.Shared.ViewerToday>();
         Auth = AddAuthorization();
         Auth.SetAuthorized("amina");
         Auth.SetClaims(new Claim(ClaimTypes.NameIdentifier, CurrentUser.UserId!.Value.ToString()));

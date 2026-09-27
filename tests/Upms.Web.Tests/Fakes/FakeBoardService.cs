@@ -12,6 +12,9 @@ public sealed class FakeBoardService : IBoardService
     public const long InProgress = 2;
     public const long Done = 3;
 
+    /// <summary>The signed-in person the board is shown to.</summary>
+    public static readonly Guid Viewer = Guid.NewGuid();
+
     public FakeBoardService()
     {
         Board = new BoardView("WEB", "Website Revamp", 1, CanManageColumns: true, ShowingAllDone: false, HiddenDoneCount: 0,
@@ -26,7 +29,7 @@ public sealed class FakeBoardService : IBoardService
                 Card("WEB-3", "Pick the colours", Priority.Low, InProgress),
             ]),
             new ColumnView(Done, "Done", StatusCategory.Done, null, 0, false, []),
-        ], CanContribute: true);
+        ], Viewer, CanContribute: true);
     }
 
     public BoardView Board { get; set; }
@@ -41,8 +44,9 @@ public sealed class FakeBoardService : IBoardService
 
     public int Loads { get; private set; }
 
-    public static CardView Card(string key, string title, Priority priority, long columnId) =>
-        new(key, title, priority, columnId, 0, 0, [1, 2, 3]);
+    public static CardView Card(string key, string title, Priority priority, long columnId, AssigneeRef? assignee = null,
+        DateOnly? dueDate = null) =>
+        new(key, title, priority, columnId, 0, 0, [1, 2, 3], assignee, dueDate);
 
     public Task<Result<BoardView>> GetAsync(string projectKey, bool showAllDone, CancellationToken ct)
     {

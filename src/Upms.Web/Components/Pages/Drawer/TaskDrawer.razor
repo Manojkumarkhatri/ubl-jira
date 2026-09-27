@@ -1,7 +1,10 @@
+@using System.Globalization
 @using Upms.Application.Work
+@using Upms.Domain.Common
 @using Upms.Domain.Work
 @implements IDisposable
 @inject IWorkItemService Items
+@inject ViewerToday ViewerToday
 @inject LiveAnnouncer Announcer
 @inject IJSRuntime JS
 
@@ -153,7 +156,7 @@
 
                 @if (d.Type == WorkItemType.Task)
                 {
-                    <SubtaskList @key="@($"subtasks-{d.Key}")" ProjectKey="@d.ProjectKey" Subtasks="d.Subtasks" Statuses="d.Statuses" ReadOnly="!d.CanContribute"
+                    <SubtaskList @key="@($"subtasks-{d.Key}")" ProjectKey="@d.ProjectKey" Subtasks="d.Subtasks" Statuses="d.Statuses" ReadOnly="!d.CanContribute" Today="_today"
                                  OnAdd="AddSubtaskAsync" OnMarkDone="MarkSubtaskDoneAsync" OnStatusChange="ChangeSubtaskStatusAsync"
                                  OnShowMore="ShowMoreSubtasksAsync" />
                 }
@@ -185,6 +188,80 @@
                         }
                     </select>
                 </div>
+                @if (d.CanContribute)
+                {
+                    <div class="detail-row">
+                        <label for="drawer-assignee">Assignee</label>
+                        <div class="field-stack">
+                            <select id="drawer-assignee" class="select" disabled="@_busy" value="@(_pendingAssignee ?? AssigneeValue(d))" @onchange="AssigneeChangedAsync">
+                                <option value="">Unassigned</option>
+                                @if (d.Assignee is { CanWork: false } former)
+                                {
+                                    <option value="@former.UserId" disabled>@former.DisplayName (no longer on the project)</option>
+                                }
+                                @foreach (var option in d.AssigneeOptions)
+                                {
+                                    <option value="@option.UserId">@option.DisplayName@(option.IsMe ? " (me)" : "")</option>
+                                }
+                            </select>
+                            @if (d.AssigneeOptions.FirstOrDefault(o => o.IsMe) is { } me && d.Assignee?.UserId != me.UserId)
+                            {
+                                <button type="button" class="btn btn-sm btn-ghost" data-testid="assign-to-me" disabled="@_busy"
+                                        @onclick="() => AssignAsync(me.UserId, me.DisplayName, isMe: true)">Assign to me</button>
+                            }
+                        </div>
+                    </div>
+                    <div data-testid="drawer-dates">
+                        <div class="detail-row">
+                            <label for="drawer-start">Start date</label>
+                            <input id="drawer-start" type="date" class="input" min="2000-01-01" max="2099-12-31" disabled="@_busy"
+                                   value="@(_startDraft ?? Iso(d.StartDate))" @onchange="StartDateChangedAsync"
+                                   aria-invalid="@(_datesErrorField == "StartDate" ? "true" : "false")" aria-describedby="drawer-dates-error" />
+                        </div>
+                        <div class="detail-row">
+                            <label for="drawer-due">Due date</label>
+                            <div class="field-stack">
+                                <input id="drawer-due" type="date" class="input" min="2000-01-01" max="2099-12-31" disabled="@_busy"
+                                       value="@(_dueDraft ?? Iso(d.DueDate))" @onchange="DueDateChangedAsync"
+                                       aria-invalid="@(_datesErrorField == "DueDate" ? "true" : "false")" aria-describedby="drawer-dates-error" />
+                                @if (IsOverdue(d))
+                                {
+                                    <span class="overdue-label">Overdue</span>
+                                }
+                            </div>
+                        </div>
+                        <span id="drawer-dates-error" class="error-text" role="alert">@_datesError</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="detail-row">
+                        <span>Assignee</span>
+                        <span data-testid="drawer-assignee-text">
+                            @if (d.Assignee is null)
+                            {
+                                <span class="hint">Unassigned</span>
+                            }
+                            <AssigneeBadge Assignee="d.Assignee" ShowName="true" />
+                        </span>
+                    </div>
+                    <div data-testid="drawer-dates">
+                        <div class="detail-row">
+                            <span>Start date</span>
+                            <span>@(d.StartDate is { } start ? start.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : "None")</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Due date</span>
+                            <span>
+                                @if (d.DueDate is null)
+                                {
+                                    <text>None</text>
+                                }
+                                <DueDateText Due="d.DueDate" IsOpen="@(d.Status.Category != StatusCategory.Done)" Today="_today" WithYear="true" />
+                            </span>
+                        </div>
+                    </div>
+                }
                 <div class="detail-row"><span>Type</span><span>@(d.Type == WorkItemType.Task ? "Task" : "Sub-task")</span></div>
                 <div class="detail-row"><span>Created by</span><span>@d.CreatorName</span></div>
                 <div class="detail-row"><span>Created</span><span class="hint"><LocalTime Value="d.CreatedAt" /></span></div>
@@ -242,6 +319,12 @@
     private string? _descriptionError;
     private long? _pendingStatus;
     private Priority? _pendingPriority;
+    private string? _pendingAssignee;
+    private string? _startDraft;
+    private string? _dueDraft;
+    private string? _datesError;
+    private string? _datesErrorField;
+    private DateOnly _today;
     private DeletePreview? _deletePreview;
     private string? _deleteError;
     private string? _focusAfterRender;
@@ -269,6 +352,7 @@
         // A link inside the drawer (a sub-task, or back to the parent) shows another item in the same dialog.
         _loadedKey = WorkItemKey;
         ResetForNewItem();
+        _today = await ViewerToday.GetAsync();
         var result = await Items.GetAsync(WorkItemKey, CancellationToken.None);
         if (!string.Equals(WorkItemKey, _loadedKey, StringComparison.Ordinal))
         {
@@ -355,6 +439,7 @@
         _titleError = null;
         _editingDescription = false;
         _descriptionError = null;
+        ClearDateDrafts();
         _deletePreview = null;
     }
 
@@ -476,6 +561,119 @@
         {
             _pendingPriority = null;
         }
+    }
+
+    // ----- Assignee and dates (Phase 2 FR-017–FR-020) -----
+
+    private static string AssigneeValue(WorkItemDetails details) => details.Assignee?.UserId.ToString() ?? "";
+
+    private static string Iso(DateOnly? date) => date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
+
+    private bool IsOverdue(WorkItemDetails details) =>
+        details.Status.Category != StatusCategory.Done && details.DueDate < _today && _dueDraft is null;
+
+    private Task AssigneeChangedAsync(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        if (value.Length == 0)
+        {
+            return AssignAsync(null, null, isMe: false);
+        }
+
+        return Guid.TryParse(value, out var userId)
+            ? AssignAsync(userId, _details?.AssigneeOptions.FirstOrDefault(o => o.UserId == userId)?.DisplayName, isMe: false)
+            : Task.CompletedTask;
+    }
+
+    private async Task AssignAsync(Guid? userId, string? name, bool isMe)
+    {
+        if (_details is null || userId == _details.Assignee?.UserId)
+        {
+            return;
+        }
+
+        _pendingAssignee = userId?.ToString() ?? "";
+        try
+        {
+            var message = userId is null ? "Assignee removed" : isMe ? "Assigned to you" : $"Assigned to {name}";
+            var outcome = await SaveAsync(new WorkItemEdit.Assignee(userId), message, ConflictField.None);
+            if (outcome.Error?.Code == ErrorCodes.NotAssignable)
+            {
+                await ReloadAsync(); // the person left the team or changed role: offer the current choices
+            }
+        }
+        finally
+        {
+            _pendingAssignee = null;
+        }
+    }
+
+    private Task StartDateChangedAsync(ChangeEventArgs e)
+    {
+        _startDraft = e.Value?.ToString() ?? "";
+        return SaveDatesAsync("Start date saved");
+    }
+
+    private Task DueDateChangedAsync(ChangeEventArgs e)
+    {
+        _dueDraft = e.Value?.ToString() ?? "";
+        return SaveDatesAsync("Due date saved");
+    }
+
+    /// <summary>Both dates go in one edit; refused dates stay in the fields with the reason (FR-018).</summary>
+    private async Task SaveDatesAsync(string savedMessage)
+    {
+        if (_details is not { } details)
+        {
+            return;
+        }
+
+        var startText = _startDraft ?? Iso(details.StartDate);
+        var dueText = _dueDraft ?? Iso(details.DueDate);
+        if (!TryParseDate(startText, out var start) || !TryParseDate(dueText, out var due))
+        {
+            _datesErrorField = TryParseDate(startText, out _) ? "DueDate" : "StartDate";
+            _datesError = "Enter a complete date: day, month and year.";
+            return;
+        }
+
+        if (start == details.StartDate && due == details.DueDate)
+        {
+            ClearDateDrafts();
+            return;
+        }
+
+        var outcome = await SaveAsync(new WorkItemEdit.Dates(start, due), savedMessage, ConflictField.None);
+        if (outcome.Error is { Kind: ErrorKind.Validation } invalid)
+        {
+            _datesErrorField = invalid.FieldErrors?.Keys.FirstOrDefault() ?? "DueDate";
+            _datesError = invalid.MessageFor(_datesErrorField);
+        }
+        else
+        {
+            ClearDateDrafts(); // saved, or a conflict whose latest dates are now shown
+        }
+    }
+
+    private static bool TryParseDate(string text, out DateOnly? date)
+    {
+        date = null;
+        if (text.Length == 0)
+        {
+            return true;
+        }
+
+        var parsed = DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var value);
+        date = parsed ? value : null;
+        return parsed;
+    }
+
+    private void ClearDateDrafts()
+    {
+        _startDraft = null;
+        _dueDraft = null;
+        _datesError = null;
+        _datesErrorField = null;
     }
 
     /// <summary>Saves one field. A conflict shows the latest values and keeps the user's text (FR-032).</summary>

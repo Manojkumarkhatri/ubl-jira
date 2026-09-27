@@ -53,8 +53,8 @@ internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext cal
     }
 
     /// <summary>The project with the caller's role in it, read in one query.</summary>
-    private IQueryable<ProjectRef> WithRoleOf(IQueryable<Project> projects, Guid userId) =>
-        projects.AsNoTracking().Select(p => new ProjectRef(p.Id, p.Key,
+    private IQueryable<ProjectWithRole> WithRoleOf(IQueryable<Project> projects, Guid userId) =>
+        projects.AsNoTracking().Select(p => new ProjectWithRole(p.Id, p.Key,
             db.ProjectMembers.Where(m => m.ProjectId == p.Id && m.UserId == userId).Select(m => (ProjectRole?)m.Role).FirstOrDefault()));
 
     private Task<ProjectRole?> RoleAsync(long projectId, Guid userId, CancellationToken ct) =>
@@ -63,7 +63,7 @@ internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext cal
             .Select(m => (ProjectRole?)m.Role)
             .FirstOrDefaultAsync(ct);
 
-    private Result<ProjectAccessInfo> Evaluate(CallerStatus user, ProjectRef? project, ProjectRight right)
+    private Result<ProjectAccessInfo> Evaluate(CallerStatus user, ProjectWithRole? project, ProjectRight right)
     {
         if (project is null)
         {
@@ -105,5 +105,5 @@ internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext cal
     [LoggerMessage(EventId = 4030, Level = LogLevel.Warning, Message = "Access denied: user {UserId} asked for {Right} on project {Project}")]
     private static partial void LogDenied(ILogger logger, Guid? userId, ProjectRight right, string? project);
 
-    private sealed record ProjectRef(long Id, string Key, ProjectRole? Role);
+    private sealed record ProjectWithRole(long Id, string Key, ProjectRole? Role);
 }

@@ -10,6 +10,9 @@ public interface IProjectWorkflow
     /// <summary>The project's statuses in position order.</summary>
     Task<IReadOnlyList<StatusInfo>> StatusesAsync(long projectId, CancellationToken ct);
 
+    /// <summary>The statuses of several projects at once, by project ID ("My tasks", Phase 2 research R13).</summary>
+    Task<IReadOnlyDictionary<long, IReadOnlyList<StatusInfo>>> StatusesAsync(IReadOnlyCollection<long> projectIds, CancellationToken ct);
+
     /// <summary>The leftmost "to do" status, where new sub-tasks start (FR-040).</summary>
     Task<StatusInfo> FirstToDoStatusAsync(long projectId, CancellationToken ct);
 }

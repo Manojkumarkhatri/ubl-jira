@@ -20,6 +20,7 @@
                 <label for="project-key">Key</label>
                 <input id="project-key" class="input key-input" maxlength="10" autocomplete="off"
                        @bind="_key" @bind:event="oninput" @bind:after="KeyEdited"
+                       @onfocus="() => _keyFocused = true" @onblur="() => _keyFocused = false"
                        aria-invalid="@Invalid("Key")" aria-describedby="project-key-hint project-key-error" />
                 <span id="project-key-hint" class="hint">
                     2–10 capital letters or digits, starting with a letter. Task keys start with it
@@ -47,6 +48,7 @@
     private string _key = "";
     private string _description = "";
     private bool _keyEditedByUser;
+    private bool _keyFocused;
     private int _suggestionRequest;
     private bool _busy;
     private AppError? _error;
@@ -59,20 +61,22 @@
         _key = "";
         _description = "";
         _keyEditedByUser = false;
+        _keyFocused = false;
         _error = null;
     }
 
     private async Task NameChangedAsync()
     {
-        if (_keyEditedByUser)
+        if (_keyEditedByUser || _keyFocused)
         {
             return;
         }
 
         var request = ++_suggestionRequest;
         var suggestion = await Projects.SuggestKeyAsync(_name, CancellationToken.None);
-        // A slower, older suggestion never replaces a newer one or a key the user typed meanwhile.
-        if (request == _suggestionRequest && !_keyEditedByUser)
+        // A slower, older suggestion never replaces a newer one, a key the user typed meanwhile, or the text of a key
+        // box the user has moved into: rewriting it there would mix the suggestion with what they type.
+        if (request == _suggestionRequest && !_keyEditedByUser && !_keyFocused)
         {
             _key = suggestion;
         }

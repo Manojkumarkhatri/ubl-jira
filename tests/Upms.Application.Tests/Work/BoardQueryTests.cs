@@ -57,6 +57,27 @@ public sealed class BoardQueryTests(SqlServerFixture fixture) : BoardTestBase(fi
     }
 
     [Fact]
+    public async Task P2_Cards_carry_the_assignee_and_due_date_and_the_board_knows_its_viewer()
+    {
+        var bilal = await MemberAsync("bilal");
+        var assigned = await AddAsync(ToDo, "Assigned and due");
+        await AddAsync(ToDo, "Nothing set");
+        var version = (await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s =>
+            s.UpdateAsync(assigned.Key, new WorkItemEdit.Assignee(bilal.Id), assigned.Version, Ct))).ValueOrThrow().Version;
+        await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s =>
+            s.UpdateAsync(assigned.Key, new WorkItemEdit.Dates(null, new DateOnly(2026, 10, 10)), version, Ct));
+
+        ActAs(bilal);
+        var board = await BoardAsync();
+
+        var cards = board.Columns[0].Cards;
+        Assert.Equal(new AssigneeRef(bilal.Id, "Bilal Tester", "BT", CanWork: true), cards[0].Assignee);
+        Assert.Equal(new DateOnly(2026, 10, 10), cards[0].DueDate);
+        Assert.Equal((null, (DateOnly?)null), (cards[1].Assignee, cards[1].DueDate));
+        Assert.Equal(bilal.Id, board.ViewerId);
+    }
+
+    [Fact]
     public async Task Unknown_projects_are_not_found()
     {
         var result = await CallAsync<IBoardService, Result<BoardView>>(s => s.GetAsync("NOPE", false, Ct));

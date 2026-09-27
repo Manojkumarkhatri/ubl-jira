@@ -32,6 +32,8 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Treasury Operations");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("TRS");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
         await page.WaitForURLAsync("**/projects/TRS/board");
@@ -114,6 +116,8 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Audit Findings");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("AUD");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
         await page.WaitForURLAsync("**/projects/AUD/board");

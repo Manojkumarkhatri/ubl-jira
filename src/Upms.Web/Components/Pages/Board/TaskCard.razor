@@ -13,7 +13,9 @@
         {
             <span class="subtasks" data-testid="subtask-progress">@Card.SubtasksDone/@Card.SubtasksTotal<span class="sr-only"> sub-tasks done</span></span>
         }
+        <DueDateText Due="Card.DueDate" IsOpen="IsOpen" Today="Today" />
         <span class="spacer"></span>
+        <AssigneeBadge Assignee="Card.Assignee" />
         @if (CanContribute)
         {
             <MoveToMenu CardKey="@Card.Key" Columns="MoveTargets" OnMove="request => OnMove.InvokeAsync((Card, request))" />
@@ -38,6 +40,14 @@
 
     [Parameter]
     public bool IsDragging { get; set; }
+
+    /// <summary>False in "done" columns, whose cards are never overdue (Phase 2 FR-020).</summary>
+    [Parameter]
+    public bool IsOpen { get; set; } = true;
+
+    /// <summary>The viewer's today, for the overdue mark (Phase 2 FR-042).</summary>
+    [Parameter, EditorRequired]
+    public DateOnly Today { get; set; }
 
     /// <summary>False for Viewers: the card can be opened but not dragged or moved (Phase 2 FR-003).</summary>
     [Parameter]

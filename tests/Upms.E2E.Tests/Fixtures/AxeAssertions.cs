@@ -11,6 +11,12 @@ public static class AxeAssertions
 
     public static async Task AssertNoAccessibilityViolationsAsync(this IPage page)
     {
+        // A dialog still sliding in is partly transparent, and axe would measure its colours mid-way.
+        await page.EvaluateAsync("""
+            () => Promise.all(document.getAnimations()
+                .filter(a => a.effect?.getTiming().iterations !== Infinity)
+                .map(a => a.finished.catch(() => null)))
+            """);
         var result = await page.RunAxe(new AxeRunOptions { RunOnly = RunOnlyOptions.Tags(WcagTags) });
         var report = string.Join(Environment.NewLine, result.Violations.Select(v =>
             $"{v.Id} ({v.Impact}): {v.Help}{Environment.NewLine}  " +

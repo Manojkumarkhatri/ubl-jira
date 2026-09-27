@@ -2,6 +2,7 @@
 @using Upms.Application.Work
 @using Upms.Web.Components.Pages.Drawer
 @inject IBoardService Boards
+@inject ViewerToday ViewerToday
 @inject LiveAnnouncer Announcer
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -46,12 +47,28 @@ else
         <div class="alert alert-warn" role="status">@warning</div>
     }
 
+    @* Filters run over the cards already shown, so they apply at once (Phase 2 FR-022, research R10). *@
+    <div class="board-filters" role="group" aria-label="Filter cards">
+        <button type="button" class="btn btn-sm @(IsOnlyMine ? "active" : "")" aria-pressed="@(IsOnlyMine ? "true" : "false")"
+                data-testid="only-mine" @onclick="ToggleOnlyMine">Only my tasks</button>
+        <label for="assignee-filter">Assignee</label>
+        <select id="assignee-filter" class="select select-sm" value="@_assigneeFilter" @onchange="AssigneeFilterChanged">
+            <option value="">Anyone</option>
+            <option value="@MeFilter">@(MyName is { } name ? $"Me ({name})" : "Me")</option>
+            <option value="@UnassignedFilter">Unassigned</option>
+            @foreach (var person in _people)
+            {
+                <option value="@person.UserId">@person.DisplayName</option>
+            }
+        </select>
+    </div>
+
     <div class="board-wrap" role="region" aria-label="Board" tabindex="0">
         <div class="board">
             @foreach (var column in _board.Columns)
             {
                 <BoardColumn @key="column.Id" Column="column" ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
-                             CanContribute="_board.CanContribute"
+                             CanContribute="_board.CanContribute" Filter="CardFilter" Today="_today"
                              OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
                              OnDropBefore="DropBeforeAsync" OnDropAtEnd="DropAtEndAsync" OnMove="MoveFromMenuAsync"
                              OnCreate="CreateAsync" />
@@ -66,7 +83,12 @@ else
 }
 
 @code {
+    private const string MeFilter = "me";
+    private const string UnassignedFilter = "unassigned";
     private BoardView? _board;
+    private DateOnly _today;
+    private string _assigneeFilter = "";
+    private IReadOnlyList<AssigneeRef> _people = [];
     private bool _notFound;
     private string? _conflict;
     private string? _error;
@@ -121,7 +143,44 @@ else
 
         _notFound = false;
         _board = result.Value!;
+        _today = await ViewerToday.GetAsync();
         _moveTargets = _board.Columns.Select(c => new ColumnOption(c.Id, c.Name)).ToList();
+        // Everyone the cards are assigned to, apart from the viewer (offered as "Me").
+        _people = _board.Columns.SelectMany(c => c.Cards)
+            .Select(c => c.Assignee)
+            .OfType<AssigneeRef>()
+            .Where(a => a.UserId != _board.ViewerId)
+            .DistinctBy(a => a.UserId)
+            .OrderBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private bool IsOnlyMine => _assigneeFilter == MeFilter;
+
+    private string? MyName => _board?.Columns.SelectMany(c => c.Cards)
+        .Select(c => c.Assignee)
+        .FirstOrDefault(a => a?.UserId == _board.ViewerId)?.DisplayName;
+
+    /// <summary>"Only my tasks" is a shortcut for the assignee filter's "Me".</summary>
+    private Func<CardView, bool>? CardFilter => _assigneeFilter switch
+    {
+        MeFilter => card => card.Assignee?.UserId == _board!.ViewerId,
+        UnassignedFilter => card => card.Assignee is null,
+        var id when Guid.TryParse(id, out var userId) => card => card.Assignee?.UserId == userId,
+        _ => null,
+    };
+
+    private void ToggleOnlyMine() => ApplyFilter(IsOnlyMine ? "" : MeFilter);
+
+    private void AssigneeFilterChanged(ChangeEventArgs e) => ApplyFilter(e.Value?.ToString() ?? "");
+
+    private void ApplyFilter(string filter)
+    {
+        _assigneeFilter = filter;
+        var cards = _board?.Columns.SelectMany(c => c.Cards).ToList() ?? [];
+        Announcer.Announce(CardFilter is { } matches
+            ? $"Showing {cards.Count(matches)} of {cards.Count} cards."
+            : $"Showing all {cards.Count} cards.");
     }
 
     private void CloseDrawer()

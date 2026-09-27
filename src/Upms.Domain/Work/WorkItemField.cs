@@ -15,4 +15,7 @@ public enum WorkItemField
     CommentDeleted,
     Deleted,
     Restored,
+    Assignee,
+    StartDate,
+    DueDate,
 }

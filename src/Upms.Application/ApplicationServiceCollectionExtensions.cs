@@ -37,6 +37,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IBoardColumnService, BoardColumnService>();
         services.AddScoped<IProjectMemberService, ProjectMemberService>();
+        services.AddScoped<IProjectTeam, ProjectTeam>();
 
         // Work module
         services.AddScoped<IWorkItemCounts, WorkItemCounts>();
@@ -44,10 +45,12 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<RankRebalancer>();
         services.AddScoped<IRankRebalancer>(sp => sp.GetRequiredService<RankRebalancer>());
         services.AddScoped<CardRanker>();
+        services.AddScoped<AssigneeReads>();
         services.AddScoped<WorkItemReads>();
         services.AddScoped<IBoardService, BoardService>();
         services.AddScoped<IWorkItemService, WorkItemService>();
         services.AddScoped<ICommentService, CommentService>();
+        services.AddScoped<IMyTasksService, MyTasksService>();
         return services;
     }
 }

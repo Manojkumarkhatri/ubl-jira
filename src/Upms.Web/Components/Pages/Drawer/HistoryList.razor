@@ -101,7 +101,26 @@ else
             WorkItemField.CommentDeleted => "deleted a comment",
             WorkItemField.Deleted => $"deleted the {ItemNoun}",
             WorkItemField.Restored => $"restored the {ItemNoun}",
+            WorkItemField.Assignee when change.OldValue is null => $"assigned the {ItemNoun} to {change.NewValue}",
+            WorkItemField.Assignee when change.NewValue is null => $"removed the assignee {change.OldValue}",
+            WorkItemField.Assignee => $"reassigned the {ItemNoun} from {change.OldValue} to {change.NewValue}",
+            WorkItemField.StartDate => DescribeDate("start date", change),
+            WorkItemField.DueDate => DescribeDate("due date", change),
             _ => $"changed {change.Field}",
         };
     }
+
+    // Dates are stored as ISO values and shown as "1 Oct 2026" (Phase 2 research R8).
+    private static string DescribeDate(string name, ChangeView change) => (change.OldValue, change.NewValue) switch
+    {
+        (null, var added) => $"set the {name} to {ShowDate(added)}",
+        (var removed, null) => $"cleared the {name} (was {ShowDate(removed)})",
+        var (from, to) => $"changed the {name} from {ShowDate(from)} to {ShowDate(to)}",
+    };
+
+    private static string ShowDate(string? iso) =>
+        DateOnly.TryParseExact(iso, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var date)
+            ? date.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
+            : iso ?? "";
 }

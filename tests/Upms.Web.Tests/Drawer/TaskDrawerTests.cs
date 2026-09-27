@@ -23,6 +23,7 @@ public sealed class TaskDrawerTests : BunitTestBase
         Services.AddSingleton<ICommentService>(new FakeCommentService(CurrentUser.UserId!.Value));
         Services.AddScoped<LiveAnnouncer>();
         Services.AddScoped<ViewerTimeZone>();
+        Services.AddScoped<ViewerToday>();
         Services.AddSingleton<Upms.Application.Identity.IAccountService>(new FakeAccountService());
     }
 

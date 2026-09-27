@@ -100,7 +100,7 @@ A check constraint `CK_WorkItems_Dates` enforces the date rules in the database 
 |-------|------|--------|------------------|--------|
 | `IX_WorkItems_Board` (changed) | ProjectId, StatusId, Rank | live top-level items | Key, Title, Priority, ResolvedAt, RowVersion, **AssigneeId, DueDate** | board cards (SC-002) |
 | `IX_WorkItems_Project_Live` (new) | ProjectId, Number | `IsDeleted = 0` | Key, Title, ParentId, StatusId, Priority, AssigneeId, StartDate, DueDate, UpdatedAt, Rank, RowVersion | list and timeline |
-| `IX_WorkItems_Assignee_Live` (new) | AssigneeId, ProjectId | `IsDeleted = 0 AND AssigneeId IS NOT NULL` | Key, Title, ParentId, StatusId, Priority, DueDate | "My tasks" |
+| `IX_WorkItems_Assignee_Live` (new) | AssigneeId, ProjectId | `IsDeleted = 0 AND AssigneeId IS NOT NULL` | Key, Title, ParentId, StatusId, Priority, DueDate, ResolvedAt | "My tasks" (open = `ResolvedAt` is null) |
 
 ## Identity module
 

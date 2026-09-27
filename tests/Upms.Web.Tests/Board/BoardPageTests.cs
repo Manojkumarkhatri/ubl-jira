@@ -19,6 +19,9 @@ public sealed class BoardPageTests : BunitTestBase
     {
         Services.AddSingleton<IBoardService>(_board);
         Services.AddScoped<LiveAnnouncer>();
+        Services.AddScoped<ViewerTimeZone>();
+        Services.AddScoped<ViewerToday>();
+        Services.AddSingleton<Upms.Application.Identity.IAccountService>(new FakeAccountService());
     }
 
     private IRenderedComponent<BoardPage> RenderBoard() => Render<BoardPage>(p => p.Add(x => x.Key, "WEB"));

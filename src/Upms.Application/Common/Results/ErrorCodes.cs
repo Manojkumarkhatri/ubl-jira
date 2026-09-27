@@ -27,4 +27,6 @@ public static class ErrorCodes
     public const string DestinationRequired = "DestinationRequired";
     public const string SubtaskDepth = "SubtaskDepth";
     public const string CommentNotOwned = "CommentNotOwned";
+    public const string NotAssignable = "NotAssignable";
+    public const string InvalidDates = "InvalidDates";
 }

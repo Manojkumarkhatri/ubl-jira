@@ -17,6 +17,8 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync(name);
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync(key);
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
         await page.WaitForURLAsync($"**/projects/{key}/board");

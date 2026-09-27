@@ -26,14 +26,16 @@ public sealed class FakeWorkItemService : IWorkItemService
 
     public Func<WorkItemEdit, Result<WorkItemDetails>>? NextEditResult { get; set; }
 
+    public int Loads { get; private set; }
+
     public static WorkItemDetails Sample(Guid? commentAuthor = null) => new(
         "WEB-1", "WEB", "Website Revamp", WorkItemType.Task, "Design the home page",
         "Hero first.\nSee https://example.com/brief", Priority.High, ToDo, [ToDo, InProgress, Done], null,
         "Amina Khan", T0, T0.AddHours(1), null, CanDelete: true, [1, 2, 3],
         new Page<SubtaskView>(
         [
-            new SubtaskView("WEB-2", "Wireframes", Done, Priority.Medium, [4]),
-            new SubtaskView("WEB-3", "Mock-ups", ToDo, Priority.Medium, [5]),
+            new SubtaskView("WEB-2", "Wireframes", Done, Priority.Medium, [4], null, null),
+            new SubtaskView("WEB-3", "Mock-ups", ToDo, Priority.Medium, [5], null, null),
         ], 2, 1, 50),
         new Page<CommentView>(
         [
@@ -44,10 +46,13 @@ public sealed class FakeWorkItemService : IWorkItemService
             new ChangeView(T0, "Amina Khan", WorkItemField.Created, null, "To Do", null),
             new ChangeView(T0.AddMinutes(5), "Amina Khan", WorkItemField.Priority, "Medium", "High", null),
         ], 2, 1, 50),
-        CanContribute: true);
+        null, null, null, [], CanContribute: true);
 
-    public Task<Result<WorkItemDetails>> GetAsync(string workItemKey, CancellationToken ct) =>
-        Task.FromResult(workItemKey == Details.Key ? Result<WorkItemDetails>.Ok(Details) : Result<WorkItemDetails>.Fail(AppError.NotFound("task")));
+    public Task<Result<WorkItemDetails>> GetAsync(string workItemKey, CancellationToken ct)
+    {
+        Loads++;
+        return Task.FromResult(workItemKey == Details.Key ? Result<WorkItemDetails>.Ok(Details) : Result<WorkItemDetails>.Fail(AppError.NotFound("task")));
+    }
 
     public Task<Result<WorkItemDetails>> UpdateAsync(string workItemKey, WorkItemEdit edit, byte[] expectedVersion, CancellationToken ct)
     {
@@ -63,6 +68,13 @@ public sealed class FakeWorkItemService : IWorkItemService
             WorkItemEdit.Description d => Details with { Description = d.Value },
             WorkItemEdit.Priority p => Details with { Priority = p.Value },
             WorkItemEdit.Status s => Details with { Status = Details.Statuses.Single(x => x.Id == s.ColumnId) },
+            WorkItemEdit.Assignee a => Details with
+            {
+                Assignee = a.UserId is { } id
+                    ? AssigneeRef.Of(id, Details.AssigneeOptions.Single(o => o.UserId == id).DisplayName, canWork: true)
+                    : null,
+            },
+            WorkItemEdit.Dates d => Details with { StartDate = d.Start, DueDate = d.Due },
             _ => Details,
         };
         return Task.FromResult(Result<WorkItemDetails>.Ok(Details));

@@ -22,6 +22,8 @@
                     <a class="child-link" href="projects/@ProjectKey/board?task=@subtask.Key">
                         <span class="key">@subtask.Key</span> <span class="child-title">@subtask.Title</span>
                     </a>
+                    <DueDateText Due="subtask.DueDate" IsOpen="@(subtask.Status.Category != StatusCategory.Done)" Today="Today" />
+                    <AssigneeBadge Assignee="subtask.Assignee" />
                     <label class="sr-only" for="subtask-status-@subtask.Key">Status of @subtask.Key</label>
                     <select id="subtask-status-@subtask.Key" class="select select-sm" disabled="@ReadOnly"
                             value="@(_pendingStatus.TryGetValue(subtask.Key, out var pending) ? pending : subtask.Status.Id)"
@@ -73,6 +75,10 @@
 
     [Parameter, EditorRequired]
     public IReadOnlyList<StatusOption> Statuses { get; set; } = [];
+
+    /// <summary>The viewer's today, for overdue marks (Phase 2 FR-042).</summary>
+    [Parameter]
+    public DateOnly Today { get; set; }
 
     /// <summary>True for Viewers: no new sub-tasks and no status changes (Phase 2 FR-003).</summary>
     [Parameter]

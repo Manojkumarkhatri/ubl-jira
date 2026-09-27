@@ -55,6 +55,8 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         var dialog = page.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Website Revamp");
         await Assertions.Expect(dialog.GetByLabel("Key")).ToHaveValueAsync("WR");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("WEB");
         await dialog.GetByLabel("Description (optional)").FillAsync("The new public website");
         await page.AssertNoAccessibilityViolationsAsync();
@@ -129,6 +131,8 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         dialog = page.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Payments");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("PAY");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
 

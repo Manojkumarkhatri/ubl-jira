@@ -40,6 +40,8 @@ public sealed class P2_US1_ProjectTeamTests(AppFixture app) : BrowserTest(app)
         await pita.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
         var dialog = pita.GetByTestId("create-project");
         await dialog.GetByLabel("Name").FillAsync("Team Charter");
+        // The suggested key appears first; typing over it before it arrives would mix the two.
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("TCH");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
         await pita.WaitForURLAsync("**/projects/TCH/board");

@@ -16,8 +16,9 @@ namespace Upms.Seed;
 /// the domain and EF Core; work items, their history and comments with bulk inserts. Every project has its owner as
 /// Project Admin, 4 to 20 Members and 0 to 3 Viewers (Phase 2 research R15), and only its contributors create,
 /// change and comment on its work. About 80% of work items are tasks and 20% sub-tasks; about 25% of tasks are to
-/// do, 15% in progress and 60% done (3% of those in the last 14 days), and 1% are deleted. Every generated change
-/// has a matching history row.</summary>
+/// do, 15% in progress and 60% done (3% of those in the last 14 days), and 1% are deleted. About 70% of work items
+/// are assigned to a contributor and about half have a due date, most of those with a start date too. Every
+/// generated change has a matching history row.</summary>
 public sealed class Seeder(string connectionString, Action<string> log)
 {
     private const int BatchRows = 20_000;
@@ -25,6 +26,8 @@ public sealed class Seeder(string connectionString, Action<string> log)
     /// <summary>Members of the largest project: enough for every tenth simulated user of the SC-002 run to work on it
     /// as a different person.</summary>
     private const int LargestProjectMembers = 40;
+
+    private readonly Dictionary<Guid, string> _names = [];
 
     public async Task<SeedSummary> RunAsync(SeedOptions options, CancellationToken ct)
     {
@@ -44,7 +47,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
 
         var users = await SeedUsersAsync(options, random, now, ct);
         var projects = await SeedProjectsAsync(options, users, random, now, ct);
-        var work = new WorkWriter(connectionString, random, now);
+        var work = new WorkWriter(connectionString, _names, random, now);
         await work.InitializeAsync(ct);
         foreach (var project in projects)
         {
@@ -90,6 +93,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
             };
             db.Users.Add(user);
             ids.Add(user.Id);
+            _names[user.Id] = user.DisplayName;
             if ((i + 1) % 1_000 == 0)
             {
                 await db.SaveChangesAsync(ct);
@@ -204,7 +208,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
         List<Guid> Contributors);
 
     /// <summary>Generates one project's work at a time into tables that are bulk-copied in batches.</summary>
-    private sealed class WorkWriter(string connectionString, Random random, DateTimeOffset now)
+    private sealed class WorkWriter(string connectionString, IReadOnlyDictionary<Guid, string> names, Random random, DateTimeOffset now)
     {
         private readonly DataTable _items = ItemsTable();
         private readonly DataTable _changes = ChangesTable();
@@ -321,6 +325,26 @@ public sealed class Seeder(string connectionString, Action<string> log)
                 AddChange(id, Later(createdAt, at), WorkItemField.Priority, nameof(Priority.Medium), priority.ToString(), null);
             }
 
+            Guid? assignee = random.Next(100) < 70 ? RandomContributor() : null;
+            if (assignee is { } person)
+            {
+                AddChange(id, Later(createdAt, at), WorkItemField.Assignee, null, names[person], null);
+            }
+
+            // Both dates are one edit, as in the drawer: one change set (Phase 2 research R8).
+            var (start, due) = RandomDates(createdAt);
+            if (due is not null)
+            {
+                var scheduledAt = Later(createdAt, at);
+                var changeSet = Seeder.NewGuid(random);
+                if (start is { } startDate)
+                {
+                    AddChange(id, scheduledAt, WorkItemField.StartDate, null, Iso(startDate), null, changeSetId: changeSet);
+                }
+
+                AddChange(id, scheduledAt, WorkItemField.DueDate, null, Iso(due.Value), null, changeSetId: changeSet);
+            }
+
             DateTimeOffset? deletedAt = deleted ? Later(at, null) : null;
             Guid? deletedBy = deleted ? RandomContributor() : null;
             if (deletedAt is { } when)
@@ -332,7 +356,8 @@ public sealed class Seeder(string connectionString, Action<string> log)
             _items.Rows.Add(id, project.Id, number, $"{project.Key}-{number}", type.ToString(), title,
                 (object?)SampleText.Description(random) ?? DBNull.Value, priority.ToString(), status.Id, rank,
                 (object?)parentId ?? DBNull.Value, creator, createdAt, at, (object?)resolvedAt ?? DBNull.Value, deleted,
-                (object?)deletedAt ?? DBNull.Value, (object?)deletedBy ?? DBNull.Value);
+                (object?)deletedAt ?? DBNull.Value, (object?)deletedBy ?? DBNull.Value, (object?)assignee ?? DBNull.Value,
+                (object?)start?.ToDateTime(TimeOnly.MinValue) ?? DBNull.Value, (object?)due?.ToDateTime(TimeOnly.MinValue) ?? DBNull.Value);
             WorkItems++;
             return at;
         }
@@ -352,9 +377,9 @@ public sealed class Seeder(string connectionString, Action<string> log)
         }
 
         private void AddChange(long workItemId, DateTimeOffset at, WorkItemField field, string? oldValue, string? newValue,
-            string? note, Guid? actor = null)
+            string? note, Guid? actor = null, Guid? changeSetId = null)
         {
-            _changes.Rows.Add(workItemId, Seeder.NewGuid(random), actor ?? RandomContributor(), at, field.ToString(),
+            _changes.Rows.Add(workItemId, changeSetId ?? Seeder.NewGuid(random), actor ?? RandomContributor(), at, field.ToString(),
                 (object?)oldValue ?? DBNull.Value, (object?)newValue ?? DBNull.Value, (object?)note ?? DBNull.Value);
             Changes++;
         }
@@ -368,6 +393,21 @@ public sealed class Seeder(string connectionString, Action<string> log)
         }
 
         private Guid RandomContributor() => _contributors[random.Next(_contributors.Count)];
+
+        /// <summary>About half of the work has a due date within two months of its creation; most of that also has a
+        /// start date up to two weeks before it.</summary>
+        private (DateOnly? Start, DateOnly? Due) RandomDates(DateTimeOffset createdAt)
+        {
+            if (random.Next(2) == 0)
+            {
+                return (null, null);
+            }
+
+            var due = DateOnly.FromDateTime(createdAt.UtcDateTime).AddDays(random.Next(1, 60));
+            return (random.Next(100) < 60 ? due.AddDays(-random.Next(0, 15)) : null, due);
+        }
+
+        private static string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         private Priority RandomPriority() => random.Next(100) switch
         {
@@ -414,7 +454,8 @@ public sealed class Seeder(string connectionString, Action<string> log)
             ("Type", typeof(string)), ("Title", typeof(string)), ("Description", typeof(string)), ("Priority", typeof(string)),
             ("StatusId", typeof(long)), ("Rank", typeof(string)), ("ParentId", typeof(long)), ("CreatedById", typeof(Guid)),
             ("CreatedAt", typeof(DateTimeOffset)), ("UpdatedAt", typeof(DateTimeOffset)), ("ResolvedAt", typeof(DateTimeOffset)),
-            ("IsDeleted", typeof(bool)), ("DeletedAt", typeof(DateTimeOffset)), ("DeletedById", typeof(Guid)));
+            ("IsDeleted", typeof(bool)), ("DeletedAt", typeof(DateTimeOffset)), ("DeletedById", typeof(Guid)),
+            ("AssigneeId", typeof(Guid)), ("StartDate", typeof(DateTime)), ("DueDate", typeof(DateTime)));
 
         private static DataTable ChangesTable() => Table(
             ("WorkItemId", typeof(long)), ("ChangeSetId", typeof(Guid)), ("ActorId", typeof(Guid)), ("OccurredAt", typeof(DateTimeOffset)),

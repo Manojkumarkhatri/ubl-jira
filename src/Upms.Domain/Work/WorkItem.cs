@@ -1,3 +1,4 @@
+using System.Globalization;
 using Upms.Domain.Common;
 
 namespace Upms.Domain.Work;
@@ -9,6 +10,12 @@ public sealed class WorkItem
     public const int TitleMaxLength = 255;
     public const int DescriptionMaxLength = 32_000;
     public const int KeyMaxLength = 21;
+    public const string InvalidDatesCode = "InvalidDates";
+
+    /// <summary>The first and last dates a task can have (Phase 2 FR-018).</summary>
+    public static readonly DateOnly EarliestDate = new(2000, 1, 1);
+
+    public static readonly DateOnly LatestDate = new(2099, 12, 31);
 
     private readonly List<WorkItemChange> _changes = [];
 
@@ -41,6 +48,15 @@ public sealed class WorkItem
     public string Rank { get; private set; } = "";
 
     public Guid CreatedById { get; private set; }
+
+    /// <summary>Who does the work: an active Project Admin or Member when assigned; kept if they later leave the
+    /// project, become a Viewer or are deactivated (Phase 2 FR-016, FR-024).</summary>
+    public Guid? AssigneeId { get; private set; }
+
+    /// <summary>Calendar dates, the same for every viewer (Phase 2 FR-018, FR-042).</summary>
+    public DateOnly? StartDate { get; private set; }
+
+    public DateOnly? DueDate { get; private set; }
 
     public DateTimeOffset CreatedAt { get; private set; }
 
@@ -173,6 +189,67 @@ public sealed class WorkItem
         }
     }
 
+    /// <summary>Sets, changes or clears the assignee (Phase 2 FR-016, FR-023). <paramref name="current"/> names the
+    /// present assignee for the history; whether <paramref name="assignee"/> may be assigned is the team's rule,
+    /// checked by the caller.</summary>
+    public void Assign(PersonRef? current, PersonRef? assignee, ChangeContext context)
+    {
+        if (current?.Id != AssigneeId)
+        {
+            throw new InvalidOperationException($"{Key} is not assigned to {current?.DisplayName ?? "nobody"}.");
+        }
+
+        if (assignee?.Id != AssigneeId)
+        {
+            Record(WorkItemField.Assignee, current?.DisplayName, assignee?.DisplayName, null, context);
+            AssigneeId = assignee?.Id;
+            UpdatedAt = context.At;
+        }
+    }
+
+    /// <summary>Sets, changes or clears both dates as one edit (Phase 2 FR-018, FR-023): each changed date is
+    /// recorded with ISO values in the same change set.</summary>
+    public DomainError? Schedule(DateOnly? start, DateOnly? due, ChangeContext context)
+    {
+        if (ValidateDates(start, due) is { } error)
+        {
+            return error;
+        }
+
+        if (start != StartDate)
+        {
+            Record(WorkItemField.StartDate, Iso(StartDate), Iso(start), null, context);
+            StartDate = start;
+            UpdatedAt = context.At;
+        }
+
+        if (due != DueDate)
+        {
+            Record(WorkItemField.DueDate, Iso(DueDate), Iso(due), null, context);
+            DueDate = due;
+            UpdatedAt = context.At;
+        }
+
+        return null;
+    }
+
+    /// <summary>Either date may be missing; both lie in 2000–2099 and the due date is not before the start date.</summary>
+    public static DomainError? ValidateDates(DateOnly? start, DateOnly? due)
+    {
+        const string outOfRange = "Choose a date between 1 Jan 2000 and 31 Dec 2099.";
+        if (start is { } s && (s < EarliestDate || s > LatestDate))
+        {
+            return new DomainError(InvalidDatesCode, outOfRange, "StartDate");
+        }
+
+        if (due is { } d && (d < EarliestDate || d > LatestDate))
+        {
+            return new DomainError(InvalidDatesCode, outOfRange, "DueDate");
+        }
+
+        return start > due ? new DomainError(InvalidDatesCode, "The due date cannot be before the start date.", "DueDate") : null;
+    }
+
     /// <summary>A sub-task of this task with its own key (FR-028). Sub-tasks cannot have sub-tasks.</summary>
     public DomainResult<WorkItem> AddSubtask(int number, string title, StatusRef status, string rank, ChangeContext context)
     {
@@ -238,6 +315,8 @@ public sealed class WorkItem
             _ => null,
         };
     }
+
+    private static string? Iso(DateOnly? date) => date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private void Record(WorkItemField field, string? oldValue, string? newValue, string? note, ChangeContext context) =>
         _changes.Add(new WorkItemChange(field, oldValue, newValue, note, context));

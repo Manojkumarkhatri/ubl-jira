@@ -1,21 +1,35 @@
 @using Upms.Application.Work
+@using Upms.Domain.Common
 
 <section class="col @(Column.OverLimit ? "over-limit" : "")" data-testid="column" aria-labelledby="col-@Column.Id-title">
     <header class="col-head">
         <h2 id="col-@Column.Id-title">@Column.Name</h2>
         <span class="sr-only">, cards:</span>
-        <span class="count">@CountText</span>
+        @if (Filter is null)
+        {
+            <span class="count">@CountText</span>
+        }
+        else
+        {
+            @* While filtering: how many cards match, of all the column's cards (Phase 2 FR-022). *@
+            <span class="count">@VisibleCards.Count of @Column.CardCount</span>
+            <span class="sr-only"> match the filter</span>
+            @if (Column.WipLimit is { } limit)
+            {
+                <span class="limit hint">limit @limit</span>
+            }
+        }
         @if (Column.OverLimit)
         {
             <span class="over-badge">Over limit</span>
         }
     </header>
     <ol class="col-body">
-        @foreach (var card in Column.Cards)
+        @foreach (var card in VisibleCards)
         {
             <li @key="card.Key">
                 <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
-                          CanContribute="CanContribute"
+                          CanContribute="CanContribute" IsOpen="@(Column.Category != StatusCategory.Done)" Today="Today"
                           OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" />
             </li>
         }
@@ -24,13 +38,13 @@
     {
         <div class="col-drop-end @(DraggingKey is null ? "" : "active")" data-testid="column-drop-end"
              @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDropAtEnd.InvokeAsync(Column)">
-            @(Column.Cards.Count == 0 ? "No cards yet" : DraggingKey is null ? "" : "Drop here to move to the end")
+            @(DraggingKey is not null ? "Drop here to move to the end" : EmptyText)
         </div>
         <InlineCreate ColumnName="@Column.Name" OnCreate="title => OnCreate(Column.Id, title)" />
     }
-    else if (Column.Cards.Count == 0)
+    else if (VisibleCards.Count == 0)
     {
-        <p class="col-empty hint">No cards yet</p>
+        <p class="col-empty hint">@EmptyText</p>
     }
 </section>
 
@@ -50,6 +64,14 @@
 
     [Parameter]
     public string? DraggingKey { get; set; }
+
+    /// <summary>The cards to show while a filter is on; null shows them all (Phase 2 FR-022).</summary>
+    [Parameter]
+    public Func<CardView, bool>? Filter { get; set; }
+
+    /// <summary>The viewer's today, for overdue marks (Phase 2 FR-042).</summary>
+    [Parameter, EditorRequired]
+    public DateOnly Today { get; set; }
 
     /// <summary>False for Viewers: no new tasks, no dragging, no "Move to" (Phase 2 FR-003).</summary>
     [Parameter]
@@ -72,6 +94,10 @@
 
     [Parameter, EditorRequired]
     public Func<long, string, Task<string?>> OnCreate { get; set; } = default!;
+
+    private IReadOnlyList<CardView> VisibleCards => Filter is null ? Column.Cards : Column.Cards.Where(Filter).ToList();
+
+    private string EmptyText => Column.Cards.Count == 0 ? "No cards yet" : VisibleCards.Count == 0 ? "No cards match the filter" : "";
 
     // "4 of 3" when a work-in-progress limit is set (FR-036).
     private string CountText => Column.WipLimit is { } limit ? $"{Column.CardCount} of {limit}" : Column.CardCount.ToString(System.Globalization.CultureInfo.InvariantCulture);

@@ -28,6 +28,25 @@ public sealed class CreateProjectDialogTests : BunitTestBase
     }
 
     [Fact]
+    public void A_suggestion_arriving_after_the_user_moves_into_the_key_box_is_not_written_into_it()
+    {
+        var cut = Render<CreateProjectDialog>();
+        cut.InvokeAsync(cut.Instance.Open);
+
+        cut.Find("#project-name").Input("Keyboard Drawer"); // the suggestion is still loading
+        cut.Find("#project-key").Focus();
+        cut.InvokeAsync(() => _projects.Pending.SetResult("KD"));
+
+        Assert.Equal("", cut.Find("#project-key").GetAttribute("value"));
+
+        // Back in the name box, suggestions resume.
+        cut.Find("#project-key").Blur();
+        cut.Find("#project-name").Input("Keyboard Drawers");
+        cut.InvokeAsync(() => _projects.Pending.SetResult("KD"));
+        Assert.Equal("KD", cut.Find("#project-key").GetAttribute("value"));
+    }
+
+    [Fact]
     public void An_older_suggestion_never_replaces_a_newer_one()
     {
         var cut = Render<CreateProjectDialog>();

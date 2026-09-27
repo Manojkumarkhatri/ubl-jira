@@ -1,0 +1,35 @@
+@using System.Globalization
+
+@* A due date, marked "Overdue" in words when the task is open and the date is before the viewer's today
+   (Phase 2 FR-020, FR-042). *@
+@if (Due is { } due)
+{
+    <span class="due @(IsOverdue ? "is-overdue" : "")" data-testid="due-date">
+        <span class="sr-only">Due </span><time datetime="@due.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)">@Text(due)</time>
+        @if (IsOverdue)
+        {
+            <span class="overdue-label">Overdue</span>
+        }
+    </span>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public DateOnly? Due { get; set; }
+
+    /// <summary>False for tasks in a "done" column, which are never overdue.</summary>
+    [Parameter]
+    public bool IsOpen { get; set; } = true;
+
+    [Parameter, EditorRequired]
+    public DateOnly Today { get; set; }
+
+    /// <summary>Always show the year; otherwise it is left out for dates in the current year.</summary>
+    [Parameter]
+    public bool WithYear { get; set; }
+
+    private bool IsOverdue => IsOpen && Due < Today;
+
+    private string Text(DateOnly due) =>
+        due.ToString(WithYear || due.Year != Today.Year ? "d MMM yyyy" : "d MMM", CultureInfo.InvariantCulture);
+}

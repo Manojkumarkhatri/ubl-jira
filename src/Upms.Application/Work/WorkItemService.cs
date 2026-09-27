@@ -15,6 +15,8 @@ internal sealed class WorkItemService(
     IProjectWorkflow workflow,
     IWorkItemNumberAllocator numbers,
     IUserDirectory users,
+    IProjectTeam team,
+    AssigneeReads assignees,
     CardRanker ranker,
     WorkItemReads reads,
     TimeProvider time) : IWorkItemService
@@ -62,6 +64,19 @@ internal sealed class WorkItemService(
             case WorkItemEdit.Priority priority:
                 item.Prioritize(priority.Value, context);
                 break;
+            case WorkItemEdit.Assignee assignee:
+                if (assignee.UserId is { } userId && userId != item.AssigneeId
+                    && !await team.CanBeAssignedAsync(item.ProjectId, userId, ct))
+                {
+                    return AppError.Rule(ErrorCodes.NotAssignable,
+                        "That person can't be assigned: only active Project Admins and Members of the project can. The list of people has been updated.");
+                }
+
+                var names = await users.GetAsync(new[] { item.AssigneeId, assignee.UserId }.OfType<Guid>().Distinct().ToList(), ct);
+                item.Assign(Person(item.AssigneeId, names), Person(assignee.UserId, names), context);
+                break;
+            case WorkItemEdit.Dates dates when item.Schedule(dates.Start, dates.Due, context) is { } invalid:
+                return invalid.ToAppError();
             case WorkItemEdit.Status status:
                 var statuses = await workflow.StatusesAsync(item.ProjectId, ct);
                 var target = statuses.FirstOrDefault(s => s.Id == status.ColumnId);
@@ -303,7 +318,8 @@ internal sealed class WorkItemService(
             return allowed.Error!;
         }
 
-        return await reads.SubtasksAsync(parent.Id, await workflow.StatusesAsync(parent.ProjectId, ct), page, ct);
+        return await reads.SubtasksAsync(parent.Id, await workflow.StatusesAsync(parent.ProjectId, ct),
+            await assignees.TeamAsync(parent.ProjectId, ct), page, ct);
     }
 
     public async Task<Result<Page<ChangeView>>> GetHistoryAsync(string workItemKey, PageRequest page, CancellationToken ct)
@@ -325,6 +341,10 @@ internal sealed class WorkItemService(
             ? await db.WorkItems.AsNoTracking().Where(w => w.Id == parentId).Select(w => new ParentRef(w.Key, w.Title)).SingleOrDefaultAsync(ct)
             : null;
         var creator = await users.GetAsync([item.CreatedById], ct);
+        var members = await assignees.TeamAsync(item.ProjectId, ct);
+        var assignee = item.AssigneeId is { } assigneeId
+            ? (await assignees.DescribeAsync(members, [assigneeId], ct))[assigneeId]
+            : null;
         return new WorkItemDetails(
             item.Key,
             info.Key,
@@ -342,9 +362,13 @@ internal sealed class WorkItemService(
             item.ResolvedAt,
             await access.CanDeleteWorkItemAsync(item.ProjectId, item.CreatedById, ct),
             item.RowVersion,
-            await reads.SubtasksAsync(item.Id, info.Statuses, PageRequest.First, ct),
+            await reads.SubtasksAsync(item.Id, info.Statuses, members, PageRequest.First, ct),
             await reads.CommentsAsync(item.Id, allowed.UserId, PageRequest.First, ct),
             await reads.HistoryAsync(item.Id, PageRequest.First, ct),
+            assignee,
+            item.StartDate,
+            item.DueDate,
+            AssigneeReads.Options(members, allowed.UserId, allowed.CanContribute),
             allowed.CanContribute);
     }
 
@@ -372,4 +396,7 @@ internal sealed class WorkItemService(
     }
 
     private static StatusRef ToRef(StatusInfo status) => new(status.Id, status.Name, status.Category);
+
+    private static PersonRef? Person(Guid? userId, IReadOnlyDictionary<Guid, UserDisplay> names) =>
+        userId is { } id ? new PersonRef(id, WorkItemReads.NameOf(names, id)) : null;
 }

@@ -1,0 +1,176 @@
+@page "/my-tasks"
+@using Upms.Application.Work
+@using Upms.Web.Components.Pages.Board
+@using Upms.Web.Components.Pages.Drawer
+@inject IMyTasksService MyTasks
+@inject ViewerToday ViewerToday
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>My tasks · U-PMS</PageTitle>
+
+@* The open tasks and sub-tasks assigned to the signed-in person, grouped by project (Phase 2 FR-025, FR-026). *@
+<div class="page-head">
+    <h1 id="my-tasks-heading" tabindex="-1">My tasks</h1>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">@_error</div>
+}
+
+@if (_page is null)
+{
+    <p aria-busy="true">Loading your tasks…</p>
+}
+else if (_page.TotalCount == 0)
+{
+    <EmptyState Title="Nothing is assigned to you" Text="Open tasks assigned to you in your projects appear here, soonest due first." />
+}
+else
+{
+    <p class="hint" data-testid="my-tasks-count">@CountText</p>
+    @foreach (var group in Groups)
+    {
+        var project = group[0];
+        <section class="my-tasks-group" data-testid="my-tasks-group" aria-labelledby="group-@project.ProjectKey">
+            <h2 class="group-title" id="group-@project.ProjectKey">
+                @project.ProjectName <a class="key" href="projects/@project.ProjectKey/board">(@project.ProjectKey)</a>
+            </h2>
+            <div class="table-wrap">
+                <table class="tbl">
+                    <caption class="sr-only">Your open tasks in @project.ProjectName, soonest due first</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Task</th>
+                            <th scope="col">Status</th>
+                            <th scope="col" class="hide-sm">Priority</th>
+                            <th scope="col">Due</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in group)
+                        {
+                            <tr data-testid="my-task" data-key="@row.Key" @key="row.Key">
+                                <td>
+                                    <a id="@LinkId(row.Key)" class="task-link" href="my-tasks?task=@row.Key">
+                                        <span class="key">@row.Key</span> @row.Title
+                                    </a>
+                                    @if (row.ParentKey is { } parent)
+                                    {
+                                        <div class="hint">Sub-task of @parent</div>
+                                    }
+                                </td>
+                                <td>@row.Status.Name</td>
+                                <td class="hide-sm"><PriorityIcon Priority="row.Priority" /> <span aria-hidden="true">@row.Priority</span></td>
+                                <td>
+                                    @if (row.DueDate is null)
+                                    {
+                                        <span class="hint">No due date</span>
+                                    }
+                                    <DueDateText Due="row.DueDate" Today="_today" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+    <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Pages of my tasks" OnPageChanged="GoToPageAsync" />
+}
+
+@if (!string.IsNullOrEmpty(TaskKey))
+{
+    <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawerAsync" OnChanged="LoadAsync" />
+}
+
+@code {
+    private Page<MyTaskRow>? _page;
+    private int _pageNumber = 1;
+    private DateOnly _today;
+    private string? _error;
+    private string? _focusKey;
+
+    /// <summary><c>?task={KEY-N}</c> opens the task's details drawer over the list (FR-026).</summary>
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    private string CountText => _page!.TotalCount == 1
+        ? "1 open task is assigned to you."
+        : $"{_page.TotalCount} open tasks are assigned to you.";
+
+    /// <summary>Consecutive rows of the same project; the service orders by project first.</summary>
+    private IEnumerable<List<MyTaskRow>> Groups
+    {
+        get
+        {
+            List<MyTaskRow>? group = null;
+            foreach (var row in _page!.Items)
+            {
+                if (group is not null && group[0].ProjectKey != row.ProjectKey)
+                {
+                    yield return group;
+                    group = null;
+                }
+
+                (group ??= []).Add(row);
+            }
+
+            if (group is not null)
+            {
+                yield return group;
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = await ViewerToday.GetAsync();
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusKey is { } key && string.IsNullOrEmpty(TaskKey))
+        {
+            // Focus returns to the row whose drawer was closed, or to the heading if the row has left the list.
+            _focusKey = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", _page?.Items.Any(r => r.Key == key) == true ? LinkId(key) : "my-tasks-heading");
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private static string LinkId(string key) => $"my-task-{key}";
+
+    private async Task LoadAsync()
+    {
+        var result = await MyTasks.ListAsync(new PageRequest(_pageNumber), CancellationToken.None);
+        _error = result.IsSuccess ? null : result.Error!.Message;
+        _page = result.Value ?? _page;
+        if (_page is { Items.Count: 0, PageNumber: > 1 })
+        {
+            // The last row of a later page left the list: show the page before it.
+            _pageNumber = Math.Max(1, _page.PageCount);
+            await LoadAsync();
+        }
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _pageNumber = page;
+        await LoadAsync();
+    }
+
+    private async Task CloseDrawerAsync()
+    {
+        _focusKey = TaskKey;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
+        await LoadAsync(); // a task completed or reassigned in the drawer leaves the list (FR-026)
+    }
+}
