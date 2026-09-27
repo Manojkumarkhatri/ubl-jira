@@ -1,0 +1,438 @@
+@using Upms.Application.Projects
+@using Upms.Domain.Common
+@inject IBoardColumnService Columns
+
+@* Board columns (FR-034 to FR-041): add, rename, reorder by dragging or with "Move left" and "Move right",
+   type, work-in-progress limit and delete with a destination. Every change applies for everyone. *@
+<section class="card form-card columns-editor" aria-labelledby="columns-heading" data-testid="columns-editor">
+    <h2 id="columns-heading">Columns</h2>
+    <p class="hint">
+        Columns are the steps a task moves through, from left to right on the board. A board keeps at least one
+        "to do" and one "done" column, and has at most @BoardColumnsView.MaxColumns columns.
+    </p>
+
+    @if (_conflict is not null)
+    {
+        <div class="alert alert-warn" role="alert" data-testid="columns-conflict">
+            <p>@_conflict</p>
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _conflict = null">Dismiss</button>
+        </div>
+    }
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert" data-testid="columns-error">@_error</div>
+    }
+    <p class="saved columns-saved" role="status" data-testid="columns-saved">@(_saved is null ? "" : "✓ " + _saved)</p>
+
+    @if (_view is null)
+    {
+        <p aria-busy="true">Loading the columns…</p>
+    }
+    else
+    {
+        <ol class="column-list" aria-label="Board columns, from left to right">
+            @foreach (var column in _view.Columns)
+            {
+                var first = column.Position == 0;
+                var last = column.Position == _view.Columns.Count - 1;
+                <li @key="column.Id" class="column-row @(_dragging?.Id == column.Id ? "dragging" : "") @(_dropTarget == column.Id ? "drop-hint" : "")"
+                    data-testid="column-row" draggable="@(_renamingId == column.Id ? "false" : "true")" data-drag-key="column-@column.Id"
+                    @ondragstart="() => _dragging = column" @ondragend="() => { _dragging = null; _dropTarget = null; }"
+                    @ondragenter="() => _dropTarget = column.Id" @ondragover:preventDefault @ondrop:preventDefault
+                    @ondrop="() => DropOnAsync(column)">
+                    <span class="drag-handle" aria-hidden="true" title="Drag to reorder">⠿</span>
+                    <div class="column-main">
+                        @if (_renamingId == column.Id)
+                        {
+                            <label class="sr-only" for="column-@column.Id-name-input">New name for @column.Name</label>
+                            <input id="column-@column.Id-name-input" class="input input-sm" maxlength="30" autocomplete="off"
+                                   @bind="_renameDraft" @bind:event="oninput" @onkeydown="e => RenameKeyDownAsync(e, column)"
+                                   aria-invalid="@(_renameError is null ? "false" : "true")" aria-describedby="column-@column.Id-name-error" />
+                            <button type="button" class="btn btn-sm btn-primary" data-testid="save-rename" disabled="@_busy"
+                                    @onclick="() => RenameAsync(column)">Save</button>
+                            <button type="button" class="btn btn-sm" @onclick="CancelRename">Cancel</button>
+                            <span id="column-@column.Id-name-error" class="error-text" role="alert">@_renameError</span>
+                        }
+                        else
+                        {
+                            <strong id="column-@column.Id-name" class="column-name">@column.Name</strong>
+                            <span class="hint" data-testid="column-count">@WorkItems(column.ItemCount)</span>
+                        }
+                    </div>
+                    <div class="column-fields">
+                        <label class="sr-only" for="column-@column.Id-type">Type of @column.Name</label>
+                        <select id="column-@column.Id-type" class="select select-sm" value="@(PendingCategory(column).ToString())"
+                                disabled="@(!column.IsEmpty || _busy)" aria-describedby="@(column.IsEmpty ? null : $"column-{column.Id}-type-hint")"
+                                @onchange="e => ChangeCategoryAsync(column, e)">
+                            @foreach (var category in Enum.GetValues<StatusCategory>())
+                            {
+                                <option value="@category.ToString()">@CategoryName(category)</option>
+                            }
+                        </select>
+                        <label class="limit-label" for="column-@column.Id-limit">Limit</label>
+                        <input id="column-@column.Id-limit" class="input input-sm limit-input" type="number" min="1" max="99" inputmode="numeric"
+                               placeholder="None" value="@column.WipLimit" disabled="@_busy" @onchange="e => SetLimitAsync(column, e)"
+                               aria-describedby="column-@column.Id-name" />
+                    </div>
+                    <div class="column-actions">
+                        <button type="button" class="btn btn-sm" disabled="@(first || _busy)" aria-describedby="column-@column.Id-name"
+                                @onclick="() => MoveAsync(column, column.Position - 1)">Move left</button>
+                        <button type="button" class="btn btn-sm" disabled="@(last || _busy)" aria-describedby="column-@column.Id-name"
+                                @onclick="() => MoveAsync(column, column.Position + 1)">Move right</button>
+                        <button type="button" class="btn btn-sm btn-ghost" disabled="@_busy" aria-describedby="column-@column.Id-name"
+                                @onclick="() => StartRename(column)">Rename</button>
+                        <button type="button" class="btn btn-sm btn-ghost btn-danger" disabled="@_busy" aria-describedby="column-@column.Id-name"
+                                @onclick="() => AskDelete(column)">Delete</button>
+                    </div>
+                    @if (!column.IsEmpty)
+                    {
+                        <span id="column-@column.Id-type-hint" class="hint type-hint">Only an empty column can change type.</span>
+                    }
+                    @if (_rowError is { } rowError && rowError.ColumnId == column.Id)
+                    {
+                        <span class="error-text row-error" role="alert" data-testid="column-error">@rowError.Message</span>
+                    }
+                </li>
+            }
+        </ol>
+
+        <form class="add-column" @onsubmit="AddAsync" novalidate aria-labelledby="add-column-heading">
+            <h3 id="add-column-heading">Add a column</h3>
+            @if (_view.Columns.Count >= BoardColumnsView.MaxColumns)
+            {
+                <p class="hint" id="add-column-full">This board has @BoardColumnsView.MaxColumns columns, the most it can have.</p>
+            }
+            <div class="row">
+                <div class="field">
+                    <label for="new-column-name">Name</label>
+                    <input id="new-column-name" class="input" maxlength="30" autocomplete="off" @bind="_newName" @bind:event="oninput"
+                           aria-invalid="@(_addError is null ? "false" : "true")" aria-describedby="new-column-name-error" />
+                    <span id="new-column-name-error" class="error-text" role="alert">@_addError</span>
+                </div>
+                <div class="field">
+                    <label for="new-column-type">Type</label>
+                    <select id="new-column-type" class="select" @bind="_newCategory">
+                        @foreach (var category in Enum.GetValues<StatusCategory>())
+                        {
+                            <option value="@category">@CategoryName(category)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="new-column-position">Position</label>
+                    <select id="new-column-position" class="select" @bind="_newPosition">
+                        @for (var i = 0; i <= _view.Columns.Count; i++)
+                        {
+                            <option value="@i">@(i == 0 ? "First" : $"After {_view.Columns[i - 1].Name}")</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" data-testid="add-column"
+                        disabled="@(_busy || _view.Columns.Count >= BoardColumnsView.MaxColumns)">Add column</button>
+            </div>
+        </form>
+    }
+
+    <ModalDialog @ref="_deleteDialog" Title="@($"Delete {_deleting?.Name}?")" TestId="delete-column">
+        <ChildContent>
+            @if (_deleting is { } deleting)
+            {
+                @if (deleting.IsEmpty)
+                {
+                    <p>@deleting.Name holds no work items.</p>
+                }
+                else
+                {
+                    <div class="field">
+                        <label for="delete-destination">
+                            Move its work items@(deleting.ItemCount > 0 ? $" ({deleting.ItemCount})" : "") to
+                        </label>
+                        <select id="delete-destination" class="select" @bind="_destinationId"
+                                aria-invalid="@(_deleteError is null ? "false" : "true")" aria-describedby="delete-destination-hint delete-destination-error">
+                            <option value="">Choose a column</option>
+                            @foreach (var other in _view!.Columns.Where(c => c.Id != deleting.Id))
+                            {
+                                <option value="@other.Id">@other.Name</option>
+                            }
+                        </select>
+                        <span id="delete-destination-hint" class="hint">Sub-tasks and deleted tasks in the column move too; each move is recorded in the task's history.</span>
+                    </div>
+                }
+                <span id="delete-destination-error" class="error-text" role="alert">@_deleteError</span>
+            }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete column</button>
+        </Footer>
+    </ModalDialog>
+</section>
+
+@code {
+    private BoardColumnsView? _view;
+    private string? _conflict;
+    private string? _error;
+    private string? _saved;
+    private (long ColumnId, string Message)? _rowError;
+    private long? _renamingId;
+    private string _renameDraft = "";
+    private string? _renameError;
+    private string _newName = "";
+    private StatusCategory _newCategory = StatusCategory.InProgress;
+    private int _newPosition;
+    private string? _addError;
+    private BoardColumnView? _deleting;
+    private string? _destinationId;
+    private string? _deleteError;
+    private ModalDialog? _deleteDialog;
+    private BoardColumnView? _dragging;
+    private long? _dropTarget;
+    private (long ColumnId, StatusCategory Category)? _pendingCategory;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var result = await Columns.GetAsync(ProjectKey, CancellationToken.None);
+        if (result.IsSuccess)
+        {
+            Show(result.Value!);
+        }
+        else
+        {
+            _error = result.Error!.Message;
+        }
+    }
+
+    private void Show(BoardColumnsView view)
+    {
+        var positionWasDefault = _view is null || _newPosition == DefaultPosition(_view);
+        _view = view;
+        if (positionWasDefault || _newPosition > view.Columns.Count)
+        {
+            _newPosition = DefaultPosition(view);
+        }
+    }
+
+    // New columns go before the first "done" column by default, where "In Review" or "Testing" usually sit.
+    private static int DefaultPosition(BoardColumnsView view) =>
+        view.Columns.FirstOrDefault(c => c.Category == StatusCategory.Done)?.Position ?? view.Columns.Count;
+
+    private static string CategoryName(StatusCategory category) => category switch
+    {
+        StatusCategory.ToDo => "To do",
+        StatusCategory.InProgress => "In progress",
+        _ => "Done",
+    };
+
+    private static string WorkItems(int count) => count == 1 ? "1 work item" : $"{count} work items";
+
+    private StatusCategory PendingCategory(BoardColumnView column) =>
+        _pendingCategory is { } pending && pending.ColumnId == column.Id ? pending.Category : column.Category;
+
+    /// <summary>Runs one change. A conflict shows the latest columns (FR-041); errors keep what was typed.</summary>
+    private async Task<AppError?> RunAsync(Func<int, Task<Result<BoardColumnsView>>> change, string savedMessage)
+    {
+        if (_view is null || _busy)
+        {
+            return null;
+        }
+
+        _busy = true;
+        _saved = null;
+        _error = null;
+        _rowError = null;
+        try
+        {
+            var result = await change(_view.BoardVersion);
+            if (result.IsSuccess)
+            {
+                Show(result.Value!);
+                _conflict = null;
+                _saved = savedMessage; // announced by the status line above the list
+                return null;
+            }
+
+            var error = result.Error!;
+            if (error.Kind == ErrorKind.Conflict && error.Current is BoardColumnsView latest)
+            {
+                Show(latest);
+                _conflict = error.Message;
+            }
+
+            return error;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        var name = _newName;
+        var error = await RunAsync(version => Columns.AddAsync(ProjectKey, name, _newCategory, _newPosition, version, CancellationToken.None),
+            $"Added the column {name.Trim()}.");
+        if (error is null)
+        {
+            _newName = "";
+            _addError = null;
+        }
+        else if (error.Kind != ErrorKind.Conflict)
+        {
+            _addError = error.MessageFor("Name");
+        }
+    }
+
+    private void StartRename(BoardColumnView column)
+    {
+        _renamingId = column.Id;
+        _renameDraft = column.Name;
+        _renameError = null;
+    }
+
+    private void CancelRename()
+    {
+        _renamingId = null;
+        _renameError = null;
+    }
+
+    private Task RenameKeyDownAsync(KeyboardEventArgs e, BoardColumnView column)
+    {
+        if (e.Key == "Escape")
+        {
+            CancelRename();
+        }
+
+        return e.Key == "Enter" ? RenameAsync(column) : Task.CompletedTask;
+    }
+
+    private async Task RenameAsync(BoardColumnView column)
+    {
+        var name = _renameDraft;
+        var error = await RunAsync(version => Columns.RenameAsync(ProjectKey, column.Id, name, version, CancellationToken.None),
+            $"Renamed {column.Name} to {name.Trim()}.");
+        if (error is null)
+        {
+            _renamingId = null;
+            _renameError = null;
+        }
+        else if (error.Kind == ErrorKind.Conflict)
+        {
+            _renamingId = _view!.Columns.Any(c => c.Id == column.Id) ? _renamingId : null; // the typed name stays
+        }
+        else
+        {
+            _renameError = error.MessageFor("Name");
+        }
+    }
+
+    private async Task MoveAsync(BoardColumnView column, int position)
+    {
+        var error = await RunAsync(version => Columns.MoveAsync(ProjectKey, column.Id, position, version, CancellationToken.None),
+            $"Moved {column.Name} to position {position + 1} of {_view!.Columns.Count}.");
+        ShowRowError(column, error);
+    }
+
+    private async Task DropOnAsync(BoardColumnView target)
+    {
+        var dragged = _dragging;
+        _dragging = null;
+        _dropTarget = null;
+        if (dragged is not null && dragged.Id != target.Id)
+        {
+            await MoveAsync(dragged, target.Position);
+        }
+    }
+
+    private async Task ChangeCategoryAsync(BoardColumnView column, ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<StatusCategory>(e.Value?.ToString(), out var category))
+        {
+            return;
+        }
+
+        // Rendering the chosen value while saving lets a refused change put the saved value back.
+        _pendingCategory = (column.Id, category);
+        try
+        {
+            var error = await RunAsync(version => Columns.ChangeCategoryAsync(ProjectKey, column.Id, category, version, CancellationToken.None),
+                $"{column.Name} is now a \"{CategoryName(category).ToLowerInvariant()}\" column.");
+            ShowRowError(column, error);
+        }
+        finally
+        {
+            _pendingCategory = null;
+        }
+    }
+
+    private async Task SetLimitAsync(BoardColumnView column, ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString()?.Trim();
+        int? limit = null;
+        if (!string.IsNullOrEmpty(text))
+        {
+            if (!int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value))
+            {
+                _rowError = (column.Id, "Enter a whole number from 1 to 99, or leave the limit empty.");
+                return;
+            }
+
+            limit = value;
+        }
+
+        var error = await RunAsync(version => Columns.SetWipLimitAsync(ProjectKey, column.Id, limit, version, CancellationToken.None),
+            limit is null ? $"Removed the limit of {column.Name}." : $"{column.Name} now has a limit of {limit}.");
+        ShowRowError(column, error);
+    }
+
+    private void ShowRowError(BoardColumnView column, AppError? error)
+    {
+        if (error is not null && error.Kind != ErrorKind.Conflict)
+        {
+            _rowError = (column.Id, error.FieldErrors?.Values.SelectMany(m => m).FirstOrDefault() ?? error.Message);
+        }
+    }
+
+    private void AskDelete(BoardColumnView column)
+    {
+        _deleting = column;
+        _destinationId = null;
+        _deleteError = null;
+        _deleteDialog!.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_deleting is not { } column)
+        {
+            return;
+        }
+
+        long? destination = long.TryParse(_destinationId, System.Globalization.CultureInfo.InvariantCulture, out var id) ? id : null;
+        if (!column.IsEmpty && destination is null)
+        {
+            _deleteError = "Choose the column its work items should move to.";
+            return;
+        }
+
+        var destinationName = _view!.Columns.FirstOrDefault(c => c.Id == destination)?.Name;
+        var error = await RunAsync(version => Columns.DeleteAsync(ProjectKey, column.Id, destination, version, CancellationToken.None),
+            destinationName is null || column.IsEmpty
+                ? $"Deleted the column {column.Name}."
+                : $"Deleted the column {column.Name}; its work items moved to {destinationName}.");
+        if (error is null || error.Kind == ErrorKind.Conflict)
+        {
+            await _deleteDialog!.CloseAsync();
+            _deleting = null;
+        }
+        else
+        {
+            _deleteError = error.MessageFor("DestinationColumnId");
+        }
+    }
+}

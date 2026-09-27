@@ -110,6 +110,10 @@ public interface IBoardColumnService                             // Owner/Admin 
     Task<Result<BoardColumnsView>> DeleteAsync(string projectKey, long columnId,
         long? destinationColumnId, int expectedBoardVersion, CancellationToken ct); // DestinationRequired, LastToDo/DoneColumn
 }
+public sealed record BoardColumnsView(string ProjectKey, string ProjectName, int BoardVersion,
+    IReadOnlyList<BoardColumnView> Columns);
+public sealed record BoardColumnView(long Id, string Name, StatusCategory Category, int Position, int? WipLimit,
+    int ItemCount, bool IsEmpty);                                // IsEmpty counts deleted items too (FR-039)
 public enum StatusCategory { ToDo, InProgress, Done }
 
 public enum ProjectRight { View, Contribute, DeleteOwnWorkItem, Manage, Restore }
@@ -140,8 +144,8 @@ public interface IBoardService                                   // FR-016–FR-
     Task<Result<CardView>> MoveCardAsync(string workItemKey, long toColumnId, CardPlacement placement,
         byte[] expectedVersion, CancellationToken ct);           // Conflict if the card changed (FR-022)
 }
-public sealed record BoardView(string ProjectKey, int BoardVersion, bool CanManageColumns,
-    IReadOnlyList<ColumnView> Columns);
+public sealed record BoardView(string ProjectKey, string ProjectName, int BoardVersion, bool CanManageColumns,
+    bool ShowingAllDone, int HiddenDoneCount, IReadOnlyList<ColumnView> Columns, bool CanRestoreDeleted);
 public sealed record ColumnView(long Id, string Name, StatusCategory Category, int? WipLimit,
     int CardCount, bool OverLimit, IReadOnlyList<CardView> Cards);
 public sealed record CardView(string Key, string Title, Priority Priority, int SubtasksDone,
@@ -192,8 +196,10 @@ public interface IWorkItemCounts                                 // contract use
 
 public interface IWorkItemStatusMover                            // contract used by the Projects module
 {
-    Task<int> CountInStatusAsync(long statusId, CancellationToken ct);           // includes deleted items
-    Task MoveAllAsync(long fromStatusId, long toStatusId, string note, CancellationToken ct); // FR-037
+    Task<IReadOnlyDictionary<long, int>> CountInStatusesAsync(IReadOnlyCollection<long> statusIds,
+        CancellationToken ct);                                   // tasks and sub-tasks, deleted items included
+    Task MoveAllAsync(long fromStatusId, long toStatusId, string note, CancellationToken ct); // FR-037;
+        // staged in the shared unit of work, so the caller's save commits the moves with the column removal
 }
 ```
 

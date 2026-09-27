@@ -91,8 +91,9 @@ internal sealed class WorkItemService(
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateException)
         {
+            // Someone else saved first, or the chosen column was deleted a moment ago.
             return await ConflictAsync(item, allowed.Value, ct);
         }
 

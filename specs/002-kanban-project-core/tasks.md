@@ -199,19 +199,19 @@ lost, and a non-owner cannot change columns (spec US3).
 
 ### Tests for User Story 3 (write first, must fail) ⚠️
 
-- [ ] T094 [P] [US3] Write `tests/Upms.Domain.Tests/Projects/BoardColumnRulesTests.cs`: names "1–30 characters", unique ignoring case (`DuplicateColumnName`); at most 10 columns (`TooManyColumns`); positions stay consecutive after moves; limits "1–99" or none; a column's category changes only while empty (`ColumnNotEmpty`); the last `ToDo` and last `Done` columns cannot be deleted or retyped (`LastToDoColumn`, `LastDoneColumn`); deleting a non-empty column requires a destination (`DestinationRequired`); every change increments `BoardVersion` (FR-034–FR-039, FR-041)
-- [ ] T095 [P] [US3] Write `tests/Upms.Application.Tests/Projects/BoardColumnServiceTests.cs`: `US3_AS1` an added column appears in position for everyone; `US3_AS2` renaming keeps tasks in place; `US3_AS3` a new order persists; `US3_AS5` deleting a column moves all its work items (sub-tasks and deleted items included) to the destination, records "column deleted" in each history, and marks them completed when the destination is a "done" column; `US3_AS6` last-column protection; `US3_AS7` duplicate names refused; a stale `BoardVersion` returns `Conflict` with the current columns; `US3_AS8` users other than the owner and Administrators get `Forbidden` (FR-034–FR-041, SC-006)
-- [ ] T096 [P] [US3] Write `tests/Upms.Application.Tests/Work/WipLimitTests.cs`: `US3_AS4` a column over its limit is reported with count and limit, and moves and inline creations into it still succeed (FR-036)
-- [ ] T097 [P] [US3] Write bUnit tests `tests/Upms.Web.Tests/Settings/BoardColumnsEditorTests.cs`: add, rename, move left and right, type (disabled with a hint when the column is not empty), limit, delete with a destination picker; errors keep the input; the settings link is hidden from users who cannot manage the project
-- [ ] T098 [P] [US3] Write `tests/Upms.E2E.Tests/US3_ColumnCustomizationTests.cs`: the US3 Independent Test end to end, including a column reorder by drag and by keyboard, plus an axe scan of the column settings
+- [X] T094 [P] [US3] Write `tests/Upms.Domain.Tests/Projects/BoardColumnRulesTests.cs`: names "1–30 characters", unique ignoring case (`DuplicateColumnName`); at most 10 columns (`TooManyColumns`); positions stay consecutive after moves; limits "1–99" or none; a column's category changes only while empty (`ColumnNotEmpty`); the last `ToDo` and last `Done` columns cannot be deleted or retyped (`LastToDoColumn`, `LastDoneColumn`); deleting a non-empty column requires a destination (`DestinationRequired`); every change increments `BoardVersion` (FR-034–FR-039, FR-041)
+- [X] T095 [P] [US3] Write `tests/Upms.Application.Tests/Projects/BoardColumnServiceTests.cs`: `US3_AS1` an added column appears in position for everyone; `US3_AS2` renaming keeps tasks in place; `US3_AS3` a new order persists; `US3_AS5` deleting a column moves all its work items (sub-tasks and deleted items included) to the destination, records "column deleted" in each history, and marks them completed when the destination is a "done" column; `US3_AS6` last-column protection; `US3_AS7` duplicate names refused; a stale `BoardVersion` returns `Conflict` with the current columns; `US3_AS8` users other than the owner and Administrators get `Forbidden` (FR-034–FR-041, SC-006)
+- [X] T096 [P] [US3] Write `tests/Upms.Application.Tests/Work/WipLimitTests.cs`: `US3_AS4` a column over its limit is reported with count and limit, and moves and inline creations into it still succeed (FR-036)
+- [X] T097 [P] [US3] Write bUnit tests `tests/Upms.Web.Tests/Settings/BoardColumnsEditorTests.cs`: add, rename, move left and right, type (disabled with a hint when the column is not empty), limit, delete with a destination picker; errors keep the input; the settings link is hidden from users who cannot manage the project
+- [X] T098 [P] [US3] Write `tests/Upms.E2E.Tests/US3_ColumnCustomizationTests.cs`: the US3 Independent Test end to end, including a column reorder by drag and by keyboard, plus an axe scan of the column settings
 
 ### Implementation for User Story 3
 
-- [ ] T099 [US3] Add `AddColumn`, `RenameColumn`, `MoveColumn`, `SetWipLimit`, `ChangeColumnCategory` and `RemoveColumn` to `Project` in `src/Upms.Domain/Projects/Project.cs`, enforcing the board rules of data-model.md and incrementing `BoardVersion` (make T094 pass)
-- [ ] T100 [US3] Implement `IWorkItemStatusMover` (contract `src/Upms.Application/Work/Contracts/IWorkItemStatusMover.cs`; `CountInStatusAsync` including deleted items; `MoveAllAsync` recording a `Status` change with the note "column deleted") in `src/Upms.Application/Work/WorkItemStatusMover.cs`
-- [ ] T101 [US3] Implement `BoardColumnService` (`GetAsync`, `AddAsync`, `RenameAsync`, `MoveAsync`, `SetWipLimitAsync`, `ChangeCategoryAsync`, `DeleteAsync`) in `src/Upms.Application/Projects/BoardColumnService.cs`, moving work items and removing the column in one transaction (make T095 pass)
-- [ ] T102 [US3] Add the over-limit flag to the column projection in `src/Upms.Application/Work/BoardService.cs` and show "count of limit" with a visible over-limit marker in `BoardColumn.razor` (make T096 pass)
-- [ ] T103 [US3] Create `src/Upms.Web/Components/Pages/Settings/BoardColumnsEditor.razor` and add it as the Columns section of `ProjectSettings.razor`: column list with drag reorder and "Move left" and "Move right", add dialog (name, type, position), inline rename, type selector, limit input, delete with destination picker, conflict banner (make T097 pass), then make T098 pass
+- [X] T099 [US3] Add `AddColumn`, `RenameColumn`, `MoveColumn`, `SetWipLimit`, `ChangeColumnCategory` and `RemoveColumn` to `Project` in `src/Upms.Domain/Projects/Project.cs`, enforcing the board rules of data-model.md and incrementing `BoardVersion` (make T094 pass)
+- [X] T100 [US3] Implement `IWorkItemStatusMover` (contract `src/Upms.Application/Work/Contracts/IWorkItemStatusMover.cs`; `CountInStatusAsync` including deleted items; `MoveAllAsync` recording a `Status` change with the note "column deleted") in `src/Upms.Application/Work/WorkItemStatusMover.cs`
+- [X] T101 [US3] Implement `BoardColumnService` (`GetAsync`, `AddAsync`, `RenameAsync`, `MoveAsync`, `SetWipLimitAsync`, `ChangeCategoryAsync`, `DeleteAsync`) in `src/Upms.Application/Projects/BoardColumnService.cs`, moving work items and removing the column in one transaction (make T095 pass)
+- [X] T102 [US3] Add the over-limit flag to the column projection in `src/Upms.Application/Work/BoardService.cs` and show "count of limit" with a visible over-limit marker in `BoardColumn.razor` (make T096 pass)
+- [X] T103 [US3] Create `src/Upms.Web/Components/Pages/Settings/BoardColumnsEditor.razor` and add it as the Columns section of `ProjectSettings.razor`: column list with drag reorder and "Move left" and "Move right", add dialog (name, type, position), inline rename, type selector, limit input, delete with destination picker, conflict banner (make T097 pass), then make T098 pass
 
 **Checkpoint**: All three user stories work independently.
 
@@ -384,3 +384,16 @@ Decisions made while implementing, recorded so the documents match the code:
 - **Rate limits** are configuration (`RateLimiting:SignInPerMinute`, `SetupPerMinute`,
   `KeepAlivePerMinute`) with the contract's values as defaults; only the browser-test host raises the
   sign-in limit, because every test signs in from the same address.
+- **Column changes** (T099, T101): `Project` identifies columns by instance, so the rules are testable
+  before anything is saved; `BoardColumnService` finds the column by ID and passes it in. A change that
+  alters nothing (same name, same position, same limit) does not increment `BoardVersion`.
+- **Deleting a column** (T100, T101): `IWorkItemStatusMover.MoveAllAsync` stages the moves in the shared
+  unit of work, so one save moves the work items and removes the column in one transaction. Tasks join the
+  end of the destination column in their order; sub-tasks keep their place under their parent. The mover
+  counts statuses in one grouped query (`CountInStatusesAsync`), which the settings screen also uses.
+- **Races with a column deletion**: if a card is moved or created in a column at the moment it is deleted,
+  the save is refused by the database and the user gets a conflict ("the latest board is shown") or "column
+  not found" instead of an error page.
+- **Column settings screen** (T103): the Columns section of the project settings lists the columns from left
+  to right with type, limit, "Move left", "Move right", Rename and Delete; rows can also be dragged. New
+  columns default to the position before the first "done" column.

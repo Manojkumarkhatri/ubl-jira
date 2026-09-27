@@ -300,3 +300,28 @@ dialog.drawer dialog.modal { width: min(420px, calc(100vw - 32px)); }
   .drawer-side { padding: 14px; }
   .drawer-crumbs { display: none; }
 }
+
+/* ---------- Board column settings (FR-034 to FR-041) ---------- */
+.columns-editor h3 { font-size: 14px; margin: 18px 0 10px; }
+.columns-saved { min-height: 1.45em; margin: 0 0 8px; }
+.column-list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.column-row { display: grid; grid-template-columns: 20px minmax(150px, 1fr) auto auto; gap: 6px 12px; align-items: center;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.column-row:last-child { border-bottom: 0; border-radius: 0 0 var(--radius) var(--radius); }
+.column-row:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.column-row.dragging { opacity: .5; }
+.column-row.drop-hint { box-shadow: inset 0 3px 0 var(--accent); }
+.drag-handle { color: var(--muted); cursor: grab; font-size: 16px; user-select: none; }
+.column-main { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.column-name { overflow-wrap: anywhere; }
+.column-fields { display: flex; align-items: center; gap: 6px; }
+.limit-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.limit-input { width: 72px; }
+.input-sm { min-height: 30px; padding: 3px 8px; width: auto; }
+.column-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.type-hint, .row-error { grid-column: 2 / -1; }
+.add-column .row .field { margin-bottom: 10px; }
+@media (max-width: 860px) {
+  .column-row { grid-template-columns: 20px minmax(0, 1fr); }
+  .column-fields, .column-actions { grid-column: 2; justify-content: flex-start; }
+}

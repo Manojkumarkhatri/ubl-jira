@@ -38,4 +38,16 @@ public sealed class ProjectStatus
 
     /// <summary>Work-in-progress limit, 1–99 when set (FR-036).</summary>
     public int? WipLimit { get; private set; }
+
+    internal void Rename(string name)
+    {
+        Name = name;
+        NormalizedName = Project.NormalizeName(name);
+    }
+
+    internal void MoveTo(int position) => Position = position;
+
+    internal void LimitTo(int? limit) => WipLimit = limit;
+
+    internal void ChangeCategory(StatusCategory category) => Category = category;
 }

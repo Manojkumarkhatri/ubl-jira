@@ -34,9 +34,11 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IProjectAccess, ProjectAccess>();
         services.AddScoped<IProjectWorkflow, ProjectWorkflow>();
         services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<IBoardColumnService, BoardColumnService>();
 
         // Work module
         services.AddScoped<IWorkItemCounts, WorkItemCounts>();
+        services.AddScoped<IWorkItemStatusMover, WorkItemStatusMover>();
         services.AddScoped<RankRebalancer>();
         services.AddScoped<IRankRebalancer>(sp => sp.GetRequiredService<RankRebalancer>());
         services.AddScoped<CardRanker>();

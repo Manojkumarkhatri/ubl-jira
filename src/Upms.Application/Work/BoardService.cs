@@ -88,7 +88,15 @@ internal sealed class BoardService(
         var item = WorkItem.CreateTask(projectId, allowed.Value.Key, number, title, ToRef(column), rank,
             ChangeContext.New(allowed.Value.UserId, time.GetUtcNow())).Value!;
         db.WorkItems.Add(item);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return AppError.NotFound("column"); // the column was deleted a moment ago; nothing was created
+        }
+
         await transaction.CommitAsync(ct);
         return new CardView(item.Key, item.Title, item.Priority, item.StatusId, 0, 0, item.RowVersion);
     }
@@ -151,6 +159,11 @@ internal sealed class BoardService(
         catch (DbUpdateConcurrencyException)
         {
             return await ConflictAsync(item, ct);
+        }
+        catch (DbUpdateException)
+        {
+            // The target column was deleted after the board was read.
+            return AppError.Conflict("The board's columns changed while the card was moving. The latest board is shown.");
         }
 
         var card = await CardAsync(item, statuses, ct);
