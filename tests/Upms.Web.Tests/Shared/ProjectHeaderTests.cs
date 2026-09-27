@@ -48,6 +48,16 @@ public sealed class ProjectHeaderTests : BunitTestBase
     }
 
     [Fact]
+    public void P2_Every_member_can_switch_between_the_board_and_the_list()
+    {
+        var cut = Show(ProjectPage.List);
+
+        Assert.Equal(["Board", "List", "Members"], cut.FindAll("nav.project-nav a").Select(a => a.TextContent.Trim()));
+        Assert.Equal("page", cut.Find("nav.project-nav a[href='projects/WEB/list']").GetAttribute("aria-current"));
+        Assert.Null(cut.Find("nav.project-nav a[href='projects/WEB/board']").GetAttribute("aria-current"));
+    }
+
+    [Fact]
     public void Settings_and_deleted_tasks_are_offered_only_to_those_allowed()
     {
         var member = Show(ProjectPage.Board);

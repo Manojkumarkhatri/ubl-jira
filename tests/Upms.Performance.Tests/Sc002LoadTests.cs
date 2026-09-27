@@ -10,8 +10,8 @@ using Upms.Domain.Work;
 namespace Upms.Performance.Tests;
 
 /// <summary>SC-002: with 300 concurrent users on 500,000 work items, the project list, "My tasks", a board of up to
-/// 500 visible cards, inline creation, a card move, opening the drawer, saving an edit, assigning, setting dates and a
-/// membership change each respond within 1 second at the 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix
+/// 500 visible cards, the List view (sorted and filtered), inline creation, a card move, opening the drawer, saving an
+/// edit, assigning, setting dates and a membership change each respond within 1 second at the 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix
 /// of actions with 1 to 3 seconds of thinking time in a project they belong to (<see cref="LoadDatabase.Subjects"/>):
 /// every tenth user works on the largest board, and every tenth (offset by five) is a Project Admin who also changes
 /// the team.</summary>
@@ -22,7 +22,8 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
 
     private static readonly string[] Operations =
     [
-        "project list", "My tasks load", "board load", "inline creation", "card move", "drawer open", "saving an edit",
+        "project list", "My tasks load", "board load", "list load (sorted and filtered)", "inline creation", "card move",
+        "drawer open", "saving an edit",
         "assigning", "setting dates", "membership change",
     ];
 
@@ -63,6 +64,19 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
         LatencyRecorder recorder, long measureFrom, long stopAt)
     {
         private static readonly Priority[] Priorities = Enum.GetValues<Priority>();
+
+        /// <summary>Questions people ask of a list: the newest work, what is overdue, their own, what is in progress…</summary>
+        private static readonly WorkItemListQuery[] ListQueries =
+        [
+            new(),
+            new(ListSort.DueDate, false, Due: DueFilter.Overdue),
+            new(ListSort.Updated, true, AssignedToMe: true),
+            new(ListSort.Priority, false, Categories: [StatusCategory.InProgress]),
+            new(ListSort.Assignee, false, Due: DueFilter.Next7Days),
+            new(ListSort.Status, false, Unassigned: true),
+            new(ListSort.Title, false, Text: "report"),
+            new(Page: 3),
+        ];
 
         private readonly Random _random = new(index * 7_919 + 17);
         private readonly Guid _userId = subject.UserId;
@@ -107,6 +121,15 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
             {
                 await MeasureAsync("My tasks load", () =>
                     harness.CallAsync<IMyTasksService, Result<Page<MyTaskRow>>>(_userId, s => s.ListAsync(PageRequest.First, ct)));
+                return;
+            }
+
+            if (roll < 20)
+            {
+                var query = ListQueries[_random.Next(ListQueries.Length)];
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                await MeasureAsync("list load (sorted and filtered)", () =>
+                    harness.CallAsync<IWorkItemListService, Result<WorkItemListView>>(_userId, s => s.ListAsync(_projectKey, query, today, ct)));
                 return;
             }
 

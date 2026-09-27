@@ -125,9 +125,13 @@ public sealed record WorkItemListQuery(
     IReadOnlyList<Priority>? Priorities = null,
     bool AssignedToMe = false, bool Unassigned = false, IReadOnlyList<Guid>? AssigneeIds = null,
     DueFilter Due = DueFilter.Any, string? Text = null, int Page = 1);
-public sealed record WorkItemListView(string ProjectKey, string ProjectName, bool CanContribute,
-    long FirstToDoColumnId, IReadOnlyList<StatusOption> Columns, IReadOnlyList<AssigneeOption> People,
-    Page<WorkItemRow> Rows);
+// Sorting: priority ascending means Highest first; dates put undated items last in both directions; equal values
+// keep key order in the same direction; assignee sorts put unassigned items last.
+// People: the team plus anyone else the project's tasks are assigned to (for "what did bilal work on?").
+// CanManage and CanRestoreDeleted drive the project header's links.
+public sealed record WorkItemListView(string ProjectKey, string ProjectName, bool CanContribute, bool CanManage,
+    bool CanRestoreDeleted, long FirstToDoColumnId, IReadOnlyList<StatusOption> Columns,
+    IReadOnlyList<AssigneeOption> People, Page<WorkItemRow> Rows);
 public sealed record WorkItemRow(string Key, string Title, string? ParentKey, StatusOption Status,
     Priority Priority, AssigneeRef? Assignee, DateOnly? StartDate, DateOnly? DueDate, DateTimeOffset UpdatedAt,
     bool IsOpen);

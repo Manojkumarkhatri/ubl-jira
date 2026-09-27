@@ -9,8 +9,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.MsSql;
 using Upms.Application.Common;
 using Upms.Application.Identity;
+using Upms.Application.Projects.Contracts;
+using Upms.Domain.Common;
 using Upms.Domain.Identity;
 using Upms.Domain.Projects;
+using Upms.Domain.Work;
 using Upms.E2E.Tests.Fixtures;
 
 [assembly: AssemblyFixture(typeof(AppFixture))]
@@ -88,6 +91,44 @@ public sealed class AppFixture : IAsyncLifetime
         }
 
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>Adds tasks at the end of a project's first "to do" column directly, created by its owner, for lists too
+    /// long to type; each may have a due date and an assignee (by user name).</summary>
+    public async Task AddTasksAsync(string projectKey, IEnumerable<(string Title, DateOnly? Due, string? Assignee)> tasks)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+        var numbers = scope.ServiceProvider.GetRequiredService<IWorkItemNumberAllocator>();
+        var project = await db.Projects.AsNoTracking().SingleAsync(p => p.Key == projectKey);
+        var toDo = await db.ProjectStatuses.AsNoTracking()
+            .Where(s => s.ProjectId == project.Id && s.Category == StatusCategory.ToDo)
+            .OrderBy(s => s.Position)
+            .FirstAsync();
+        var rank = await db.WorkItems.Where(w => w.StatusId == toDo.Id && w.ParentId == null).MaxAsync(w => (string?)w.Rank);
+        var people = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.UserName!, u => new PersonRef(u.Id, u.DisplayName));
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        foreach (var (title, due, assignee) in tasks)
+        {
+            var context = ChangeContext.New(project.OwnerId, DateTimeOffset.UtcNow);
+            rank = Rank.After(rank);
+            var item = WorkItem.CreateTask(project.Id, project.Key, await numbers.NextAsync(project.Id, CancellationToken.None), title,
+                new StatusRef(toDo.Id, toDo.Name, toDo.Category), rank, context).Value!;
+            if (due is not null)
+            {
+                item.Schedule(null, due, context);
+            }
+
+            if (assignee is not null)
+            {
+                item.Assign(null, people[assignee], context);
+            }
+
+            db.WorkItems.Add(item);
+            await db.SaveChangesAsync();
+        }
+
+        await transaction.CommitAsync();
     }
 
     public async ValueTask DisposeAsync()

@@ -145,15 +145,15 @@ the drawer (spec US3).
 
 ### Tests for User Story 3 (write first, must fail) ⚠️
 
-- [ ] T049 [P] [US3] Write `tests/Upms.Application.Tests/Work/WorkItemListServiceTests.cs`: `P2_US3_AS1` tasks and sub-tasks with parent keys, newest key first, 50 per page with the total; `P2_US3_AS2` every sort in both directions (status by column position then board order, assignee by display name, priority by rank, dates with undated last); `P2_US3_AS3` filters by column, status type, priority, "me", "unassigned", people, "overdue" and "due in the next 7 days" relative to the given today, "no due date", and words in the title or description, alone and combined; non-members get `NotFound` (FR-028–FR-030)
-- [ ] T050 [P] [US3] Write bUnit tests `tests/Upms.Web.Tests/List/ProjectListViewTests.cs`: `P2_US3_AS4` the query string round-trips into the filters, sort and page and back; active filters as removable chips and "Clear filters"; sortable headers expose `aria-sort`; `P2_US3_AS5` a row opens the drawer and a change is reflected; `P2_US3_AS6` "What needs to be done?" creates in the first "to do" column (hidden for Viewers); `P2_US3_AS7` the empty state offers "Clear filters"; overdue rows carry the "Overdue" label (FR-020)
-- [ ] T051 [P] [US3] Write `tests/Upms.E2E.Tests/P2_US3_ListViewTests.cs`: the US3 Independent Test end to end, including the shared address in a second member's browser, plus axe scans at 1280 px and 360 px
+- [X] T049 [P] [US3] Write `tests/Upms.Application.Tests/Work/WorkItemListServiceTests.cs`: `P2_US3_AS1` tasks and sub-tasks with parent keys, newest key first, 50 per page with the total; `P2_US3_AS2` every sort in both directions (status by column position then board order, assignee by display name, priority by rank, dates with undated last); `P2_US3_AS3` filters by column, status type, priority, "me", "unassigned", people, "overdue" and "due in the next 7 days" relative to the given today, "no due date", and words in the title or description, alone and combined; non-members get `NotFound` (FR-028–FR-030)
+- [X] T050 [P] [US3] Write bUnit tests `tests/Upms.Web.Tests/List/ProjectListViewTests.cs`: `P2_US3_AS4` the query string round-trips into the filters, sort and page and back; active filters as removable chips and "Clear filters"; sortable headers expose `aria-sort`; `P2_US3_AS5` a row opens the drawer and a change is reflected; `P2_US3_AS6` "What needs to be done?" creates in the first "to do" column (hidden for Viewers); `P2_US3_AS7` the empty state offers "Clear filters"; overdue rows carry the "Overdue" label (FR-020)
+- [X] T051 [P] [US3] Write `tests/Upms.E2E.Tests/P2_US3_ListViewTests.cs`: the US3 Independent Test end to end, including the shared address in a second member's browser, plus axe scans at 1280 px and 360 px
 
 ### Implementation for User Story 3
 
-- [ ] T052 [US3] Implement `src/Upms.Application/Work/IWorkItemListService.cs` and `WorkItemListService.cs` (SQL filtering, sorting and paging; status and assignee sorts ordered in memory by ID, then the page read; research R11), registered as operation-scoped (make T049 pass)
-- [ ] T053 [US3] Create `src/Upms.Web/Components/Pages/List/ProjectListView.razor` at `/projects/{key}/list` (filters, chips, sortable headers, pager, query-string state, "What needs to be done?", drawer through `?task=`) and add the "List" view link to `ProjectHeader` (make T050 pass)
-- [ ] T054 [US3] Add "list load (sorted and filtered)" to `tests/Upms.Performance.Tests/Sc002LoadTests.cs` and tune `IX_WorkItems_Project_Live` if needed; then make T051 pass end to end
+- [X] T052 [US3] Implement `src/Upms.Application/Work/IWorkItemListService.cs` and `WorkItemListService.cs` (SQL filtering, sorting and paging; status and assignee sorts ordered in memory by ID, then the page read; research R11), registered as operation-scoped (make T049 pass)
+- [X] T053 [US3] Create `src/Upms.Web/Components/Pages/List/ProjectListView.razor` at `/projects/{key}/list` (filters, chips, sortable headers, pager, query-string state, "What needs to be done?", drawer through `?task=`) and add the "List" view link to `ProjectHeader` (make T050 pass)
+- [X] T054 [US3] Add "list load (sorted and filtered)" to `tests/Upms.Performance.Tests/Sc002LoadTests.cs` and tune `IX_WorkItems_Project_Live` if needed; then make T051 pass end to end
 
 **Checkpoint**: The List view works on its own on top of stories 1 and 2.
 
@@ -341,6 +341,18 @@ Decisions made while implementing are recorded here so the documents match the c
   focus, and the browser journeys wait for the suggestion before typing a key, as a person would.
 - **Accessibility scans wait for animations**: the drawer slides in over 0.18 s, and a scan during the
   slide measured half-transparent text; the axe helper now waits for running animations to finish.
+- **List state in the address** (T053): `Pages/List/ListState.cs` parses and rebuilds the query string, so the
+  round trip is tested on its own. The screen offers one value per filter; a shared address may carry
+  comma-separated lists, which apply and show as one chip each. Key and "updated" sorts start newest first,
+  the others ascending, and choosing the current column again reverses it.
+- **List view contract** (T052): `WorkItemListView` also carries `CanManage` and `CanRestoreDeleted` for the
+  project header, and `People` includes anyone the project's tasks are assigned to, so work of someone who
+  left the team can still be found.
+- **List performance** (T054): the SC-002 run after US3 (300 users, 498,935 work items, 120 s) kept every
+  action's p95 under 170 ms with no failures (list load 87 ms), so `IX_WorkItems_Project_Live` needed no
+  tuning. T065 repeats the run with the timeline and records it.
+- **Many tasks in browser tests** (T051): `AppFixture.AddTasksAsync` adds tasks through the domain for lists
+  too long to type.
 - **Today in component tests**: the bUnit base registers the viewer's time zone and `ViewerToday` (UTC
   unless a test registers another account service).
 - **Seeded teams** (T027, research R15): the largest project has 40 Members so that every tenth simulated

@@ -1,0 +1,428 @@
+@page "/projects/{Key}/list"
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Board
+@using Upms.Web.Components.Pages.Drawer
+@inject IWorkItemListService Lists
+@inject IBoardService Boards
+@inject ViewerToday ViewerToday
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@(_view?.ProjectName ?? Key) · List · U-PMS</PageTitle>
+
+@* The List view (Phase 2 FR-027–FR-033): every task and sub-task, sorted and filtered in SQL, with the state in the
+   address so a list can be bookmarked and shared. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_view is null)
+{
+    <p aria-busy="true">Loading the list…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.List"
+                   CanManage="_view.CanManage" CanRestoreDeleted="_view.CanRestoreDeleted" />
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">@_error</div>
+    }
+
+    <section class="list-filters" aria-label="Filters">
+        <form class="list-search" role="search" @onsubmit="Search">
+            <label for="filter-text">Words</label>
+            <input id="filter-text" type="search" class="input" maxlength="100" autocomplete="off" placeholder="In titles and descriptions"
+                   @bind="_textDraft" @bind:event="oninput" />
+            <button type="submit" class="btn btn-sm">Search</button>
+        </form>
+        <div class="filter">
+            <label for="filter-column">Status</label>
+            <select id="filter-column" class="select select-sm" value="@ColumnValue" @onchange="ColumnChanged">
+                <option value="">Any</option>
+                @foreach (var column in _view.Columns)
+                {
+                    <option value="@column.Id">@column.Name</option>
+                }
+            </select>
+        </div>
+        <div class="filter">
+            <label for="filter-type">Status type</label>
+            <select id="filter-type" class="select select-sm" value="@TypeValue" @onchange="TypeChanged">
+                <option value="">Any</option>
+                @foreach (var type in Enum.GetValues<StatusCategory>())
+                {
+                    <option value="@ListState.NameOf(type)">@TypeLabel(type)</option>
+                }
+            </select>
+        </div>
+        <div class="filter">
+            <label for="filter-priority">Priority</label>
+            <select id="filter-priority" class="select select-sm" value="@PriorityValue" @onchange="PriorityChanged">
+                <option value="">Any</option>
+                @foreach (var priority in Enum.GetValues<Priority>())
+                {
+                    <option value="@priority.ToString().ToLowerInvariant()">@priority</option>
+                }
+            </select>
+        </div>
+        <div class="filter">
+            <label for="filter-assignee">Assignee</label>
+            <select id="filter-assignee" class="select select-sm" value="@AssigneeValue" @onchange="AssigneeChanged">
+                <option value="">Anyone</option>
+                <option value="@ListState.MeValue">Me</option>
+                <option value="@ListState.UnassignedValue">Unassigned</option>
+                @foreach (var person in _view.People.Where(p => !p.IsMe))
+                {
+                    <option value="@person.UserId">@person.DisplayName</option>
+                }
+            </select>
+        </div>
+        <div class="filter">
+            <label for="filter-due">Due</label>
+            <select id="filter-due" class="select select-sm" value="@ListState.NameOf(State.Due)" @onchange="DueChanged">
+                <option value="">Any time</option>
+                @foreach (var due in new[] { DueFilter.Overdue, DueFilter.Next7Days, DueFilter.NoDueDate })
+                {
+                    <option value="@ListState.NameOf(due)">@DueLabel(due)</option>
+                }
+            </select>
+        </div>
+    </section>
+
+    @if (State.HasFilters)
+    {
+        <div class="chips-row">
+            <ul class="chips" aria-label="Active filters">
+                @foreach (var chip in Chips())
+                {
+                    <li class="chip" data-testid="filter-chip">
+                        <span class="chip-label">@chip.Label</span>
+                        <button type="button" class="chip-remove" aria-label="Remove filter @chip.Label" @onclick="() => Go(chip.Without)">×</button>
+                    </li>
+                }
+            </ul>
+            <button type="button" class="btn btn-sm btn-ghost" data-testid="clear-filters" @onclick="() => Go(State.WithoutFilters())">Clear filters</button>
+        </div>
+    }
+
+    @if (_view.CanContribute)
+    {
+        <div class="list-create">
+            <InlineCreate ColumnName="@FirstToDoName" OnCreate="CreateAsync" />
+        </div>
+    }
+
+    <p class="hint" data-testid="list-count" role="status">@CountText</p>
+
+    @if (_view.Rows.Items.Count == 0)
+    {
+        @if (State.HasFilters)
+        {
+            <EmptyState Title="No task matches these filters.">
+                <button type="button" class="btn" data-testid="empty-clear-filters" @onclick="() => Go(State.WithoutFilters())">Clear filters</button>
+            </EmptyState>
+        }
+        else
+        {
+            <EmptyState Title="No tasks yet" Text="Add the first task with “What needs to be done?”, here or on the board." />
+        }
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="tbl list-table">
+                <caption class="sr-only">Tasks and sub-tasks of @_view.ProjectName</caption>
+                <thead>
+                    <tr>
+                        @foreach (var column in TableColumns)
+                        {
+                            <th scope="col" class="@column.Class" data-sort="@ListState.NameOf(column.Sort)" aria-sort="@AriaSort(column.Sort)">
+                                <button type="button" class="sort-btn" @onclick="() => Go(State.WithSort(column.Sort))">@column.Label</button>
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _view.Rows.Items)
+                    {
+                        <tr data-testid="list-row" data-key="@row.Key" @key="row.Key">
+                            <td class="key">@row.Key</td>
+                            <td>
+                                <a id="@LinkId(row.Key)" class="task-link" href="@TaskHref(row.Key)">@row.Title</a>
+                                @if (row.ParentKey is { } parent)
+                                {
+                                    <div class="hint">Sub-task of @parent</div>
+                                }
+                            </td>
+                            <td>@row.Status.Name</td>
+                            <td class="hide-sm"><PriorityIcon Priority="row.Priority" /> <span aria-hidden="true">@row.Priority</span></td>
+                            <td class="hide-sm">
+                                @if (row.Assignee is null)
+                                {
+                                    <span class="hint">Unassigned</span>
+                                }
+                                <AssigneeBadge Assignee="row.Assignee" ShowName="true" />
+                            </td>
+                            <td class="hide-sm">@DateText(row.StartDate)</td>
+                            <td><DueDateText Due="row.DueDate" IsOpen="row.IsOpen" Today="_today" /></td>
+                            <td class="hide-sm hint"><LocalTime Value="row.UpdatedAt" Format="d MMM yyyy" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <Pager PageNumber="_view.Rows.PageNumber" PageCount="_view.Rows.PageCount" Label="Pages of the list" OnPageChanged="page => Go(State.WithPage(page))" />
+    }
+
+    @if (!string.IsNullOrEmpty(TaskKey))
+    {
+        <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+    }
+}
+
+@code {
+    private static readonly (ListSort Sort, string Label, string Class)[] TableColumns =
+    [
+        (ListSort.Key, "Key", ""),
+        (ListSort.Title, "Title", ""),
+        (ListSort.Status, "Status", ""),
+        (ListSort.Priority, "Priority", "hide-sm"),
+        (ListSort.Assignee, "Assignee", "hide-sm"),
+        (ListSort.StartDate, "Start", "hide-sm"),
+        (ListSort.DueDate, "Due", ""),
+        (ListSort.Updated, "Updated", "hide-sm"),
+    ];
+
+    private WorkItemListView? _view;
+    private bool _notFound;
+    private string? _error;
+    private string? _loadedAddress;
+    private string _textDraft = "";
+    private DateOnly _today;
+    private string? _focusKey;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    [SupplyParameterFromQuery(Name = "sort")]
+    public string? SortValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "dir")]
+    public string? DirectionValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "column")]
+    public string? ColumnsValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "type")]
+    public string? TypesValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "priority")]
+    public string? PrioritiesValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "assignee")]
+    public string? AssigneesValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "due")]
+    public string? DueValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? TextValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "page")]
+    public int? PageValue { get; set; }
+
+    /// <summary><c>?task={KEY-N}</c> opens the task's details drawer over the list (FR-032).</summary>
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    private ListState State { get; set; } = ListState.Default;
+
+    private string FirstToDoName => _view!.Columns.FirstOrDefault(c => c.Id == _view.FirstToDoColumnId)?.Name ?? "To Do";
+
+    private string CountText => _view!.Rows.TotalCount == 1 ? "1 task" : $"{_view.Rows.TotalCount} tasks";
+
+    private string ColumnValue => State.Columns.Count == 1 ? State.Columns[0].ToString(CultureInfo.InvariantCulture) : "";
+
+    private string TypeValue => State.Types.Count == 1 ? ListState.NameOf(State.Types[0]) : "";
+
+    private string PriorityValue => State.Priorities.Count == 1 ? State.Priorities[0].ToString().ToLowerInvariant() : "";
+
+    private string AssigneeValue => (State.Me, State.Unassigned, State.People.Count) switch
+    {
+        (true, false, 0) => ListState.MeValue,
+        (false, true, 0) => ListState.UnassignedValue,
+        (false, false, 1) => State.People[0].ToString(),
+        _ => "",
+    };
+
+    // Opening or closing the drawer changes only ?task: the list is not read again.
+    protected override async Task OnParametersSetAsync()
+    {
+        State = ListState.Parse(SortValue, DirectionValue, ColumnsValue, TypesValue, PrioritiesValue, AssigneesValue, DueValue, TextValue, PageValue);
+        var address = Key + "?" + string.Join('&', State.ToParameters().Select(p => $"{p.Key}={p.Value}"));
+        if (address == _loadedAddress)
+        {
+            return;
+        }
+
+        _loadedAddress = address;
+        _textDraft = State.Text;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusKey is { } key && string.IsNullOrEmpty(TaskKey))
+        {
+            // Focus returns to the row whose drawer was closed.
+            _focusKey = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", LinkId(key));
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _today = await ViewerToday.GetAsync();
+        var result = await Lists.ListAsync(Key, State.ToQuery(), _today, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            // Someone removed from the team meanwhile sees what they may see now: "not found" (Phase 2 FR-011).
+            _view = null;
+            _notFound = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
+            _error = _notFound ? null : result.Error.Message;
+            return;
+        }
+
+        _notFound = false;
+        _error = null;
+        _view = result.Value!;
+    }
+
+    private void Go(ListState state) => Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(state.ToParameters()));
+
+    private void Search() => Go(State.WithText(_textDraft));
+
+    private void ColumnChanged(ChangeEventArgs e) =>
+        Go(State.WithColumn(long.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null));
+
+    private void TypeChanged(ChangeEventArgs e) =>
+        Go(State.WithType(Enum.GetValues<StatusCategory>().Where(t => ListState.NameOf(t) == e.Value?.ToString()).Select(t => (StatusCategory?)t).FirstOrDefault()));
+
+    private void PriorityChanged(ChangeEventArgs e) =>
+        Go(State.WithPriority(Enum.TryParse<Priority>(e.Value?.ToString(), ignoreCase: true, out var priority) ? priority : null));
+
+    private void AssigneeChanged(ChangeEventArgs e) => Go(State.WithAssignee(e.Value?.ToString() ?? ""));
+
+    private void DueChanged(ChangeEventArgs e) =>
+        Go(State.WithDue(new[] { DueFilter.Overdue, DueFilter.Next7Days, DueFilter.NoDueDate }.FirstOrDefault(d => ListState.NameOf(d) == e.Value?.ToString())));
+
+    private string TaskHref(string key) => Navigation.ToBaseRelativePath(Navigation.GetUriWithQueryParameter("task", key));
+
+    private static string LinkId(string key) => $"list-task-{key}";
+
+    private void CloseDrawer()
+    {
+        _focusKey = TaskKey;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
+    }
+
+    private async Task<string?> CreateAsync(string title)
+    {
+        var result = await Boards.CreateInlineAsync(Key, _view!.FirstToDoColumnId, title, CancellationToken.None);
+        if (result.Error is { Kind: ErrorKind.NotFound or ErrorKind.Forbidden })
+        {
+            await LoadAsync();
+            StateHasChanged();
+            return result.Error.Message;
+        }
+
+        if (!result.IsSuccess)
+        {
+            return result.Error!.MessageFor("Title");
+        }
+
+        Announcer.Announce($"Created {result.Value!.Key}: {result.Value.Title}.");
+        await LoadAsync();
+        // Called through a plain delegate from the input box, so re-render explicitly.
+        StateHasChanged();
+        return null;
+    }
+
+    private string AriaSort(ListSort sort) => sort != State.Sort ? "none" : State.Descending ? "descending" : "ascending";
+
+    private string DateText(DateOnly? date) => date is { } d
+        ? d.ToString(d.Year == _today.Year ? "d MMM" : "d MMM yyyy", CultureInfo.InvariantCulture)
+        : "";
+
+    private static string TypeLabel(StatusCategory type) => type switch
+    {
+        StatusCategory.ToDo => "To do",
+        StatusCategory.InProgress => "In progress",
+        _ => "Done",
+    };
+
+    private static string DueLabel(DueFilter due) => due switch
+    {
+        DueFilter.Overdue => "Overdue",
+        DueFilter.Next7Days => "In the next 7 days",
+        _ => "No due date",
+    };
+
+    /// <summary>One removable chip per active filter value, in the order of the filter controls (FR-030).</summary>
+    private IEnumerable<(string Label, ListState Without)> Chips()
+    {
+        foreach (var id in State.Columns)
+        {
+            var name = _view!.Columns.FirstOrDefault(c => c.Id == id)?.Name ?? id.ToString(CultureInfo.InvariantCulture);
+            yield return ($"Status: {name}", State with { Columns = State.Columns.Where(c => c != id).ToList(), Page = 1 });
+        }
+
+        foreach (var type in State.Types)
+        {
+            yield return ($"Status type: {TypeLabel(type)}", State with { Types = State.Types.Where(t => t != type).ToList(), Page = 1 });
+        }
+
+        foreach (var priority in State.Priorities)
+        {
+            yield return ($"Priority: {priority}", State with { Priorities = State.Priorities.Where(p => p != priority).ToList(), Page = 1 });
+        }
+
+        if (State.Me)
+        {
+            yield return ("Assignee: Me", State with { Me = false, Page = 1 });
+        }
+
+        if (State.Unassigned)
+        {
+            yield return ("Assignee: Unassigned", State with { Unassigned = false, Page = 1 });
+        }
+
+        foreach (var person in State.People)
+        {
+            var name = _view!.People.FirstOrDefault(p => p.UserId == person)?.DisplayName ?? "someone";
+            yield return ($"Assignee: {name}", State with { People = State.People.Where(p => p != person).ToList(), Page = 1 });
+        }
+
+        if (State.Due != DueFilter.Any)
+        {
+            yield return ($"Due: {DueLabel(State.Due)}", State with { Due = DueFilter.Any, Page = 1 });
+        }
+
+        if (State.Text.Length > 0)
+        {
+            yield return ($"Words: {State.Text}", State with { Text = "", Page = 1 });
+        }
+    }
+}

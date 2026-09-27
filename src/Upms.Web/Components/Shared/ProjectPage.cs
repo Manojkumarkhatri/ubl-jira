@@ -4,6 +4,7 @@ namespace Upms.Web.Components.Shared;
 public enum ProjectPage
 {
     Board,
+    List,
     Members,
     Settings,
     Deleted,

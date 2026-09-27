@@ -255,6 +255,28 @@ dialog.modal::backdrop { background: rgba(9, 12, 16, .45); }
 .group-title .key { font-weight: 600; margin-left: 4px; }
 .task-link { color: var(--text); text-decoration: none; font-weight: 500; overflow-wrap: anywhere; }
 .task-link:hover { color: var(--link); text-decoration: underline; }
+/* Phase 2 List view (FR-028–FR-031): filters, removable chips and sortable headers; the sort arrow is drawn, and
+   aria-sort tells assistive technology the order. */
+.list-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: 0 0 12px; }
+.list-filters .filter, .list-search { display: flex; flex-direction: column; gap: 4px; }
+.list-filters label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.list-search { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 6px; }
+.list-search label { flex-basis: 100%; }
+.list-search .input { width: min(260px, 100%); min-height: 32px; padding: 4px 8px; }
+.chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 14px; background: var(--accent-soft); color: var(--text); font-size: 12px; font-weight: 600; }
+.chip-remove { border: 0; background: transparent; color: var(--text-2); width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; }
+.chip-remove:hover { background: var(--surface-3); color: var(--text); }
+.list-create { max-width: 480px; margin: 0 0 8px; }
+.list-create .inline-create { padding: 0; }
+.list-table th { white-space: nowrap; }
+.sort-btn { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.sort-btn:hover { color: var(--text); text-decoration: underline; }
+th[aria-sort="ascending"] .sort-btn::after, th[aria-sort="descending"] .sort-btn::after { content: ""; border: 5px solid transparent; }
+th[aria-sort="ascending"] .sort-btn::after { border-bottom-color: currentColor; margin-top: -5px; }
+th[aria-sort="descending"] .sort-btn::after { border-top-color: currentColor; margin-top: 5px; }
+.list-table td.key { font-size: 12px; }
 .inline-create { padding: 6px 8px 10px; }
 .inline-input { background: var(--surface); }
 /* The "Move to" list opens inside the card, so the column's own scrolling never clips it. */
