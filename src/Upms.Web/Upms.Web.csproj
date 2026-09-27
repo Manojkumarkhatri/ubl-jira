@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <UserSecretsId>upms-web-7c1d2e5a-4b0f-4a8e-9d3c-2f6a1b8e0c47</UserSecretsId>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Upms.Infrastructure\Upms.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.SqlClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Upms.Web.Tests" />
+    <InternalsVisibleTo Include="Upms.E2E.Tests" />
+    <InternalsVisibleTo Include="Upms.Architecture.Tests" />
+  </ItemGroup>
+
+</Project>

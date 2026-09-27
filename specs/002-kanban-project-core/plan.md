@@ -29,8 +29,8 @@ is an additive change (research R26).
 **Language/Version**: C# 14 on .NET 10 (LTS)
 
 **Primary Dependencies**: ASP.NET Core 10 (Blazor Web App, Interactive Server), ASP.NET Core Identity
-(EF Core stores), EF Core 10 (SQL Server provider), Microsoft Fluent UI Blazor components,
-OpenTelemetry .NET
+(EF Core stores), EF Core 10 (SQL Server provider), OpenTelemetry .NET; native HTML controls and
+`<dialog>` for the UI (research R3)
 
 **Storage**: SQL Server 2022 or later (or Azure SQL Database); data protection keys in the database
 
@@ -170,6 +170,5 @@ changes (research R26) rather than new projects or restructured tables.
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | Principle III: Phase 1 authorizes by role, project ownership and item authorship, not project membership (open workspace, FR-015) | The agreed roadmap puts project member management in Phase 2; the spec limits Phase 1 to a pilot with non-confidential work, and membership must exist before confidential projects are tracked | Building membership now pulls Phase 2 forward; skipping checks until Phase 2 would scatter authorization later. The chosen design still checks every read and write through `IProjectAccess` (research R7), so Phase 2 changes one implementation |
-| Microsoft.FluentUI.AspNetCore.Components | Accessible inputs, dialogs, menus and the drawer shell (constitution VI, FR-042) | Hand-building accessible menus and dialogs is large and error-prone |
-| OpenTelemetry .NET packages | Traces and metrics required by the constitution (Observability) | The built-in `Activity` and `Meter` APIs need an exporter; OpenTelemetry is the vendor-neutral standard |
+| OpenTelemetry .NET packages (hosting, ASP.NET Core and SqlClient instrumentation, OTLP exporter) | Traces and metrics required by the constitution (Observability) | The built-in `Activity` and `Meter` APIs need an exporter; OpenTelemetry is the vendor-neutral standard |
 | Test-only: Respawn, Deque.AxeCore.Playwright, ArchUnitNET (beyond the constitution's xUnit, bUnit, Testcontainers, Playwright) | Fast database reset between tests; automated WCAG checks (SC-008); enforcing module boundaries (constitution V) | Recreating databases per test is slow; manual accessibility checks are not repeatable; boundary rules by convention erode |

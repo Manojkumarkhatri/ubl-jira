@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Generates realistic data volumes for the performance suite (SC-002). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Upms.Infrastructure\Upms.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Application services against a real SQL Server (constitution II): Testcontainers + Respawn. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Upms.Infrastructure\Upms.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Respawn" />
+    <PackageReference Include="Testcontainers.MsSql" />
+  </ItemGroup>
+
+</Project>

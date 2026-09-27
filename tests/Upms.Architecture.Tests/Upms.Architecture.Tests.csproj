@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Module boundaries and entity encapsulation (research R4, R17). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Upms.Web\Upms.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TngTech.ArchUnitNET.xUnitV3" />
+  </ItemGroup>
+
+</Project>

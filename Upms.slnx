@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Upms.Application/Upms.Application.csproj" />
+    <Project Path="src/Upms.Domain/Upms.Domain.csproj" />
+    <Project Path="src/Upms.Infrastructure/Upms.Infrastructure.csproj" />
+    <Project Path="src/Upms.Web/Upms.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Upms.Application.Tests/Upms.Application.Tests.csproj" />
+    <Project Path="tests/Upms.Architecture.Tests/Upms.Architecture.Tests.csproj" />
+    <Project Path="tests/Upms.Domain.Tests/Upms.Domain.Tests.csproj" />
+    <Project Path="tests/Upms.E2E.Tests/Upms.E2E.Tests.csproj" />
+    <Project Path="tests/Upms.Performance.Tests/Upms.Performance.Tests.csproj" />
+    <Project Path="tests/Upms.Web.Tests/Upms.Web.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Upms.Seed/Upms.Seed.csproj" />
+  </Folder>
+</Solution>

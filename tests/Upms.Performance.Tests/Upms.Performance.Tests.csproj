@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Opt-in load tests for SC-002 (category "Performance"). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Upms.Infrastructure\Upms.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Testcontainers.MsSql" />
+  </ItemGroup>
+
+</Project>

@@ -27,11 +27,16 @@ Package versions are "latest stable compatible with .NET 10", pinned in `Directo
 
 ### R3. Component library
 
-- **Decision**: Microsoft Fluent UI Blazor for inputs, dialogs, menus and the drawer shell; the board,
+- **Decision** (revised at implementation, 2026-09-27): native HTML controls (`button`, `input`,
+  `select`, `textarea`) and the native `<dialog>` element, wrapped in a few small in-house components
+  (dialog, drawer, menu button, live region) and styled with the design prototype's look; the board,
   its columns and cards are custom components.
-- **Rationale**: accessible, Microsoft-maintained components (constitution VI) without building
-  comboboxes, dialogs and menus by hand.
-- **Alternatives considered**: MudBlazor (more custom accessibility work); no library (large effort).
+- **Rationale**: native controls are accessible by default (constitution VI); `<dialog>` provides focus
+  containment, `Esc` and an inert background in every target browser; native elements behave
+  predictably in bUnit and Playwright tests; one dependency fewer (constitution V).
+- **Alternatives considered**: Microsoft Fluent UI Blazor, the original choice (its web components
+  and shadow DOM complicate component and browser tests, and version 5 changed its API); MudBlazor
+  (more custom accessibility work).
 
 ### R4. Solution structure and modules
 
@@ -266,7 +271,7 @@ Package versions are "latest stable compatible with .NET 10", pinned in `Directo
 
 ### R22. Accessibility
 
-- **Decision**: Fluent UI components; landmarks and skip link; keyboard "Move to", "Move left" and
+- **Decision**: native controls and `<dialog>` (R3); landmarks and skip link; keyboard "Move to", "Move left" and
   "Move right" actions; drawer focus management; automated checks with Deque axe-core through
   `Deque.AxeCore.Playwright` on every Phase 1 screen; a manual screen-reader pass (NVDA with Edge)
   before the pilot (FR-042, SC-008).
@@ -274,7 +279,8 @@ Package versions are "latest stable compatible with .NET 10", pinned in `Directo
 ### R23. Observability
 
 - **Decision**: `ILogger` with the JSON console formatter; OpenTelemetry traces and metrics for
-  ASP.NET Core and EF Core, exported through OTLP when configured; `/health/live` and `/health/ready`
+  ASP.NET Core and database calls (SqlClient instrumentation, which covers EF Core; the EF Core
+  instrumentation package has only prerelease versions), exported through OTLP when configured; `/health/live` and `/health/ready`
   (database). Every log entry carries the trace ID as its correlation ID. Logs contain IDs, never task
   text, comments or credentials.
 

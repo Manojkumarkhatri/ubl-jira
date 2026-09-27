@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Entities and business rules. No EF Core or ASP.NET Core dependencies (research R4); the only
+       package is the Identity user model that User extends. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Identity.Stores" />
+  </ItemGroup>
+
+</Project>

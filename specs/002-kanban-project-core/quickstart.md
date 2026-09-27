@@ -14,6 +14,7 @@ here are created during implementation (see `tasks.md`); this guide defines how 
 ## 1. Start SQL Server
 
 ```bash
+export MSSQL_SA_PASSWORD='<local-sa-password>'   # or put it in a local .env file (never committed)
 docker compose up -d sqlserver      # standard SQL Server 2022 image; no other services in Phase 1
 docker compose ps                   # sqlserver: healthy
 ```

@@ -1,0 +1,29 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+packages/
+artifacts/
+
+# Test output
+TestResults/
+*.trx
+coverage/
+playwright-traces/
+tests/**/traces/
+
+# IDEs and OS
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+# Local secrets and environment files (never commit secrets)
+.env
+.env.*
+appsettings.*.local.json
