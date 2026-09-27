@@ -134,7 +134,8 @@ erDiagram
 - Hierarchy: a `Subtask` must have a `Task` parent in the same project and cannot be a parent itself
   (FR-028).
 - New tasks created inline start in the column where they were typed, ranked after its last card;
-  sub-tasks start in the leftmost `ToDo` status, ranked after their last sibling (FR-018, FR-040).
+  sub-tasks start in the leftmost `ToDo` status, ranked after their last sibling, and are listed in
+  their parent's drawer in rank order (FR-018, FR-028, FR-040).
 - Moving a task to a `Done` status with open sub-tasks is allowed; the result carries a warning listing
   them (FR-029).
 - Deleting a task soft-deletes its sub-tasks in the same change set; restoring it restores them
@@ -164,12 +165,16 @@ leaving a Done-category status  → ResolvedAt = null
 | ChangeSetId | uniqueidentifier | groups the changes of one user action |
 | ActorId | uniqueidentifier | |
 | OccurredAt | datetimeoffset | |
-| Field | varchar(30) | `Created`, `Title`, `Description`, `Priority`, `Status`, `SubtaskAdded`, `CommentAdded`, `CommentEdited`, `CommentDeleted`, `Deleted`, `Restored` |
+| Field | varchar(30) | `Created`, `Title`, `Description`, `Priority`, `Status`, `Rank`, `SubtaskAdded`, `CommentAdded`, `CommentEdited`, `CommentDeleted`, `Deleted`, `Restored` |
 | OldValue, NewValue | nvarchar(max) null | display snapshots (for example status names) |
 | Note | nvarchar(200) null | for example "column deleted" |
 
 - Index `(WorkItemId, OccurredAt)`. Append-only trigger (research R17). Written in the same
   transaction as the change (FR-031, SC-004).
+- A reorder within a column records `Rank`, with the card's 1-based position in the column before and
+  after as old and new values and a note such as "moved above WEB-3", "moved to top" or "moved to
+  bottom"; a move to another column records only `Status`; rank rebalancing (research R14) keeps the
+  order and records nothing (FR-031, constitution IV).
 
 ### Comment (`Comments`)
 
@@ -195,8 +200,11 @@ leaving a Done-category status  → ResolvedAt = null
 - **Board**: a project's statuses in `Position` order, each with its top-level, non-deleted work items
   in `Rank` order; `Done`-category statuses include only items resolved in the last 14 days unless "show
   all" is chosen; each card carries its sub-tasks' done/total counts; each column carries its card count
-  and whether it exceeds `WipLimit`.
-- **Open work item**: its status's category is not `Done`, and it is not deleted.
+  (the cards it shows) and whether that count exceeds `WipLimit`.
+- **Open work item**: its status's category is not `Done`, and it is not deleted. A project's "open
+  tasks" count (FR-013) counts its open work items, sub-tasks included.
+- **Lists**: project, account and deleted-task lists are paged 50 at a time with a total count;
+  sub-tasks, comments and history in the drawer load 50 at a time (constitution performance baseline).
 
 ## Planned additive changes (later phases; not built in Phase 1)
 

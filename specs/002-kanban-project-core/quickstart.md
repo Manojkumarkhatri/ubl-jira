@@ -122,8 +122,8 @@ dotnet run --project tools/Upms.Seed -- --users 2000 --projects 200 --tasks 5000
 dotnet test tests/Upms.Performance.Tests --filter "Category=Performance"
 ```
 
-**Expected**: with 300 simulated concurrent users, p95 ≤ 1 second for board load (up to 500 visible
-cards), inline creation, card move and drawer open.
+**Expected**: with 300 simulated concurrent users, p95 ≤ 1 second for project list and board loads (up
+to 500 visible cards), inline creation, card move, drawer open and saving a task edit.
 
 ## 8. Restore drill (SC-009, SC-010)
 

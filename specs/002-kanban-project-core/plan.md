@@ -42,8 +42,9 @@ current Edge, Chrome and Firefox on desktop; usable at 360 px width
 
 **Project Type**: Web application (server-rendered Blazor, single deployable modular monolith)
 
-**Performance Goals**: p95 ≤ 1 s for board load (up to 500 visible cards), inline creation, card move
-and drawer open, at 500,000 work items and 300 concurrent users (SC-002)
+**Performance Goals**: p95 ≤ 1 s for project list and board loads (up to 500 visible cards), inline
+creation, card move, drawer open and saving an edit, at 500,000 work items and 300 concurrent users
+(SC-002); every list is paged, 50 items at a time (constitution performance baseline)
 
 **Constraints**: 99.5% monthly availability, RPO ≤ 1 h, RTO ≤ 4 h (SC-009, SC-010); WCAG 2.2 AA with
 keyboard alternatives for every drag (FR-042); 30-minute idle timeout (FR-006); plain text only
@@ -148,7 +149,7 @@ tools/
 tests/
 ├── Upms.Domain.Tests/              # unit: keys, ranks, board rules, work item rules and history
 ├── Upms.Application.Tests/         # integration: services on real SQL Server (Testcontainers + Respawn)
-├── Upms.Web.Tests/                 # bUnit component tests
+├── Upms.Web.Tests/                 # bUnit component tests; host security tests (WebApplicationFactory)
 ├── Upms.E2E.Tests/                 # Playwright journeys per story + axe scans
 ├── Upms.Architecture.Tests/        # ArchUnitNET: module boundaries, private setters
 └── Upms.Performance.Tests/         # opt-in: SC-002

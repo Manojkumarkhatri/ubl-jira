@@ -22,6 +22,9 @@ public abstract record CardPlacement {                 // research R14, R15
     public sealed record End   : CardPlacement;                        // drop on column footer
     public sealed record Top   : CardPlacement;                        // "Move to" menu
 }
+
+public sealed record PageRequest(int Page = 1, int PageSize = 50);    // 1-based; PageSize 1–100
+public sealed record Page<T>(IReadOnlyList<T> Items, int TotalCount, int PageNumber, int PageSize);
 ```
 
 - **Permission first**: every method checks `IProjectAccess` before any other work.
@@ -32,6 +35,8 @@ public abstract record CardPlacement {                 // research R14, R15
   `DuplicateColumnName`, `TooManyColumns`, `LastToDoColumn`, `LastDoneColumn`, `ColumnNotEmpty`,
   `DestinationRequired`, `SubtaskDepth`, `CommentNotOwned`.
 - **History**: every work-item-changing method writes `WorkItemChange` rows in the same transaction.
+- **Paging**: every list is paged (constitution performance baseline): screens show 50 items per page;
+  the drawer loads sub-tasks, comments and history 50 at a time with "Show more".
 
 ## Identity module
 
@@ -52,7 +57,7 @@ public interface IAccountService                                 // self (FR-007
 
 public interface IUserAdminService                               // Administrator (FR-003, FR-004)
 {
-    Task<IReadOnlyList<UserSummary>> ListUsersAsync(string? search, CancellationToken ct);
+    Task<Page<UserSummary>> ListUsersAsync(string? search, PageRequest page, CancellationToken ct);
     Task<Result<CreatedUser>> AddUserAsync(string userName, string displayName, string email,
         CancellationToken ct);                                   // TemporaryPassword returned once
     Task<Result<string>> ResetPasswordAsync(Guid userId, CancellationToken ct);  // new temporary password
@@ -65,6 +70,13 @@ public interface IAuditLog                                       // contract for
     Task WriteAsync(AuditEventType type, Guid? subjectUserId, string target, object? details,
         CancellationToken ct);
 }
+
+public interface IUserDirectory                                  // contract for other modules
+{
+    Task<IReadOnlyDictionary<Guid, UserDisplay>> GetAsync(IReadOnlyCollection<Guid> userIds,
+        CancellationToken ct);           // deactivated users included: their names stay on past work
+}
+public sealed record UserDisplay(Guid Id, string DisplayName, bool IsActive);
 ```
 
 ## Projects module
@@ -72,7 +84,7 @@ public interface IAuditLog                                       // contract for
 ```csharp
 public interface IProjectService
 {
-    Task<IReadOnlyList<ProjectSummary>> ListAsync(CancellationToken ct);         // FR-013
+    Task<Page<ProjectSummary>> ListAsync(PageRequest page, CancellationToken ct); // FR-013, by name
     Task<string> SuggestKeyAsync(string projectName, CancellationToken ct);      // FR-011
     Task<Result<string>> CreateAsync(string name, string key, string? description,
         CancellationToken ct);            // DuplicateProjectKey/Name, InvalidProjectKey; seeds 3 columns (FR-016)
@@ -146,9 +158,14 @@ public interface IWorkItemService                                // FR-024–FR-
         CancellationToken ct);                                   // leftmost "done" column
     Task<Result<DeletePreview>> PreviewDeleteAsync(string workItemKey, CancellationToken ct);
     Task<Result> DeleteAsync(string workItemKey, CancellationToken ct);          // Creator/Owner/Admin
-    Task<Result<IReadOnlyList<DeletedItemView>>> ListDeletedAsync(string projectKey, CancellationToken ct); // Admin
+    Task<Result<Page<DeletedItemView>>> ListDeletedAsync(string projectKey, PageRequest page,
+        CancellationToken ct);                                   // Admin
     Task<Result> RestoreAsync(string workItemKey, CancellationToken ct);         // Admin
-    Task<Result<IReadOnlyList<ChangeView>>> GetHistoryAsync(string workItemKey, CancellationToken ct);
+    Task<Result<Page<SubtaskView>>> ListSubtasksAsync(string parentKey, PageRequest page,
+        CancellationToken ct);                                   // rank order
+    Task<Result<Page<ChangeView>>> GetHistoryAsync(string workItemKey, PageRequest page,
+        CancellationToken ct);                                   // time order
+    // GetAsync returns WorkItemDetails with the first page (50) of sub-tasks, comments and history.
 }
 public abstract record WorkItemEdit {                            // one field per save (FR-026)
     public sealed record Title(string Value) : WorkItemEdit;
@@ -159,11 +176,18 @@ public abstract record WorkItemEdit {                            // one field pe
 
 public interface ICommentService                                 // FR-030
 {
-    Task<Result<IReadOnlyList<CommentView>>> ListAsync(string workItemKey, CancellationToken ct);
+    Task<Result<Page<CommentView>>> ListAsync(string workItemKey, PageRequest page,
+        CancellationToken ct);                                   // oldest first
     Task<Result<CommentView>> AddAsync(string workItemKey, string body, CancellationToken ct);
     Task<Result<CommentView>> EditAsync(long commentId, string body, byte[] expectedVersion,
         CancellationToken ct);                                   // CommentNotOwned
     Task<Result> DeleteAsync(long commentId, CancellationToken ct);             // CommentNotOwned
+}
+
+public interface IWorkItemCounts                                 // contract used by the Projects module
+{
+    Task<IReadOnlyDictionary<long, int>> CountByStatusAsync(IReadOnlyCollection<long> statusIds,
+        CancellationToken ct);           // non-deleted tasks and sub-tasks per status (FR-013 open counts)
 }
 
 public interface IWorkItemStatusMover                            // contract used by the Projects module

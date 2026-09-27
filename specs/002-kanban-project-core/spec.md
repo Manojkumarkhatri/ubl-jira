@@ -270,8 +270,8 @@ owner cannot change the columns.
   can edit or delete someone else's comments.
 - **FR-031**: Each task MUST show a complete, time-ordered history of changes (who, when, what, old
   value, new value), covering creation, title, description, priority and status changes (including
-  moves caused by deleting a column), sub-tasks added, comments added, edited and deleted, and deletion
-  or restoration; no one can edit or remove history entries.
+  moves caused by deleting a column), changes of position within a column, sub-tasks added, comments
+  added, edited and deleted, and deletion or restoration; no one can edit or remove history entries.
 - **FR-032**: System MUST detect when someone else changed a task after the user loaded it; the user's
   save MUST NOT silently overwrite that change, and the user MUST see the latest values while keeping
   their own unsaved input.
@@ -334,9 +334,9 @@ owner cannot change the columns.
 
 - **SC-001**: At least 90% of first-time users can create a project and add their first three tasks in
   under 3 minutes without help.
-- **SC-002**: With 500,000 tasks in the system and 300 people using it at the same time, 95% of board
-  loads (up to 500 visible cards), inline task creations, card moves and drawer openings complete within
-  1 second.
+- **SC-002**: With 500,000 tasks in the system and 300 people using it at the same time, 95% of
+  project list and board loads (up to 500 visible cards), inline task creations, card moves, drawer
+  openings and saved task edits complete within 1 second.
 - **SC-003**: A project owner can add a column, rename another, reorder them and set a work-in-progress
   limit in under 2 minutes.
 - **SC-004**: 100% of task changes, including moves caused by deleting a column, appear in the task's

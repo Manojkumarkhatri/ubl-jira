@@ -11,12 +11,12 @@ with a keyboard alone (FR-042).
 | `/Account/Login`, `/Account/ChangePassword` | Sign in; forced and voluntary password change | anyone | FR-001, FR-003, FR-005 |
 | `/account/profile` | Display name, time zone, change password | self | FR-007, FR-043 |
 | `/` | Redirects to `/projects` | signed in | |
-| `/projects` | Project list with "Create project" (dialog: name, key suggested from the name, description) | signed in | FR-011, FR-013 |
+| `/projects` | Project list, 50 per page, with "Create project" (dialog: name, key suggested from the name, description) | signed in | FR-011, FR-013 |
 | `/projects/{key}/board` | Kanban board: columns, cards, card counts, over-limit markers, "What needs to be done?" per column, "Move to" menu, "Show all completed" toggle (`?done=all`) | signed in | FR-016–FR-022 |
-| `/projects/{key}/board?task={KEY-N}` | The board with that task's details drawer open (title, status, priority, description, sub-tasks, comments, history, delete) | signed in | FR-023–FR-033 |
+| `/projects/{key}/board?task={KEY-N}` | The board with that task's details drawer open (title, status, priority, description, sub-tasks, comments, history, delete); sub-tasks, comments and history load 50 at a time with "Show more" | signed in | FR-023–FR-033 |
 | `/projects/{key}/settings` | Project details (name, description) and board columns (add, rename, drag or move left/right, type, work-in-progress limit, delete with destination) | owner, Admin | FR-014, FR-034–FR-041 |
-| `/projects/{key}/deleted` | Deleted tasks with Restore | Admin | FR-033 |
-| `/admin/users` | Accounts: list, add (temporary password shown once), reset password, deactivate, reactivate | Admin | FR-003, FR-004 |
+| `/projects/{key}/deleted` | Deleted tasks, 50 per page, with Restore | Admin | FR-033 |
+| `/admin/users` | Accounts: list and search (50 per page), add (temporary password shown once), reset password, deactivate, reactivate | Admin | FR-003, FR-004 |
 
 ## Global layout
 

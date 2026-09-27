@@ -215,8 +215,10 @@ Package versions are "latest stable compatible with .NET 10", pinned in `Directo
   `MoveTo`, `AddSubtask`, `Delete`, `Restore`, …), each appending `WorkItemChange` rows (who, when,
   field, old value, new value, optional note) in the same transaction; comment actions add
   `CommentAdded`, `CommentEdited` and `CommentDeleted` entries. The table is append-only, enforced by
-  an `INSTEAD OF UPDATE, DELETE` trigger. Reordering within a column is not recorded: position is not a
-  property of the task, and every move between columns is recorded as a status change (FR-031).
+  an `INSTEAD OF UPDATE, DELETE` trigger. A reorder within a column is recorded as a `Rank` change
+  whose old and new values are the card's 1-based positions in the column, with a note such as "moved
+  above WEB-3"; a move between columns is recorded as a status change; rank rebalancing (R14) keeps the
+  order and records nothing (FR-031, constitution IV).
   Architecture tests assert that `WorkItem` properties have non-public setters.
 - **Rationale**: constitution IV and SC-004, testable test-first.
 - **Alternatives considered**: an EF interceptor diffing properties (loses intent, noisy).
@@ -237,7 +239,9 @@ Package versions are "latest stable compatible with .NET 10", pinned in `Directo
   columns include only items resolved in the last 14 days unless the user chooses "show all"
   (`?done=all`) (FR-021). Columns render their cards with Blazor `Virtualize` so a long column scrolls
   on its own. A filtered index on `(ProjectId, StatusId, Rank) WHERE IsDeleted = 0 AND ParentId IS NULL`
-  serves the board, and `(ProjectId, ResolvedAt)` serves the 14-day window.
+  serves the board, and `(ProjectId, ResolvedAt)` serves the 14-day window. Every list is paged
+  (constitution performance baseline): projects, accounts and deleted tasks 50 per page with a total
+  count; sub-tasks, comments and history in the drawer 50 at a time with "Show more".
 - **Rationale**: SC-002 (board of up to 500 visible cards within 1 second at 500,000 work items).
 - **Alternatives considered**: loading full entities (too much data per circuit); caching (not needed
   at this scale; would need justification under constitution V).
@@ -271,7 +275,8 @@ Package versions are "latest stable compatible with .NET 10", pinned in `Directo
 
 - **Decision**: `ILogger` with the JSON console formatter; OpenTelemetry traces and metrics for
   ASP.NET Core and EF Core, exported through OTLP when configured; `/health/live` and `/health/ready`
-  (database). Logs contain IDs, never task text, comments or credentials.
+  (database). Every log entry carries the trace ID as its correlation ID. Logs contain IDs, never task
+  text, comments or credentials.
 
 ### R24. Testing strategy
 
@@ -285,7 +290,8 @@ Package versions are "latest stable compatible with .NET 10", pinned in `Directo
   - `Upms.E2E.Tests` (Playwright + axe): one journey per user story plus accessibility scans.
   - `Upms.Architecture.Tests` (ArchUnitNET): module boundaries and private setters.
   - `Upms.Performance.Tests` (opt-in): 500,000 seeded work items, 300 concurrent simulated users;
-    p95 within 1 second for board load, inline create, card move and drawer open (SC-002).
+    p95 within 1 second for project list and board loads, inline create, card move, drawer open and
+    saving an edit (SC-002, constitution performance baseline).
   - Test names begin with the scenario they prove (for example `US1_AS5_InlineCreateAddsCard`).
 - **Rationale**: constitution II. Phase 1 needs only the standard SQL Server image (no full-text).
 
