@@ -178,6 +178,19 @@ public sealed class BoardColumnsEditorTests : BunitTestBase
     }
 
     [Fact]
+    public void US3_AS6_Deleting_the_only_done_column_is_explained_without_asking_for_a_destination()
+    {
+        var cut = RenderEditor();
+
+        Button(Row(cut, 2), "Delete").Click();
+
+        Assert.Contains("only \"done\" column", cut.Find("[data-testid=delete-blocked]").TextContent, StringComparison.Ordinal);
+        Assert.Empty(cut.FindAll("#delete-destination"));
+        Assert.Empty(cut.FindAll("[data-testid=delete-column] button.btn-danger"));
+        Assert.Empty(_columns.Calls);
+    }
+
+    [Fact]
     public void A_conflict_shows_the_latest_columns()
     {
         var latest = _columns.View() with { BoardVersion = 9, Columns = [.. _columns.View().Columns, new BoardColumnView(5, "QA", StatusCategory.InProgress, 3, null, 0, true)] };

@@ -119,9 +119,9 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await GotoAsync(page, "/projects/AUD/settings");
 
         await ColumnRow(page, "Done").GetByRole(AriaRole.Button, new() { Name = "Delete" }).ClickAsync();
-        await page.GetByTestId("delete-column").GetByRole(AriaRole.Button, new() { Name = "Delete column" }).ClickAsync();
 
         await Assertions.Expect(page.GetByTestId("delete-column")).ToContainTextAsync("only \"done\" column");
+        await Assertions.Expect(page.GetByTestId("delete-column").GetByRole(AriaRole.Button, new() { Name = "Delete column" })).ToHaveCountAsync(0);
         await page.Keyboard.PressAsync("Escape");
         await Assertions.Expect(page.Locator(".column-name")).ToHaveTextAsync(["To Do", "In Progress", "Done"]);
     }

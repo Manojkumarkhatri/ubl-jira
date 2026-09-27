@@ -140,7 +140,11 @@
         <ChildContent>
             @if (_deleting is { } deleting)
             {
-                @if (deleting.IsEmpty)
+                @if (_deleteBlocked is not null)
+                {
+                    <p role="alert" data-testid="delete-blocked">@_deleteBlocked</p>
+                }
+                else if (deleting.IsEmpty)
                 {
                     <p>@deleting.Name holds no work items.</p>
                 }
@@ -165,8 +169,11 @@
             }
         </ChildContent>
         <Footer>
-            <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">Cancel</button>
-            <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete column</button>
+            <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">@(_deleteBlocked is null ? "Cancel" : "Close")</button>
+            @if (_deleteBlocked is null)
+            {
+                <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete column</button>
+            }
         </Footer>
     </ModalDialog>
 </section>
@@ -187,6 +194,7 @@
     private BoardColumnView? _deleting;
     private string? _destinationId;
     private string? _deleteError;
+    private string? _deleteBlocked;
     private ModalDialog? _deleteDialog;
     private BoardColumnView? _dragging;
     private long? _dropTarget;
@@ -431,6 +439,13 @@
         _deleting = column;
         _destinationId = null;
         _deleteError = null;
+        // Say straight away when the column cannot go (FR-038); the server enforces the same rule.
+        var lastOfKind = column.Category != StatusCategory.InProgress
+            && _view!.Columns.Count(c => c.Category == column.Category) == 1;
+        _deleteBlocked = lastOfKind
+            ? $"{column.Name} is the board's only \"{CategoryName(column.Category).ToLowerInvariant()}\" column, and every board needs one. " +
+              "Add another column of that type first."
+            : null;
         _deleteDialog!.Open();
     }
 

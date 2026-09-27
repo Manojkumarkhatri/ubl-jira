@@ -231,7 +231,7 @@ lost, and a non-owner cannot change columns (spec US3).
 - [X] T111 Review Phase 1 against OWASP ASVS Level 2, record it in `docs/security/phase1-asvs-review.md`, and fix findings (constitution III)
 - [ ] T112 Do a manual screen-reader pass (NVDA with Edge) on the Phase 1 screens, record it in `docs/accessibility/phase1-screen-reader-review.md`, and fix findings (constitution VI)
 - [X] T113 Update `README.md` with local setup (linking quickstart.md) and test commands
-- [ ] T114 Run every step of `specs/002-kanban-project-core/quickstart.md`, including the restore drill, and record the results
+- [X] T114 Run every step of `specs/002-kanban-project-core/quickstart.md`, including the restore drill, and record the results
 
 ---
 
@@ -416,3 +416,6 @@ Decisions made while implementing, recorded so the documents match the code:
   requirements that need a decision (multi-factor for administrators, managing one's own sessions).
 - **Screen-reader review** (T112): the automated pre-check is done and its findings fixed
   (`docs/accessibility/phase1-screen-reader-review.md`); the manual NVDA pass needs a person and is still open.
+- **Quickstart run** (T114): recorded in `validation.md`. It found that `dotnet ef database update` ignored the
+  user secrets of step 2 (fixed in the design-time factory) and led to a clearer dialog for columns that cannot
+  be deleted. The restore drill passed locally; the drill on production backups is still due before the pilot.
