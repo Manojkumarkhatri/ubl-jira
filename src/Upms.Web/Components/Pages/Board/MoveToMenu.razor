@@ -1,0 +1,49 @@
+@using Upms.Application.Work
+<div class="move-menu" @onkeydown="OnKeyDownAsync">
+    <button type="button" class="btn btn-sm btn-ghost move-btn" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_menuId"
+            @ref="_button" @onclick="Toggle">
+        Move<span class="sr-only"> @CardKey to…</span>
+    </button>
+    @if (_open)
+    {
+        <div id="@_menuId" class="move-list" role="group" aria-label="Move @CardKey to">
+            @foreach (var column in Columns)
+            {
+                <button type="button" class="menu-item" @onclick="() => ChooseAsync(column.Id, CardPlacement.AtTop)">@column.Name: top</button>
+                <button type="button" class="menu-item" @onclick="() => ChooseAsync(column.Id, CardPlacement.AtEnd)">@column.Name: bottom</button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly string _menuId = "move-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference _button;
+    private bool _open;
+
+    [Parameter, EditorRequired]
+    public string CardKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ColumnOption> Columns { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<MoveRequest> OnMove { get; set; }
+
+    private void Toggle() => _open = !_open;
+
+    private async Task ChooseAsync(long columnId, CardPlacement placement)
+    {
+        _open = false;
+        await OnMove.InvokeAsync(new MoveRequest(columnId, placement));
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _open)
+        {
+            _open = false;
+            await _button.FocusAsync();
+        }
+    }
+}

@@ -38,6 +38,8 @@ public static class InfrastructureServiceCollectionExtensions
             .AddClaimsPrincipalFactory<UpmsClaimsPrincipalFactory>();
 
         services.AddScoped<IAuditLog, AuditLog>();
+        services.AddScoped<Upms.Application.Projects.Contracts.IWorkItemNumberAllocator, WorkItemNumberAllocator>();
+        services.AddHostedService<Workers.RankRebalanceWorker>();
         services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();
 
         services.AddHealthChecks().AddDbContextCheck<AppDbContext>("database", tags: ["ready"]);

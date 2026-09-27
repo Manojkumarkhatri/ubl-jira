@@ -1,0 +1,111 @@
+@using Upms.Application.Projects
+@inject IProjectService Projects
+@inject NavigationManager Navigation
+
+<ModalDialog @ref="_dialog" Title="Create project" TestId="create-project" OnClosed="Reset">
+    <ChildContent>
+        <form id="create-project-form" @onsubmit="CreateAsync" novalidate>
+            @if (_error is { Kind: not ErrorKind.Validation } && FieldFor(_error.Code) is null)
+            {
+                <div class="alert alert-error" role="alert">@_error.Message</div>
+            }
+            <div class="field">
+                <label for="project-name">Name</label>
+                <input id="project-name" class="input" autofocus maxlength="80" autocomplete="off"
+                       @bind="_name" @bind:event="oninput" @bind:after="NameChangedAsync"
+                       aria-invalid="@Invalid("Name")" aria-describedby="project-name-error" />
+                <span id="project-name-error" class="error-text">@ErrorFor("Name")</span>
+            </div>
+            <div class="field">
+                <label for="project-key">Key</label>
+                <input id="project-key" class="input key-input" maxlength="10" autocomplete="off"
+                       @bind="_key" @bind:event="oninput" @bind:after="KeyEdited"
+                       aria-invalid="@Invalid("Key")" aria-describedby="project-key-hint project-key-error" />
+                <span id="project-key-hint" class="hint">
+                    2–10 capital letters or digits, starting with a letter. Task keys start with it
+                    (for example @(string.IsNullOrEmpty(_key) ? "WEB" : _key)-1), and it cannot be changed later.
+                </span>
+                <span id="project-key-error" class="error-text">@ErrorFor("Key")</span>
+            </div>
+            <div class="field">
+                <label for="project-description">Description (optional)</label>
+                <textarea id="project-description" class="textarea" maxlength="2000" @bind="_description"
+                          aria-invalid="@Invalid("Description")" aria-describedby="project-description-error"></textarea>
+                <span id="project-description-error" class="error-text">@ErrorFor("Description")</span>
+            </div>
+        </form>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _dialog.CloseAsync()">Cancel</button>
+        <button type="submit" form="create-project-form" class="btn btn-primary" disabled="@_busy">Create project</button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog _dialog = default!;
+    private string _name = "";
+    private string _key = "";
+    private string _description = "";
+    private bool _keyEditedByUser;
+    private bool _busy;
+    private AppError? _error;
+
+    public void Open() => _dialog.Open();
+
+    private void Reset()
+    {
+        _name = "";
+        _key = "";
+        _description = "";
+        _keyEditedByUser = false;
+        _error = null;
+    }
+
+    private async Task NameChangedAsync()
+    {
+        if (!_keyEditedByUser)
+        {
+            _key = await Projects.SuggestKeyAsync(_name, CancellationToken.None);
+        }
+    }
+
+    private void KeyEdited()
+    {
+        _keyEditedByUser = _key.Length > 0;
+        _key = _key.ToUpperInvariant();
+    }
+
+    private async Task CreateAsync()
+    {
+        _busy = true;
+        var result = await Projects.CreateAsync(_name, _key, _description, CancellationToken.None);
+        _busy = false;
+        if (result.IsSuccess)
+        {
+            Navigation.NavigateTo($"projects/{result.Value}/board");
+            return;
+        }
+
+        // The typed values stay in place (constitution VI).
+        _error = result.Error;
+    }
+
+    private static string? FieldFor(string code) => code switch
+    {
+        ErrorCodes.DuplicateProjectKey or ErrorCodes.InvalidProjectKey => "Key",
+        ErrorCodes.DuplicateProjectName => "Name",
+        _ => null,
+    };
+
+    private string? ErrorFor(string field)
+    {
+        if (_error?.FieldErrors is { } errors && errors.TryGetValue(field, out var messages))
+        {
+            return string.Join(" ", messages);
+        }
+
+        return _error is not null && FieldFor(_error.Code) == field ? _error.Message : null;
+    }
+
+    private string Invalid(string field) => ErrorFor(field) is null ? "false" : "true";
+}

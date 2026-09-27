@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Upms.Domain.Identity;
 using Upms.Domain.Projects;
+using Upms.Domain.Work;
 
 namespace Upms.Application.Common;
 
@@ -19,7 +21,14 @@ public interface IAppDbContext
 
     DbSet<ProjectStatus> ProjectStatuses { get; }
 
+    DbSet<WorkItem> WorkItems { get; }
+
+    DbSet<WorkItemChange> WorkItemChanges { get; }
+
     DatabaseFacade Database { get; }
+
+    EntityEntry<TEntity> Entry<TEntity>(TEntity entity)
+        where TEntity : class;
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

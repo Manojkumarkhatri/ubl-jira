@@ -1,0 +1,56 @@
+@using Upms.Application.Work
+
+<article class="bcard @(IsDragging ? "dragging" : "") @(_dropHint ? "drop-hint" : "")" draggable="true"
+         data-drag-key="@Card.Key" data-testid="card-@Card.Key" aria-labelledby="@(TitleId)"
+         @ondragstart="() => OnDragStart.InvokeAsync(Card)" @ondragend="() => OnDragEnd.InvokeAsync()"
+         @ondragenter="() => _dropHint = true" @ondragleave="() => _dropHint = false"
+         @ondragover:preventDefault @ondrop:preventDefault @ondrop="DropAsync">
+    <a id="@TitleId" class="card-title" href="projects/@ProjectKey/board?task=@Card.Key" draggable="false">@Card.Title</a>
+    <div class="foot">
+        <PriorityIcon Priority="Card.Priority" />
+        <span class="key">@Card.Key</span>
+        @if (Card.SubtasksTotal > 0)
+        {
+            <span class="subtasks" data-testid="subtask-progress">@Card.SubtasksDone/@Card.SubtasksTotal<span class="sr-only"> sub-tasks done</span></span>
+        }
+        <span class="spacer"></span>
+        <MoveToMenu CardKey="@Card.Key" Columns="MoveTargets" OnMove="request => OnMove.InvokeAsync((Card, request))" />
+    </div>
+</article>
+
+@code {
+    private bool _dropHint;
+
+    [Parameter, EditorRequired]
+    public CardView Card { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ColumnOption> MoveTargets { get; set; } = [];
+
+    [Parameter]
+    public bool IsDragging { get; set; }
+
+    [Parameter]
+    public EventCallback<CardView> OnDragStart { get; set; }
+
+    [Parameter]
+    public EventCallback OnDragEnd { get; set; }
+
+    /// <summary>Another card was dropped on this one: insert it before this card (research R15).</summary>
+    [Parameter]
+    public EventCallback<CardView> OnDropBefore { get; set; }
+
+    [Parameter]
+    public EventCallback<(CardView Card, MoveRequest Request)> OnMove { get; set; }
+
+    private string TitleId => $"card-{Card.Key}-title";
+
+    private async Task DropAsync()
+    {
+        _dropHint = false;
+        await OnDropBefore.InvokeAsync(Card);
+    }
+}

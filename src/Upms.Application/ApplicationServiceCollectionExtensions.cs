@@ -6,6 +6,8 @@ using Upms.Application.Identity;
 using Upms.Application.Identity.Contracts;
 using Upms.Application.Projects;
 using Upms.Application.Projects.Contracts;
+using Upms.Application.Work;
+using Upms.Application.Work.Contracts;
 
 namespace Upms.Application;
 
@@ -30,6 +32,14 @@ public static class ApplicationServiceCollectionExtensions
 
         // Projects module
         services.AddScoped<IProjectAccess, ProjectAccess>();
+        services.AddScoped<IProjectWorkflow, ProjectWorkflow>();
+        services.AddScoped<IProjectService, ProjectService>();
+
+        // Work module
+        services.AddScoped<IWorkItemCounts, WorkItemCounts>();
+        services.AddScoped<RankRebalancer>();
+        services.AddScoped<IRankRebalancer>(sp => sp.GetRequiredService<RankRebalancer>());
+        services.AddScoped<IBoardService, BoardService>();
         return services;
     }
 }

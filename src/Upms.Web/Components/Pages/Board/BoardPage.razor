@@ -1,0 +1,168 @@
+@page "/projects/{Key}/board"
+@using Upms.Application.Work
+@inject IBoardService Boards
+@inject LiveAnnouncer Announcer
+
+<PageTitle>@(_board?.ProjectName ?? Key) · Board · U-PMS</PageTitle>
+
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_board is null)
+{
+    <p aria-busy="true">Loading the board…</p>
+}
+else
+{
+    <div class="page-head">
+        <div>
+            <div class="crumbs"><a href="projects">Projects</a> / @_board.ProjectKey</div>
+            <h1>@_board.ProjectName</h1>
+        </div>
+        <span class="spacer"></span>
+        @if (_board.ShowingAllDone)
+        {
+            <a class="btn" href="projects/@Key/board">Show recently completed only</a>
+        }
+        else if (_board.HiddenDoneCount > 0)
+        {
+            <a class="btn" href="projects/@Key/board?done=all">Show all completed (@_board.HiddenDoneCount more)</a>
+        }
+        @if (_board.CanManageColumns)
+        {
+            <a class="btn" href="projects/@Key/settings">Project settings</a>
+        }
+    </div>
+
+    @if (_conflict is not null)
+    {
+        <div class="alert alert-warn" role="alert" data-testid="conflict">
+            @_conflict
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _conflict = null">Dismiss</button>
+        </div>
+    }
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">@_error</div>
+    }
+    @foreach (var warning in _warnings)
+    {
+        <div class="alert alert-warn" role="status">@warning</div>
+    }
+
+    <div class="board-wrap" role="region" aria-label="Board" tabindex="0">
+        <div class="board">
+            @foreach (var column in _board.Columns)
+            {
+                <BoardColumn @key="column.Id" Column="column" ProjectKey="@Key" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
+                             OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
+                             OnDropBefore="DropBeforeAsync" OnDropAtEnd="DropAtEndAsync" OnMove="MoveFromMenuAsync"
+                             OnCreate="CreateAsync" />
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private BoardView? _board;
+    private bool _notFound;
+    private string? _conflict;
+    private string? _error;
+    private IReadOnlyList<string> _warnings = [];
+    private CardView? _dragging;
+    private IReadOnlyList<ColumnOption> _moveTargets = [];
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary><c>?done=all</c> shows every completed task (FR-021).</summary>
+    [SupplyParameterFromQuery(Name = "done")]
+    public string? Done { get; set; }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await Boards.GetAsync(Key, Done == "all", CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _notFound = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
+            _error = _notFound ? null : result.Error.Message;
+            return;
+        }
+
+        _board = result.Value!;
+        _moveTargets = _board.Columns.Select(c => new ColumnOption(c.Id, c.Name)).ToList();
+    }
+
+    private async Task DropBeforeAsync(CardView target)
+    {
+        var dragged = _dragging;
+        _dragging = null;
+        if (dragged is not null && dragged.Key != target.Key)
+        {
+            await MoveAsync(dragged, target.ColumnId, new CardPlacement.Before(target.Key));
+        }
+    }
+
+    private async Task DropAtEndAsync(ColumnView column)
+    {
+        var dragged = _dragging;
+        _dragging = null;
+        if (dragged is not null)
+        {
+            await MoveAsync(dragged, column.Id, CardPlacement.AtEnd);
+        }
+    }
+
+    // The keyboard "Move to" menu issues the same call as a drop (FR-019).
+    private Task MoveFromMenuAsync((CardView Card, MoveRequest Request) move) =>
+        MoveAsync(move.Card, move.Request.ColumnId, move.Request.Placement);
+
+    private async Task MoveAsync(CardView card, long columnId, CardPlacement placement)
+    {
+        _error = null;
+        var result = await Boards.MoveCardAsync(card.Key, columnId, placement, card.Version, CancellationToken.None);
+        if (result.IsSuccess)
+        {
+            _conflict = null;
+            _warnings = result.Warnings;
+            var column = _board?.Columns.FirstOrDefault(c => c.Id == columnId)?.Name ?? "the column";
+            Announcer.Announce(placement switch
+            {
+                CardPlacement.Top => $"Moved {card.Key} to the top of {column}.",
+                CardPlacement.Before before => $"Moved {card.Key} above {before.WorkItemKey} in {column}.",
+                _ => $"Moved {card.Key} to {column}.",
+            });
+        }
+        else if (result.Error!.Kind == ErrorKind.Conflict)
+        {
+            _conflict = result.Error.Message;
+            Announcer.Announce(result.Error.Message);
+        }
+        else
+        {
+            _error = result.Error.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task<string?> CreateAsync(long columnId, string title)
+    {
+        var result = await Boards.CreateInlineAsync(Key, columnId, title, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            return result.Error!.FieldErrors is { } errors && errors.TryGetValue("Title", out var messages)
+                ? string.Join(" ", messages)
+                : result.Error.Message;
+        }
+
+        Announcer.Announce($"Created {result.Value!.Key}: {result.Value.Title}.");
+        await LoadAsync();
+        // Called through a plain delegate from the column's input box, so re-render explicitly.
+        StateHasChanged();
+        return null;
+    }
+}

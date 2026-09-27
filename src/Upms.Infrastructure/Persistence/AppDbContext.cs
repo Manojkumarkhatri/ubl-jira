@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Upms.Application.Common;
 using Upms.Domain.Identity;
 using Upms.Domain.Projects;
+using Upms.Domain.Work;
 
 namespace Upms.Infrastructure.Persistence;
 
@@ -19,6 +20,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Project> Projects => Set<Project>();
 
     public DbSet<ProjectStatus> ProjectStatuses => Set<ProjectStatus>();
+
+    public DbSet<WorkItem> WorkItems => Set<WorkItem>();
+
+    public DbSet<WorkItemChange> WorkItemChanges => Set<WorkItemChange>();
 
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 

@@ -1,0 +1,62 @@
+@using Upms.Application.Work
+
+<section class="col @(Column.OverLimit ? "over-limit" : "")" data-testid="column" aria-labelledby="col-@Column.Id-title">
+    <header class="col-head">
+        <h2 id="col-@Column.Id-title">@Column.Name</h2>
+        <span class="sr-only">, cards:</span>
+        <span class="count">@CountText</span>
+        @if (Column.OverLimit)
+        {
+            <span class="over-badge">Over limit</span>
+        }
+    </header>
+    <ol class="col-body">
+        @foreach (var card in Column.Cards)
+        {
+            <li @key="card.Key">
+                <TaskCard Card="card" ProjectKey="@ProjectKey" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
+                          OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" />
+            </li>
+        }
+    </ol>
+    <div class="col-drop-end @(DraggingKey is null ? "" : "active")" data-testid="column-drop-end"
+         @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDropAtEnd.InvokeAsync(Column)">
+        @(Column.Cards.Count == 0 ? "No cards yet" : DraggingKey is null ? "" : "Drop here to move to the end")
+    </div>
+    <InlineCreate ColumnName="@Column.Name" OnCreate="title => OnCreate(Column.Id, title)" />
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public ColumnView Column { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ColumnOption> MoveTargets { get; set; } = [];
+
+    [Parameter]
+    public string? DraggingKey { get; set; }
+
+    [Parameter]
+    public EventCallback<CardView> OnDragStart { get; set; }
+
+    [Parameter]
+    public EventCallback OnDragEnd { get; set; }
+
+    [Parameter]
+    public EventCallback<CardView> OnDropBefore { get; set; }
+
+    [Parameter]
+    public EventCallback<ColumnView> OnDropAtEnd { get; set; }
+
+    [Parameter]
+    public EventCallback<(CardView Card, MoveRequest Request)> OnMove { get; set; }
+
+    [Parameter, EditorRequired]
+    public Func<long, string, Task<string?>> OnCreate { get; set; } = default!;
+
+    // "4 of 3" when a work-in-progress limit is set (FR-036).
+    private string CountText => Column.WipLimit is { } limit ? $"{Column.CardCount} of {limit}" : Column.CardCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+}

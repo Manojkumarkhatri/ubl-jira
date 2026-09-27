@@ -1,0 +1,99 @@
+@implements IDisposable
+@inject IJSRuntime JS
+
+<dialog @ref="_dialog" class="modal @Class" aria-labelledby="@_titleId" data-testid="@TestId">
+    @if (_open)
+    {
+        <div class="modal-head">
+            <h2 id="@_titleId">@Title</h2>
+            <button type="button" class="icon-btn" aria-label="Close" @onclick="CloseAsync">×</button>
+        </div>
+        <div class="modal-body">@ChildContent</div>
+        @if (Footer is not null)
+        {
+            <div class="modal-foot">@Footer</div>
+        }
+    }
+</dialog>
+
+@code {
+    private readonly string _titleId = "dialog-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference _dialog;
+    private bool _open;
+    private bool _showPending;
+    private DotNetObjectReference<ModalDialog>? _self;
+
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = "";
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public RenderFragment? Footer { get; set; }
+
+    [Parameter]
+    public EventCallback OnClosed { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public string? TestId { get; set; }
+
+    public bool IsOpen => _open;
+
+    /// <summary>Opens the dialog as a native modal: focus moves in, Esc closes, the page behind is inert.</summary>
+    public void Open()
+    {
+        _open = true;
+        _showPending = true;
+        StateHasChanged();
+    }
+
+    public async Task CloseAsync()
+    {
+        if (!_open)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("upms.dialog.close", _dialog);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        await HandleClosedAsync();
+    }
+
+    /// <summary>Called by the browser when the dialog closes (Esc or <see cref="CloseAsync"/>).</summary>
+    [JSInvokable]
+    public Task OnDialogClosed() => HandleClosedAsync();
+
+    private async Task HandleClosedAsync()
+    {
+        if (!_open)
+        {
+            return;
+        }
+
+        _open = false;
+        StateHasChanged();
+        await OnClosed.InvokeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_showPending)
+        {
+            _showPending = false;
+            _self ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("upms.dialog.open", _dialog, _self);
+        }
+    }
+
+    public void Dispose() => _self?.Dispose();
+}

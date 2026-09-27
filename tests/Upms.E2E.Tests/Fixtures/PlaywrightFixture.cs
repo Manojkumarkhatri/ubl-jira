@@ -41,8 +41,20 @@ public abstract class BrowserTest(AppFixture app) : IAsyncLifetime
         await page.GetByLabel("User name").FillAsync(userName);
         await page.GetByLabel("Password").FillAsync(password);
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.WaitForURLAsync(url => !url.Contains("/Account/Login", StringComparison.Ordinal));
         return page;
     }
+
+    /// <summary>Opens an app page and waits until Blazor's interactive circuit has taken over from the
+    /// prerendered HTML, so that clicks are handled.</summary>
+    protected static async Task GotoAsync(IPage page, string url)
+    {
+        await page.GotoAsync(url);
+        await WaitForInteractivityAsync(page);
+    }
+
+    protected static Task WaitForInteractivityAsync(IPage page) =>
+        page.Locator("main[data-interactive='true']").WaitForAsync();
 
     public async ValueTask DisposeAsync()
     {

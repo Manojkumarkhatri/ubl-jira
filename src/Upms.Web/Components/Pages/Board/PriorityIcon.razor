@@ -1,0 +1,30 @@
+@using Upms.Domain.Work
+
+<span class="pri pri-@Priority.ToString().ToLowerInvariant()" title="@Priority priority">
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+        @switch (Priority)
+        {
+            case Priority.Highest:
+                <path d="M3 9l5-5 5 5M3 13l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" />
+                break;
+            case Priority.High:
+                <path d="M3 11l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" />
+                break;
+            case Priority.Medium:
+                <path d="M3 6h10M3 10h10" fill="none" stroke="currentColor" stroke-width="2" />
+                break;
+            case Priority.Low:
+                <path d="M3 5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" />
+                break;
+            default:
+                <path d="M3 3l5 5 5-5M3 7l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" />
+                break;
+        }
+    </svg>
+    <span class="sr-only">@Priority priority</span>
+</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public Priority Priority { get; set; }
+}

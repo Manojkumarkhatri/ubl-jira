@@ -1,0 +1,72 @@
+@page "/projects"
+@using Upms.Application.Projects
+@inject IProjectService Projects
+
+<PageTitle>Projects · U-PMS</PageTitle>
+
+<div class="page-head">
+    <h1>Projects</h1>
+    <span class="spacer"></span>
+    <button type="button" class="btn btn-primary" @onclick="() => _create.Open()">Create project</button>
+</div>
+
+@if (_page is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else if (_page.TotalCount == 0)
+{
+    <EmptyState Title="No projects yet" Text="Create the first project to get a Kanban board for your team.">
+        <button type="button" class="btn btn-primary" @onclick="() => _create.Open()">Create project</button>
+    </EmptyState>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="tbl">
+            <caption class="sr-only">Projects, sorted by name</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Key</th>
+                    <th scope="col" class="hide-sm">Owner</th>
+                    <th scope="col">Open tasks</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in _page.Items)
+                {
+                    <tr>
+                        <td><a href="projects/@project.Key/board"><strong>@project.Name</strong></a></td>
+                        <td><span class="key">@project.Key</span></td>
+                        <td class="hide-sm">@project.OwnerDisplayName</td>
+                        <td>@project.OpenItemCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Project pages" OnPageChanged="GoToPageAsync" />
+}
+
+<CreateProjectDialog @ref="_create" />
+
+@code {
+    private CreateProjectDialog _create = default!;
+    private Page<ProjectSummary>? _page;
+    private int _pageNumber = 1;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await Projects.ListAsync(new PageRequest(_pageNumber), CancellationToken.None);
+        _page = result.Value ?? Page<ProjectSummary>.Empty(PageRequest.First);
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _pageNumber = page;
+        await LoadAsync();
+    }
+}

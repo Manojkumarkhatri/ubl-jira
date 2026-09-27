@@ -73,6 +73,8 @@ public static class WebServiceCollectionExtensions
         services.AddOperationScoped<IAccountService>();
         services.AddOperationScoped<IUserAdminService>();
         services.AddOperationScoped<IOrganizationSettingsReader>();
+        services.AddOperationScoped<Upms.Application.Projects.IProjectService>();
+        services.AddOperationScoped<Upms.Application.Work.IBoardService>();
         return services;
     }
 

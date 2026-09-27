@@ -29,7 +29,7 @@ public sealed partial class FoundationJourneyTests(AppFixture app) : BrowserTest
         await page.GetByLabel("Confirm the new password").FillAsync("a password of my own");
         await page.GetByRole(AriaRole.Button, new() { Name = "Save the new password" }).ClickAsync();
 
-        await page.GotoAsync("/account/profile");
+        await GotoAsync(page, "/account/profile");
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Profile", Exact = true })).ToBeVisibleAsync();
         await page.GetByLabel("Display name", new() { Exact = true }).FillAsync("Farah A.");
         await page.GetByLabel("Time zone", new() { Exact = true }).SelectOptionAsync("Asia/Karachi");
@@ -42,7 +42,7 @@ public sealed partial class FoundationJourneyTests(AppFixture app) : BrowserTest
     public async Task An_administrator_adds_an_account_and_sees_the_temporary_password_once()
     {
         var page = await SignInAsync(AppFixture.AdminUserName, AppFixture.AdminPassword);
-        await page.GotoAsync("/admin/users");
+        await GotoAsync(page, "/admin/users");
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Accounts" })).ToBeVisibleAsync();
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Add user" }).ClickAsync();
@@ -63,10 +63,11 @@ public sealed partial class FoundationJourneyTests(AppFixture app) : BrowserTest
         var password = await App.CreateUserAsync("hina", "Hina Shah");
 
         var page = await SignInAsync("hina", password);
-        await page.GotoAsync("/admin/users");
-
-        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Not found" })).ToBeVisibleAsync();
+        await GotoAsync(page, "/projects");
         await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Accounts" })).ToHaveCountAsync(0);
+
+        await page.GotoAsync("/admin/users");
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Not found" })).ToBeVisibleAsync();
     }
 
     [GeneratedRegex("/Account/ChangePassword")]

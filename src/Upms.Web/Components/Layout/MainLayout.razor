@@ -2,7 +2,8 @@
 
 <a class="skip" href="#main">Skip to main content</a>
 <Header />
-<main id="main" tabindex="-1">
+@* data-interactive tells browser tests (and styles) when the circuit has taken over from prerendering. *@
+<main id="main" tabindex="-1" data-interactive="@(RendererInfo.IsInteractive ? "true" : "false")">
     @Body
 </main>
 <LiveRegion />
