@@ -342,8 +342,8 @@ schedule an unscheduled task. Each task's dates and history reflect exactly thes
 - **FR-029**: The list MUST be sortable by each of its columns, ascending or descending, with the newest
   key first by default; undated tasks sort last when sorting by a date.
 - **FR-030**: The list MUST be filterable by status, status type, priority, assignee (including "me"
-  and "unassigned"), due date ("overdue", "due in the next 7 days" or "no due date") and words in the
-  title or description; active filters MUST be visible, each removable on its own, with a "Clear
+  and "unassigned"), due date ("overdue"; "due in the next 7 days", meaning open tasks due from today to
+  seven days after today, inclusive; or "no due date") and words in the title or description; active filters MUST be visible, each removable on its own, with a "Clear
   filters" action.
 - **FR-031**: The list's sort order and filters MUST be kept in its address, so that a filtered list can
   be bookmarked, shared with other members and reloaded.

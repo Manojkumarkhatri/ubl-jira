@@ -121,7 +121,7 @@ src/
 └── Upms.Web/
     ├── Components/Layout/                      # "My tasks" link
     ├── Components/Shared/ProjectHeader.razor   # new: breadcrumb, view tabs, Members, settings
-    ├── Components/Shared/AssigneeBadge.razor, DueDate.razor          # new
+    ├── Components/Shared/AssigneeBadge.razor, DueDateText.razor, ViewerToday.cs   # new
     ├── Components/Pages/Board/                 # filters, card assignee and due date, read-only
     ├── Components/Pages/Drawer/                # assignee, dates, read-only mode
     ├── Components/Pages/List/ProjectListView.razor                   # new

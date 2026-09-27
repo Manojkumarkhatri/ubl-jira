@@ -106,7 +106,8 @@ public interface IWorkItemListService                             // FR-027–FR
         CancellationToken ct);                                    // View
 }
 public enum ListSort { Key, Title, Status, Priority, Assignee, StartDate, DueDate, Updated }
-public enum DueFilter { Any, Overdue, Next7Days, NoDueDate }
+public enum DueFilter { Any, Overdue, Next7Days, NoDueDate }   // Overdue: open, due < today;
+                                                              // Next7Days: open, today <= due <= today + 7
 public sealed record WorkItemListQuery(
     ListSort Sort = ListSort.Key, bool Descending = true,          // newest key first by default
     IReadOnlyList<long>? ColumnIds = null, IReadOnlyList<StatusCategory>? Categories = null,
