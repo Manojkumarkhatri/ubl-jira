@@ -19,6 +19,11 @@ internal static class IdentityErrors
             return AppError.Rule(ErrorCodes.DuplicateEmail, "That email address is already used by another account.");
         }
 
+        if (errors.Exists(e => e.Code == nameof(IdentityErrorDescriber.ConcurrencyFailure)))
+        {
+            return AppError.Conflict("Someone else changed this account at the same time. Try again.");
+        }
+
         var fieldErrors = errors
             .GroupBy(e => FieldFor(e.Code, passwordField))
             .ToDictionary(g => g.Key, g => g.Select(e => e.Description).ToArray());

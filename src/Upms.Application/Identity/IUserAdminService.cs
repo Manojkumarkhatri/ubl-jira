@@ -4,7 +4,7 @@ using Upms.Domain.Identity;
 
 namespace Upms.Application.Identity;
 
-/// <summary>Minimal account management for administrators (FR-003, FR-004).</summary>
+/// <summary>Minimal account management for administrators (FR-003, FR-004, FR-008).</summary>
 public interface IUserAdminService
 {
     Task<Result<Page<UserSummary>>> ListUsersAsync(string? search, PageRequest page, CancellationToken ct);
@@ -18,6 +18,10 @@ public interface IUserAdminService
     Task<Result> DeactivateAsync(Guid userId, CancellationToken ct);
 
     Task<Result> ReactivateAsync(Guid userId, CancellationToken ct);
+
+    /// <summary>Gives or removes the Administrator role (FR-008). Only an active account can become an administrator,
+    /// and the last active administrator keeps the role (<c>AccountDeactivated</c>, <c>LastAdministrator</c>).</summary>
+    Task<Result> ChangeRoleAsync(Guid userId, OrganizationRole role, CancellationToken ct);
 }
 
 public sealed record UserSummary(

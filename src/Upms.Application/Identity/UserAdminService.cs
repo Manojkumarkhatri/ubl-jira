@@ -1,6 +1,6 @@
-using System.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Upms.Application.Common;
 using Upms.Application.Common.Results;
 using Upms.Application.Identity.Contracts;
@@ -8,13 +8,14 @@ using Upms.Domain.Identity;
 
 namespace Upms.Application.Identity;
 
-/// <summary>Minimal account management for administrators (FR-003, FR-004, FR-010).</summary>
+/// <summary>Minimal account management for administrators (FR-003, FR-004, FR-008, FR-010).</summary>
 internal sealed class UserAdminService(
     IAppDbContext db,
     UserManager<User> userManager,
     ICallerContext caller,
     IAuditLog auditLog,
     ITemporaryPasswordGenerator passwords,
+    IAdministratorLock administrators,
     TimeProvider time) : IUserAdminService
 {
     public async Task<Result<Page<UserSummary>>> ListUsersAsync(string? search, PageRequest page, CancellationToken ct)
@@ -106,13 +107,12 @@ internal sealed class UserAdminService(
 
     public async Task<Result> DeactivateAsync(Guid userId, CancellationToken ct)
     {
+        await using var transaction = await BeginAdministratorChangeAsync(ct);
         if (await RequireAdministratorAsync(ct) is { } denied)
         {
             return denied;
         }
 
-        // Serializable so that two administrators cannot deactivate each other at the same moment.
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var user = await userManager.FindByIdAsync(userId.ToString());
         if (user is null)
         {
@@ -124,11 +124,10 @@ internal sealed class UserAdminService(
             return Result.Ok();
         }
 
-        if (user.IsAdministrator && !await db.Users.AnyAsync(u =>
-                u.Id != user.Id && u.IsActive && u.OrganizationRole == OrganizationRole.Administrator, ct))
+        if (user.IsAdministrator && !await AnotherActiveAdministratorExistsAsync(user.Id, ct))
         {
             return AppError.Rule(ErrorCodes.LastAdministrator,
-                "This is the last active administrator. Add another administrator before deactivating this account.");
+                "This is the last active administrator. Make someone else an administrator before deactivating this account.");
         }
 
         user.Deactivate(time.GetUtcNow());
@@ -164,6 +163,78 @@ internal sealed class UserAdminService(
         await transaction.CommitAsync(ct);
         return Result.Ok();
     }
+
+    public async Task<Result> ChangeRoleAsync(Guid userId, OrganizationRole role, CancellationToken ct)
+    {
+        if (!Enum.IsDefined(role))
+        {
+            return AppError.Validation("role", "Choose Administrator or User.");
+        }
+
+        await using var transaction = await BeginAdministratorChangeAsync(ct);
+        if (await RequireAdministratorAsync(ct) is { } denied)
+        {
+            return denied;
+        }
+
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return AppError.NotFound("user");
+        }
+
+        var previous = user.OrganizationRole;
+        if (previous == role)
+        {
+            return Result.Ok();
+        }
+
+        if (role == OrganizationRole.Administrator && !user.IsActive)
+        {
+            return AppError.Rule(ErrorCodes.AccountDeactivated,
+                "This account is deactivated. Reactivate it before making it an administrator.");
+        }
+
+        if (user.IsAdministrator && user.IsActive && !await AnotherActiveAdministratorExistsAsync(user.Id, ct))
+        {
+            return AppError.Rule(ErrorCodes.LastAdministrator,
+                "This is the last active administrator. Make someone else an administrator first.");
+        }
+
+        // No security stamp change: rights are read from the database on every call, so the new role applies to the
+        // person's next action without signing them out (research R7).
+        user.OrganizationRole = role;
+        var result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            return IdentityErrors.ToAppError(result);
+        }
+
+        await auditLog.WriteAsync(AuditEventType.RoleChanged, user.Id, user.UserName ?? "",
+            new { From = previous.ToString(), To = role.ToString() }, ct);
+        await transaction.CommitAsync(ct);
+        return Result.Ok();
+    }
+
+    /// <summary>Starts a transaction that holds the administrators lock. The caller's own rights are checked after
+    /// this, inside the lock: another administrator may have just removed them.</summary>
+    private async Task<IDbContextTransaction> BeginAdministratorChangeAsync(CancellationToken ct)
+    {
+        var transaction = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            await administrators.AcquireAsync(ct);
+            return transaction;
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            throw;
+        }
+    }
+
+    private Task<bool> AnotherActiveAdministratorExistsAsync(Guid userId, CancellationToken ct) =>
+        db.Users.AnyAsync(u => u.Id != userId && u.IsActive && u.OrganizationRole == OrganizationRole.Administrator, ct);
 
     private async Task<AppError?> RequireAdministratorAsync(CancellationToken ct) =>
         await caller.GetAsync(ct) is { IsActive: true, IsAdministrator: true }

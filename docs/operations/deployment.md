@@ -99,6 +99,9 @@ The proxy must:
 3. Remove `Setup__Token` and restart.
 4. Sign in as the administrator and add users at `/admin/users`; each receives a temporary password to change at
    first sign-in (FR-003).
+5. Make a second person an administrator there ("Make administrator", FR-008), so that accounts can still be
+   managed when one administrator is away. The last active administrator can neither lose the role nor be
+   deactivated.
 
 ## Monitoring and alerting (SC-009)
 

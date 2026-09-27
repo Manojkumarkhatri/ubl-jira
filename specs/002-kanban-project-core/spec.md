@@ -58,6 +58,10 @@ board.
    overwriting it.
 10. **Given** a task was moved to Done 20 days ago, **When** the board opens, **Then** that task is not
     shown in the Done column unless the user chooses to show all completed tasks.
+11. **Given** an administrator, **When** they make another active user an administrator, **Then** that
+    person can manage accounts at once, without signing in again; and **When** the only active
+    administrator tries to remove their own role or deactivate their own account, **Then** it is refused
+    with a message asking them to make someone else an administrator first.
 
 ---
 
@@ -173,6 +177,9 @@ owner cannot change the columns.
   created.
 - **Owner deactivated**: administrators can still change the project's details and columns, so no
   project is left without someone who can manage it.
+- **Last administrator**: the organization always keeps at least one active administrator. If two
+  administrators remove each other's role (or deactivate each other) at the same moment, one change
+  succeeds and the other is refused.
 - **Session about to expire**: the user is warned at least 2 minutes before an idle session ends and can
   choose to stay signed in.
 - **Long columns**: a column with many cards scrolls on its own, without slowing down the rest of the
@@ -201,13 +208,15 @@ owner cannot change the columns.
   minutes beforehand with an option to stay signed in.
 - **FR-007**: Users MUST be able to change their own password, display name and time zone.
 - **FR-008**: System MUST support two organization roles: Administrator (manages accounts and has full
-  rights in every project) and User.
+  rights in every project) and User. Administrators MUST be able to give the Administrator role to
+  another active account and to remove it; the last active administrator can neither lose the role nor
+  be deactivated, so the organization is never left without one.
 - **FR-009**: System MUST check every permission on the server for every request, whatever the screen
   shows; requests for tasks or projects that do not exist or were deleted MUST get a "not found"
   response.
 - **FR-010**: System MUST record security events (successful and failed sign-ins, lockouts, password
-  changes and resets, account creation, deactivation and reactivation) in an audit log from Day 1; a
-  screen for reviewing it comes in a later phase.
+  changes and resets, account creation, deactivation and reactivation, and role changes) in an audit log
+  from Day 1; a screen for reviewing it comes in a later phase.
 
 **Projects**
 
@@ -369,8 +378,9 @@ owner cannot change the columns.
   in place before confidential projects are tracked. The project owner (its creator) becomes the
   project's first administrator when membership arrives.
 - **Sign-in from Day 1**, as agreed on 2026-09-27. Minimal account management (add, reset password,
-  deactivate, reactivate) is included so a pilot can onboard and offboard people safely; roles
-  management, the audit log screen and organization settings come later.
+  deactivate, reactivate) is included so a pilot can onboard and offboard people safely. Giving and
+  removing the Administrator role was added on 2026-09-27, so that accounts never depend on a single
+  administrator. Project roles, the audit log screen and organization settings come later.
 - The tool serves one organization, and accounts are created by administrators. Users sign in with
   accounts managed inside the application; company single sign-on is a later feature.
 - Temporary passwords are given to users through an existing secure company channel; Phase 1 sends no

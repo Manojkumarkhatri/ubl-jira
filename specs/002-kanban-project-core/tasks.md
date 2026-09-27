@@ -235,6 +235,19 @@ lost, and a non-owner cannot change columns (spec US3).
 
 ---
 
+## Phase 7: Follow-up - A second administrator (added 2026-09-27)
+
+**Purpose**: Administrators can give the Administrator role to a colleague and remove it, so accounts never depend
+on one person; the organization always keeps at least one active administrator (FR-008, FR-010).
+
+- [X] T115 Extend `tests/Upms.Application.Tests/Identity/UserAdminServiceTests.cs`: giving the role applies to the person's next call without signing them out and writes `RoleChanged` with the old and new roles; removing it takes the rights away at once; an administrator can hand over the role and then remove their own; the last active Administrator keeps the role (`LastAdministrator`) and a deactivated Administrator does not count; only an active account can be given the role (`AccountDeactivated`); two administrators removing each other, or one deactivating the other while being demoted, at the same moment leave exactly one active Administrator
+- [X] T116 Add `IUserAdminService.ChangeRoleAsync` to `src/Upms.Application/Identity/UserAdminService.cs`, with `IAdministratorLock` (`src/Upms.Infrastructure/Identity/AdministratorLock.cs`) shared with `DeactivateAsync`; the caller's rights are checked inside the lock (make T115 pass)
+- [X] T117 Add the row "Give or remove the Administrator role" to `contracts/permissions.md` and its operations to `tests/Upms.Application.Tests/Security/PermissionMatrixTests.cs` (SC-007)
+- [X] T118 [P] Add "Make administrator" and "Remove administrator", with an inline confirmation, to `src/Upms.Web/Components/Pages/Admin/Users.razor`: row actions named with the account, focus kept in the row, "(you)" on the caller's own row, and leaving the page after removing one's own role; component tests in `tests/Upms.Web.Tests/Admin/UsersPageTests.cs`
+- [X] T119 [P] Add the browser journey to `tests/Upms.E2E.Tests/FoundationJourneyTests.cs`: a signed-in colleague gains and loses access to Accounts without signing in again, the only administrator cannot remove their own role, and axe finds no violations
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -244,6 +257,7 @@ lost, and a non-owner cannot change columns (spec US3).
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
   - US1 comes first; US2 and US3 both build on US1 and can then proceed in parallel
 - **Polish (Final Phase)**: Depends on all user stories being complete
+- **Follow-up (Phase 7)**: Builds on the foundation's account management only
 
 ### User Story Dependencies
 
@@ -391,6 +405,11 @@ Decisions made while implementing, recorded so the documents match the code:
   unit of work, so one save moves the work items and removes the column in one transaction. Tasks join the
   end of the destination column in their order; sub-tasks keep their place under their parent. The mover
   counts statuses in one grouped query (`CountInStatusesAsync`), which the settings screen also uses.
+- **Administrator changes** (T116): deactivation and role changes take `IAdministratorLock`, a SQL Server
+  application lock owned by the transaction, instead of running in a serializable transaction. Two
+  administrators acting on each other then queue instead of deadlocking, and the second finds that its caller
+  is no longer an administrator. A role change does not rotate the security stamp: rights are read on every
+  call (R7), so the new role applies to the person's next action without signing them out.
 - **Races with a column deletion**: if a card is moved or created in a column at the moment it is deleted,
   the save is refused by the database and the user gets a conflict ("the latest board is shown") or "column
   not found" instead of an error page.

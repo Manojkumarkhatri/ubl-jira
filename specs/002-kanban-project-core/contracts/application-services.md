@@ -31,7 +31,7 @@ public sealed record Page<T>(IReadOnlyList<T> Items, int TotalCount, int PageNum
 - **Versioned writes**: `expectedVersion` (row version) or `expectedBoardVersion` mismatches return
   `Conflict` carrying the current state (FR-022, FR-032, FR-041).
 - **Rule violation codes**: `SetupClosed`, `InvalidSetupToken`, `DuplicateUserName`, `DuplicateEmail`,
-  `LastAdministrator`, `DuplicateProjectKey`, `DuplicateProjectName`, `InvalidProjectKey`,
+  `LastAdministrator`, `AccountDeactivated`, `DuplicateProjectKey`, `DuplicateProjectName`, `InvalidProjectKey`,
   `DuplicateColumnName`, `TooManyColumns`, `LastToDoColumn`, `LastDoneColumn`, `ColumnNotEmpty`,
   `DestinationRequired`, `SubtaskDepth`, `CommentNotOwned`.
 - **History**: every work-item-changing method writes `WorkItemChange` rows in the same transaction.
@@ -55,7 +55,7 @@ public interface IAccountService                                 // self (FR-007
     Task<Result> ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken ct);
 }
 
-public interface IUserAdminService                               // Administrator (FR-003, FR-004)
+public interface IUserAdminService                               // Administrator (FR-003, FR-004, FR-008)
 {
     Task<Page<UserSummary>> ListUsersAsync(string? search, PageRequest page, CancellationToken ct);
     Task<Result<CreatedUser>> AddUserAsync(string userName, string displayName, string email,
@@ -63,6 +63,8 @@ public interface IUserAdminService                               // Administrato
     Task<Result<string>> ResetPasswordAsync(Guid userId, CancellationToken ct);  // new temporary password
     Task<Result> DeactivateAsync(Guid userId, CancellationToken ct);             // LastAdministrator
     Task<Result> ReactivateAsync(Guid userId, CancellationToken ct);
+    Task<Result> ChangeRoleAsync(Guid userId, OrganizationRole role,
+        CancellationToken ct);               // AccountDeactivated (to Administrator), LastAdministrator (from it)
 }
 
 public interface IAuditLog                                       // contract for other modules (FR-010)

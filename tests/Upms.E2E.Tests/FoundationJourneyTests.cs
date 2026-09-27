@@ -76,6 +76,45 @@ public sealed partial class FoundationJourneyTests(AppFixture app) : BrowserTest
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Not found" })).ToBeVisibleAsync();
     }
 
+    [Fact]
+    public async Task FR008_An_administrator_gives_a_colleague_the_role_and_takes_it_back_while_the_last_one_keeps_it()
+    {
+        var password = await App.CreateUserAsync("iqra", "Iqra Malik");
+        var iqra = await SignInAsync("iqra", password);
+        var admin = await SignInAsync(AppFixture.AdminUserName, AppFixture.AdminPassword);
+        await GotoAsync(admin, "/admin/users");
+        await admin.GetByLabel("Search accounts").FillAsync("iqra");
+        var row = admin.GetByRole(AriaRole.Row).Filter(new() { HasText = "Iqra Malik" });
+
+        await row.GetByRole(AriaRole.Button, new() { Name = "Make administrator: iqra" }).ClickAsync();
+        await Assertions.Expect(row).ToContainTextAsync("Make iqra an administrator?");
+        await Assertions.Expect(admin.Locator("#confirm-action")).ToBeFocusedAsync();
+        await admin.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(row.GetByRole(AriaRole.Button, new() { Name = "Remove administrator: iqra" })).ToBeVisibleAsync();
+        await Assertions.Expect(row.GetByRole(AriaRole.Cell, new() { Name = "Administrator", Exact = true })).ToBeVisibleAsync();
+        await admin.AssertNoAccessibilityViolationsAsync();
+
+        // Iqra, already signed in, can manage accounts straight away.
+        await GotoAsync(iqra, "/admin/users");
+        await Assertions.Expect(iqra.GetByRole(AriaRole.Heading, new() { Name = "Accounts" })).ToBeVisibleAsync();
+
+        await row.GetByRole(AriaRole.Button, new() { Name = "Remove administrator: iqra" }).ClickAsync();
+        await row.GetByRole(AriaRole.Button, new() { Name = "Yes, remove" }).ClickAsync();
+        await Assertions.Expect(row.GetByRole(AriaRole.Button, new() { Name = "Make administrator: iqra" })).ToBeVisibleAsync();
+        await iqra.GotoAsync("/admin/users");
+        await Assertions.Expect(iqra.GetByRole(AriaRole.Heading, new() { Name = "Not found" })).ToBeVisibleAsync();
+
+        // The only administrator left cannot remove their own role.
+        await admin.GetByLabel("Search accounts").FillAsync(AppFixture.AdminUserName);
+        var own = admin.GetByRole(AriaRole.Row).Filter(new() { HasText = "(you)" });
+        await own.GetByRole(AriaRole.Button, new() { Name = "Remove administrator" }).ClickAsync();
+        await Assertions.Expect(own).ToContainTextAsync("Remove your own administrator rights?");
+        await own.GetByRole(AriaRole.Button, new() { Name = "Yes, remove" }).ClickAsync();
+        await Assertions.Expect(admin.GetByRole(AriaRole.Alert))
+            .ToHaveTextAsync("This is the last active administrator. Make someone else an administrator first.");
+        await Assertions.Expect(own.GetByRole(AriaRole.Cell, new() { Name = "Administrator", Exact = true })).ToBeVisibleAsync();
+    }
+
     [GeneratedRegex("/Account/ChangePassword")]
     private static partial Regex ChangePasswordUrl();
 

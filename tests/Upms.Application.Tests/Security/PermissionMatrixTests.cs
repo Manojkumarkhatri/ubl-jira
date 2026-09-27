@@ -101,6 +101,11 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
             ("deactivate an account", (t, w) => t.Try<IUserAdminService>(s => s.DeactivateAsync(w.Other.Id, Ct))),
             ("reactivate an account", (t, w) => t.Try<IUserAdminService>(s => s.ReactivateAsync(w.Deactivated.Id, Ct))),
         ],
+        ["Give or remove the Administrator role"] =
+        [
+            ("make someone an administrator", (t, w) => t.Try<IUserAdminService>(s => s.ChangeRoleAsync(w.Other.Id, OrganizationRole.Administrator, Ct))),
+            ("remove the Administrator role", (t, w) => t.Try<IUserAdminService>(s => s.ChangeRoleAsync(w.SecondAdmin.Id, OrganizationRole.User, Ct))),
+        ],
         ["Change own password, display name and time zone"] =
         [
             ("change own password", (t, _) => t.Try<IAccountService>(s => s.ChangePasswordAsync(TestData.DefaultPassword, NewPassword, Ct))),
@@ -209,14 +214,15 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         throw new FileNotFoundException("specs/002-kanban-project-core/contracts/permissions.md was not found above the test output.");
     }
 
-    /// <summary>Owner "owen" owns WEB; "cara" created WEB-1, WEB-2 and a comment on WEB-1; the Administrator deleted
-    /// WEB-3; "uma" is any other user; "dora" is deactivated.</summary>
+    /// <summary>Owner "owen" owns WEB; "cara" created WEB-1, WEB-2 and a comment on WEB-1; the Administrator "ada"
+    /// deleted WEB-3; "grace" is a second Administrator; "uma" is any other user; "dora" is deactivated.</summary>
     private async Task<World> SetUpAsync()
     {
         var owner = await Data.UserAsync("owen");
         var creator = await Data.UserAsync("cara");
         var other = await Data.UserAsync("uma");
         var admin = await Data.AdministratorAsync("ada");
+        var secondAdmin = await Data.AdministratorAsync("grace");
         var deactivated = await Data.UserAsync("dora", isActive: false);
 
         ActAs(owner);
@@ -237,7 +243,7 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         var task1 = (await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s => s.GetAsync("WEB-1", Ct))).ValueOrThrow();
         var task2 = (await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s => s.GetAsync("WEB-2", Ct))).ValueOrThrow();
         ActAs(null);
-        return new World(owner, creator, other, admin, deactivated, board.BoardVersion, toDo, inProgress, done,
+        return new World(owner, creator, other, admin, secondAdmin, deactivated, board.BoardVersion, toDo, inProgress, done,
             task1.Version, task2.Version, comment.Id, comment.Version);
     }
 
@@ -252,7 +258,7 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
     private Task<AppError?> Edit(WorkItemEdit edit, byte[] version) =>
         Try<IWorkItemService, WorkItemDetails>(s => s.UpdateAsync("WEB-1", edit, version, Ct));
 
-    private sealed record World(User Owner, User Creator, User Other, User Admin, User Deactivated, int BoardVersion,
+    private sealed record World(User Owner, User Creator, User Other, User Admin, User SecondAdmin, User Deactivated, int BoardVersion,
         long ToDo, long InProgress, long Done, byte[] Task1Version, byte[] Task2Version, long CommentId, byte[] CommentVersion)
     {
         public User? Caller(Role role) => role switch

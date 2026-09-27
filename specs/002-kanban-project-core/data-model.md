@@ -47,7 +47,7 @@ erDiagram
 |-------|------|-------|
 | Id | bigint | PK |
 | OccurredAt | datetimeoffset | required |
-| EventType | varchar(40) | `SetupCompleted`, `SignInSucceeded`, `SignInFailed`, `LockedOut`, `PasswordChanged`, `PasswordReset`, `UserCreated`, `UserDeactivated`, `UserReactivated` (FR-010) |
+| EventType | varchar(40) | `SetupCompleted`, `SignInSucceeded`, `SignInFailed`, `LockedOut`, `PasswordChanged`, `PasswordReset`, `UserCreated`, `UserDeactivated`, `UserReactivated`, `RoleChanged` (details: old and new role) (FR-010) |
 | ActorUserId | uniqueidentifier null | null for failed sign-in with an unknown username |
 | SubjectUserId | uniqueidentifier null | the account affected |
 | Target | nvarchar(200) | for example the username attempted |

@@ -13,6 +13,7 @@ public static class ErrorCodes
     public const string DuplicateUserName = "DuplicateUserName";
     public const string DuplicateEmail = "DuplicateEmail";
     public const string LastAdministrator = "LastAdministrator";
+    public const string AccountDeactivated = "AccountDeactivated";
     public const string DuplicateProjectKey = "DuplicateProjectKey";
     public const string DuplicateProjectName = "DuplicateProjectName";
     public const string InvalidProjectKey = "InvalidProjectKey";

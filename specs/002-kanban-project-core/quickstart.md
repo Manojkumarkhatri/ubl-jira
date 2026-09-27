@@ -62,6 +62,9 @@ the same scenarios.
    card, open "Move to", choose Done) (scenarios 6–8).
 7. Sign in as bilal in a second browser: the board looks identical. Move a card there, then drag the
    same card in amina's browser: amina is told the card changed (scenario 9).
+8. As the administrator, choose **Make administrator** for amina: in her browser, `/admin/users` now
+   opens without signing in again. Remove her role again, then try **Remove administrator** on your own
+   row: refused, because you are the last active administrator (scenario 11).
 
 ### US2: Work on a task in the details drawer
 

@@ -39,6 +39,7 @@ public static class InfrastructureServiceCollectionExtensions
             .AddClaimsPrincipalFactory<UpmsClaimsPrincipalFactory>();
 
         services.AddScoped<IAuditLog, AuditLog>();
+        services.AddScoped<IAdministratorLock, AdministratorLock>();
         services.AddScoped<Upms.Application.Projects.Contracts.IWorkItemNumberAllocator, WorkItemNumberAllocator>();
         services.AddHostedService<Workers.RankRebalanceWorker>();
         services.AddSingleton<ITemporaryPasswordGenerator, TemporaryPasswordGenerator>();

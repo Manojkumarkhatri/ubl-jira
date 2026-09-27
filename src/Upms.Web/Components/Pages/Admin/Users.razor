@@ -1,7 +1,10 @@
 @page "/admin/users"
 @attribute [Authorize(Policy = AuthorizationPolicies.Administrator)]
+@using Upms.Domain.Identity
 @inject IUserAdminService Admin
+@inject ICurrentUser Me
 @inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
 @inject IJSRuntime JS
 
 <PageTitle>Accounts · U-PMS</PageTitle>
@@ -102,9 +105,17 @@ else
                 @foreach (var user in _page.Items)
                 {
                     <tr>
-                        <td><strong>@user.DisplayName</strong><br /><span class="muted">@user.UserName</span></td>
+                        <td>
+                            <strong>@user.DisplayName</strong>
+                            @if (IsMe(user))
+                            {
+                                @* An expression, so the leading space survives Razor's whitespace trimming. *@
+                                <span class="muted">@(" (you)")</span>
+                            }
+                            <br /><span class="muted">@user.UserName</span>
+                        </td>
                         <td class="hide-sm">@user.Email</td>
-                        <td>@(user.Role == Upms.Domain.Identity.OrganizationRole.Administrator ? "Administrator" : "User")</td>
+                        <td>@(user.Role == OrganizationRole.Administrator ? "Administrator" : "User")</td>
                         <td>
                             @if (!user.IsActive)
                             {
@@ -133,19 +144,33 @@ else
                             @if (_confirming?.UserId == user.Id)
                             {
                                 <span class="confirm-text">@_confirming.Question</span>
-                                <button type="button" class="btn btn-sm btn-primary" @onclick="ConfirmAsync">Yes, @_confirming.Verb</button>
-                                <button type="button" class="btn btn-sm" @onclick="() => _confirming = null">Cancel</button>
+                                <button type="button" id="confirm-action" class="btn btn-sm btn-primary" @onclick="ConfirmAsync">Yes, @_confirming.Verb</button>
+                                <button type="button" class="btn btn-sm" @onclick="CancelConfirmation">Cancel</button>
                             }
                             else
                             {
-                                <button type="button" class="btn btn-sm" @onclick="() => Ask(user, AdminAction.ResetPassword)">Reset password</button>
+                                @* Names include the account, so NVDA's elements list tells the rows apart. *@
+                                <button type="button" id="@ActionId(user.Id, AdminAction.ResetPassword)" class="btn btn-sm"
+                                        aria-label="Reset password: @user.UserName" @onclick="() => Ask(user, AdminAction.ResetPassword)">Reset password</button>
+                                @if (user.Role == OrganizationRole.Administrator)
+                                {
+                                    <button type="button" id="@ActionId(user.Id, AdminAction.RemoveAdministrator)" class="btn btn-sm"
+                                            aria-label="Remove administrator: @user.UserName" @onclick="() => Ask(user, AdminAction.RemoveAdministrator)">Remove administrator</button>
+                                }
+                                else if (user.IsActive)
+                                {
+                                    <button type="button" id="@ActionId(user.Id, AdminAction.MakeAdministrator)" class="btn btn-sm"
+                                            aria-label="Make administrator: @user.UserName" @onclick="() => Ask(user, AdminAction.MakeAdministrator)">Make administrator</button>
+                                }
                                 @if (user.IsActive)
                                 {
-                                    <button type="button" class="btn btn-sm btn-danger" @onclick="() => Ask(user, AdminAction.Deactivate)">Deactivate</button>
+                                    <button type="button" id="@ActionId(user.Id, AdminAction.Deactivate)" class="btn btn-sm btn-danger"
+                                            aria-label="Deactivate: @user.UserName" @onclick="() => Ask(user, AdminAction.Deactivate)">Deactivate</button>
                                 }
                                 else
                                 {
-                                    <button type="button" class="btn btn-sm" @onclick="() => Ask(user, AdminAction.Reactivate)">Reactivate</button>
+                                    <button type="button" id="@ActionId(user.Id, AdminAction.Reactivate)" class="btn btn-sm"
+                                            aria-label="Reactivate: @user.UserName" @onclick="() => Ask(user, AdminAction.Reactivate)">Reactivate</button>
                                 }
                             }
                         </td>
@@ -172,6 +197,7 @@ else
     private bool _copied;
     private PendingAction? _confirming;
     private string? _actionError;
+    private string? _focusAfterRender;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -219,6 +245,10 @@ else
         await LoadAsync();
     }
 
+    private bool IsMe(UserSummary user) => user.Id == Me.UserId;
+
+    private static string ActionId(Guid userId, AdminAction action) => $"{action}-{userId:N}";
+
     private void Ask(UserSummary user, AdminAction action)
     {
         _actionError = null;
@@ -226,8 +256,26 @@ else
         {
             AdminAction.ResetPassword => new PendingAction(user.Id, user.UserName, action, $"Reset the password of {user.UserName}?", "reset"),
             AdminAction.Deactivate => new PendingAction(user.Id, user.UserName, action, $"Deactivate {user.UserName}? They will be signed out.", "deactivate"),
+            AdminAction.MakeAdministrator => new PendingAction(user.Id, user.UserName, action,
+                $"Make {user.UserName} an administrator? They will be able to manage accounts and every project.", "make administrator"),
+            AdminAction.RemoveAdministrator => new PendingAction(user.Id, user.UserName, action,
+                IsMe(user)
+                    ? "Remove your own administrator rights? You will no longer be able to manage accounts."
+                    : $"Remove the administrator rights of {user.UserName}?",
+                "remove"),
             _ => new PendingAction(user.Id, user.UserName, action, $"Reactivate {user.UserName}?", "reactivate"),
         };
+        _focusAfterRender = "confirm-action";
+    }
+
+    private void CancelConfirmation()
+    {
+        if (_confirming is { } pending)
+        {
+            _focusAfterRender = ActionId(pending.UserId, pending.Action);
+        }
+
+        _confirming = null;
     }
 
     private async Task ConfirmAsync()
@@ -238,6 +286,8 @@ else
         }
 
         _confirming = null;
+        // Every row has "Reset password", so focus stays in the row whatever the action changed.
+        _focusAfterRender = ActionId(pending.UserId, AdminAction.ResetPassword);
         switch (pending.Action)
         {
             case AdminAction.ResetPassword:
@@ -263,7 +313,7 @@ else
                 }
 
                 break;
-            default:
+            case AdminAction.Reactivate:
                 var reactivated = await Admin.ReactivateAsync(pending.UserId, CancellationToken.None);
                 _actionError = reactivated.Error?.Message;
                 if (reactivated.IsSuccess)
@@ -272,9 +322,44 @@ else
                 }
 
                 break;
+            default:
+                var makeAdministrator = pending.Action == AdminAction.MakeAdministrator;
+                var changed = await Admin.ChangeRoleAsync(pending.UserId,
+                    makeAdministrator ? OrganizationRole.Administrator : OrganizationRole.User, CancellationToken.None);
+                _actionError = changed.Error?.Message;
+                if (changed.IsSuccess)
+                {
+                    Announcer.Announce(makeAdministrator
+                        ? $"{pending.UserName} is now an administrator."
+                        : $"{pending.UserName} is no longer an administrator.");
+                    if (!makeAdministrator && pending.UserId == Me.UserId)
+                    {
+                        // This page is for administrators only.
+                        Navigation.NavigateTo("projects");
+                        return;
+                    }
+                }
+
+                break;
         }
 
         await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keyboard users keep their place: the row's buttons are swapped for the confirmation and back.
+        if (_focusAfterRender is { } id)
+        {
+            _focusAfterRender = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
     }
 
     private async Task CopySecretAsync()
@@ -290,6 +375,8 @@ else
         ResetPassword,
         Deactivate,
         Reactivate,
+        MakeAdministrator,
+        RemoveAdministrator,
     }
 
     private sealed record PendingAction(Guid UserId, string UserName, AdminAction Action, string Question, string Verb);

@@ -41,7 +41,7 @@ the product vision and requirement backlog for Phases 2 and 3.
 | [Research](specs/002-kanban-project-core/research.md) | Technology decisions, including how Phases 2–3 extend Phase 1 |
 | [Data model](specs/002-kanban-project-core/data-model.md) | Tables, rules, and the planned additive changes for later phases |
 | [Contracts](specs/002-kanban-project-core/contracts/) | Application services, permissions, UI routes, HTTP endpoints |
-| [Tasks](specs/002-kanban-project-core/tasks.md) | 114 test-first tasks, with implementation notes at the end |
+| [Tasks](specs/002-kanban-project-core/tasks.md) | 119 test-first tasks, with implementation notes at the end |
 | [Quickstart](specs/002-kanban-project-core/quickstart.md) | How to run and validate Phase 1 |
 | [Deployment](docs/operations/deployment.md) · [Backups and restore](docs/operations/backup-restore.md) | Running U-PMS in production |
 | [Security review](docs/security/phase1-asvs-review.md) · [Screen-reader review](docs/accessibility/phase1-screen-reader-review.md) | OWASP ASVS Level 2 review; accessibility checks |
@@ -76,6 +76,8 @@ dotnet run --project src/Upms.Web                  # then open https://localhost
 ```
 
 On `/setup`, enter the setup token and create the first administrator, then add users at `/admin/users`.
+Make at least one colleague an administrator there too ("Make administrator"), so accounts never depend on
+one person.
 
 ## Tests
 

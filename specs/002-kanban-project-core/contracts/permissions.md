@@ -23,12 +23,15 @@ Administrator (full rights in every project).
 | Delete a task (with its sub-tasks) | 🔒 | ❌ | ✅ (own) | ✅ | ✅ |
 | List and restore deleted tasks | 🔒 | ❌ | ❌ | ❌ | ✅ |
 | Manage accounts (list, add, reset password, deactivate, reactivate) | 🔒 | ❌ | ❌ | ❌ | ✅ |
+| Give or remove the Administrator role | 🔒 | ❌ | ❌ | ❌ | ✅ |
 | Change own password, display name and time zone | 🔒 | ✅ | ✅ | ✅ | ✅ |
 
 ## Rules
 
 1. **Deactivated users** cannot sign in; open sessions end within one minute (research R6).
-2. **The last active Administrator** cannot be deactivated.
+2. **The last active Administrator** can neither be deactivated nor lose the Administrator role, and only an
+   active account can be given it. Changes to who is an active administrator are made one at a time, so two
+   administrators acting on each other at the same moment cannot leave none (FR-008).
 3. **Unknown or deleted** projects, tasks and comments return `NotFound` (FR-009); deleted tasks are
    visible only in the Admin's deleted-task list.
 4. **Phase 2 change**: the *User* and *Owner* columns are replaced by project roles (Project Admin,

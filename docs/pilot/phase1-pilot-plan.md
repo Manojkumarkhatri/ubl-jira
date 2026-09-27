@@ -20,6 +20,7 @@ The other success criteria are covered by automated tests (SC-002 performance, S
 - [ ] Pilot teams chosen: 1–2 teams of 5–12 people with ongoing, non-confidential work (Phase 1 is an open
       workspace: every signed-in user can see every project).
 - [ ] Accounts created; temporary passwords delivered through a secure channel.
+- [ ] At least two administrators, so accounts can be managed when one is away.
 - [ ] A facilitator (runs the timed sessions) and an observer (takes notes) named for each team.
 - [ ] Participants told that the sessions time the product, not them, and that they may stop at any time.
 

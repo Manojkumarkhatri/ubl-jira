@@ -12,4 +12,7 @@ public enum AuditEventType
     UserCreated,
     UserDeactivated,
     UserReactivated,
+
+    /// <summary>The Administrator role was given or removed; details hold the old and new roles.</summary>
+    RoleChanged,
 }
