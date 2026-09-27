@@ -1,5 +1,9 @@
 # Data Model: Issue Tracker MVP
 
+> **⚠️ Out of date (2026-09-27):** the spec was re-specified after the prototype review (new story
+> order, portfolios, the Structured template, timeline, and dashboards). This document still reflects
+> the previous spec. Regenerate it with `/speckit-plan` and `/speckit-tasks` before implementing.
+
 **Feature**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Research**: [research.md](./research.md)
 
 One SQL Server database, one `AppDbContext`. Tables are grouped by the module that owns them; other

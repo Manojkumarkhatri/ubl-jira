@@ -1,10 +1,13 @@
 # U-PMS (UBL Project Management System)
 
-U-PMS is a Jira-like issue and project tracker for a single organization: projects, issues (epics, stories,
-tasks, bugs, sub-tasks), a drag-and-drop board, comments with mentions, attachments, notifications,
-sprints, search, and access administration.
+U-PMS is a Jira-like project management system for a single organization, serving both IT teams
+(agile: Scrum and Kanban) and the PMO (structured, phase-based projects) on one hierarchy:
+Portfolio → Project → work items (epics or phases, stories, tasks, bugs, milestones, sub-tasks). It
+covers projects, work items, backlog and sprints, an interactive timeline, boards, project and
+portfolio dashboards, collaboration, search, and user administration.
 
-**Status**: planning complete; a clickable design prototype is available; implementation not started. The project follows
+**Status**: spec re-specified after the prototype review (2026-09-27); plan and tasks are being
+regenerated to match; a clickable design prototype is available; implementation not started. The project follows
 [Spec Kit](https://github.com/github/spec-kit) spec-driven development: every feature is specified,
 clarified, planned, and broken into tasks before any code is written.
 
@@ -20,14 +23,24 @@ Testcontainers, Playwright. One deployable modular monolith; see the
 | Document | Purpose |
 |----------|---------|
 | [Constitution](.specify/memory/constitution.md) | Non-negotiable project principles and quality gates |
-| [Spec](specs/001-issue-tracker-mvp/spec.md) | What the MVP does and why: 6 prioritized user stories, 58 requirements |
-| [Plan](specs/001-issue-tracker-mvp/plan.md) | Architecture, constitution check, source layout |
+| [Spec](specs/001-issue-tracker-mvp/spec.md) | What the MVP does and why: 8 stories in delivery order, 80 requirements |
+| [Plan](specs/001-issue-tracker-mvp/plan.md) | Architecture, constitution check, source layout (out of date until regenerated) |
 | [Research](specs/001-issue-tracker-mvp/research.md) | Technology decisions with rationale and alternatives |
 | [Data model](specs/001-issue-tracker-mvp/data-model.md) | Tables, fields, rules, state machines |
 | [Contracts](specs/001-issue-tracker-mvp/contracts/) | Application services, permissions, endpoints, routes, emails |
-| [Tasks](specs/001-issue-tracker-mvp/tasks.md) | 178 test-first tasks, ordered by user story |
+| [Tasks](specs/001-issue-tracker-mvp/tasks.md) | Test-first tasks by user story (out of date until regenerated from the new spec) |
 | [Quickstart](specs/001-issue-tracker-mvp/quickstart.md) | How to run and validate the app once built |
 | [Design prototype](design/prototype/index.html) | Clickable prototype of the main features with demo data: open the file in any browser |
+
+## Delivery order
+
+1. **Projects**: portfolios, projects (Scrum, Kanban or Structured), members and roles, with sign-in
+   and security from Day 1
+2. **Tasks**: work items, workflows, detail panel, history, lists
+3. **Backlog**: ranked backlog and sprints (Scrum)
+4. **Timeline**: bars across weeks, months and quarters; milestones; dependencies; portfolio timeline
+5. **Board & Dashboards**: boards, health updates, project and portfolio dashboards
+6. Collaboration, 7. Search, 8. User administration
 
 ## Design prototype
 

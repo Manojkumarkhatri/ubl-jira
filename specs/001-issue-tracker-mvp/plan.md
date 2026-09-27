@@ -1,5 +1,9 @@
 # Implementation Plan: Issue Tracker MVP
 
+> **⚠️ Out of date (2026-09-27):** the spec was re-specified after the prototype review (new story
+> order, portfolios, the Structured template, timeline, and dashboards). This document still reflects
+> the previous spec. Regenerate it with `/speckit-plan` and `/speckit-tasks` before implementing.
+
 **Branch**: `claude/practical-lamport-l47ei8` (feature `001-issue-tracker-mvp`) | **Date**: 2026-09-27 |
 **Spec**: [spec.md](./spec.md)
 

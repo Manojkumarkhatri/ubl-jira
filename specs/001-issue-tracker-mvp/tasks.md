@@ -5,6 +5,10 @@ description: "Task list for the Issue Tracker MVP (specs/001-issue-tracker-mvp)"
 
 # Tasks: Issue Tracker MVP
 
+> **⚠️ Out of date (2026-09-27):** the spec was re-specified after the prototype review (new story
+> order, portfolios, the Structured template, timeline, and dashboards). This document still reflects
+> the previous spec. Regenerate it with `/speckit-plan` and `/speckit-tasks` before implementing.
+
 **Input**: Design documents from `specs/001-issue-tracker-mvp/`
 
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
