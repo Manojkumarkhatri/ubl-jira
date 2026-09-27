@@ -6,13 +6,23 @@ Portfolio → Project → work items (epics or phases, stories, tasks, bugs, mil
 covers projects, work items, backlog and sprints, an interactive timeline, boards, project and
 portfolio dashboards, collaboration, search, and user administration.
 
-**Status**: Phase 1 (core Kanban project) is built: sign-in and accounts, projects, the Kanban board,
-the task details drawer and column customization, with automated tests for every acceptance scenario.
-Before the pilot, the manual screen-reader pass and the restore drill still need a person; see
-[Before the pilot](#before-the-pilot). Phase 2 (project views and team) is specified and planned
-([specs/003-project-views-and-team](specs/003-project-views-and-team/spec.md)) and being built. The project follows
-[Spec Kit](https://github.com/github/spec-kit) spec-driven development: every feature is specified,
-clarified, planned, and broken into tasks before any code is written.
+**Status**: Phases 1 and 2 are built, with automated tests for every acceptance scenario.
+
+- **Phase 1 (core Kanban project)**: sign-in and accounts, projects, the Kanban board, the task details drawer
+  and column customization.
+- **Phase 2 (project views and team)**:
+  - members-only projects, with Project Admin, Member and Viewer roles;
+  - task assignees and start and due dates, with overdue marks;
+  - "My tasks";
+  - "Only my tasks" and assignee filters on the board;
+  - the List and Timeline views beside the board.
+
+The [Phase 2 validation record](specs/003-project-views-and-team/validation.md) covers the upgrade of a Phase 1
+database, every quickstart step and the performance run. Before the pilot, a few things still need a person;
+see [Before the pilot](#before-the-pilot).
+
+The project follows [Spec Kit](https://github.com/github/spec-kit) spec-driven development: every feature is
+specified, clarified, planned, and broken into tasks before any code is written.
 
 ## Stack
 
@@ -56,8 +66,10 @@ the product vision and requirement backlog for Phases 2 and 3.
 | [Spec](specs/003-project-views-and-team/spec.md) | What Phase 2 does and why: 4 stories, 43 requirements, the decisions of 2026-09-27 |
 | [Plan](specs/003-project-views-and-team/plan.md) · [Research](specs/003-project-views-and-team/research.md) · [Data model](specs/003-project-views-and-team/data-model.md) | Design: additive changes to Phase 1 |
 | [Contracts](specs/003-project-views-and-team/contracts/) | Application services, the Phase 2 permission matrix, UI routes |
-| [Tasks](specs/003-project-views-and-team/tasks.md) | 70 test-first tasks |
-| [Quickstart](specs/003-project-views-and-team/quickstart.md) | How to upgrade from Phase 1 and validate Phase 2 |
+| [Tasks](specs/003-project-views-and-team/tasks.md) | 70 test-first tasks, with implementation notes at the end |
+| [Quickstart](specs/003-project-views-and-team/quickstart.md) · [Validation](specs/003-project-views-and-team/validation.md) | How to upgrade from Phase 1 and validate Phase 2; the record of doing it, with the performance results |
+| [Security review](docs/security/phase2-asvs-review.md) · [Screen-reader script](docs/accessibility/phase1-screen-reader-review.md#phase-2-setup) | OWASP ASVS Level 2 review of the Phase 2 changes; the manual pass for the new screens |
+| [Pilot plan](docs/pilot/phase1-pilot-plan.md) | Now also measures Phase 2's SC-001, SC-007 and SC-008 |
 
 ## Design prototype
 
@@ -88,7 +100,13 @@ dotnet run --project src/Upms.Web                  # then open https://localhost
 
 On `/setup`, enter the setup token and create the first administrator, then add users at `/admin/users`.
 Make at least one colleague an administrator there too ("Make administrator"), so accounts never depend on
-one person.
+one person. A project's creator becomes its Project Admin and adds the team from the project's **Members**
+page.
+
+**Upgrading a Phase 1 database**: the same `dotnet ef database update` applies the Phase 2 migrations. Each
+project's owner becomes its Project Admin, and everyone who created, changed or commented on its work becomes a
+Member, with one audit event each. Everyone else no longer sees the project. See the
+[Phase 2 quickstart](specs/003-project-views-and-team/quickstart.md), step 1.
 
 ## Tests
 
@@ -105,7 +123,9 @@ needed. The end-to-end tests need Playwright's Chromium once:
 `pwsh tests/Upms.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install chromium`.
 
 To run one class or one test, pass a filter to the test platform, for example
-`dotnet test --project tests/Upms.Application.Tests -- --filter-class "*PermissionMatrixTests"`.
+`dotnet test --project tests/Upms.Application.Tests -- --filter-class "*PermissionMatrixTests"` (the Phase 2
+permission matrix: every action for every kind of caller). Acceptance tests are named after their scenarios:
+`US1_AS1_…` for Phase 1 and `P2_US1_AS1_…` for Phase 2.
 
 **Quality gates** (as in CI): `dotnet format --verify-no-changes`, `dotnet build -c Release` (warnings are
 errors; NuGet audit fails on high and critical advisories) and
@@ -117,15 +137,18 @@ the same data. See the quickstart for the settings.
 
 ## Before the pilot
 
-- [ ] Manual screen-reader pass with NVDA and Edge ([script](docs/accessibility/phase1-screen-reader-review.md)).
+- [ ] Manual screen-reader pass with NVDA and Edge on the Phase 1 and Phase 2 screens
+      ([script](docs/accessibility/phase1-screen-reader-review.md)).
 - [ ] Restore drill on the production backups ([runbook](docs/operations/backup-restore.md)).
 - [ ] Decide on multi-factor sign-in for administrators ([ASVS open item O1](docs/security/phase1-asvs-review.md#open-items)).
+- [ ] Decide whether project names must stay unique across the organization, since the rule lets anyone creating
+      a project learn that a name is taken ([Phase 2 open item P2-O1](docs/security/phase2-asvs-review.md#open-items)).
 
 ## Working with Spec Kit
 
 The Spec Kit commands are installed as Claude Code skills in `.claude/skills/`:
 
-- `/speckit-specify`, `/speckit-clarify`, `/speckit-plan`, `/speckit-tasks`: for Phase 2 and Phase 3
-  when their turn comes
+- `/speckit-specify`, `/speckit-clarify`, `/speckit-plan`, `/speckit-tasks`: for Phase 3 when its turn
+  comes
 - `/speckit-analyze`: cross-check a phase's spec, plan and tasks before building
 - `/speckit-implement`: build a phase from its `tasks.md`

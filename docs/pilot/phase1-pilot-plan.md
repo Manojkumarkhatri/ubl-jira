@@ -1,7 +1,10 @@
-# Phase 1 pilot plan
+# Pilot plan (Phases 1 and 2)
 
-A two-week pilot with one or two real teams shows whether U-PMS Phase 1 is ready for wider use. It measures
-the three success criteria that need people rather than automated tests:
+A two-week pilot with one or two real teams shows whether U-PMS is ready for wider use. It measures the success
+criteria that need people rather than automated tests: three from Phase 1 and, when Phase 2 is installed, three
+from Phase 2. Phase 2 numbers its criteria from SC-001 again, so they are written "P2 SC-…" here.
+
+**Phase 1**
 
 | Criterion | Target | How it is measured |
 |-----------|--------|--------------------|
@@ -9,16 +12,34 @@ the three success criteria that need people rather than automated tests:
 | **SC-003** | A project owner adds a column, renames another, reorders them and sets a work-in-progress limit in under 2 minutes | Timed task session on day 1 (below) |
 | **SC-011** | At least one team runs all of its daily work on a U-PMS board for the 2 weeks, and at least 80% of its members rate the board and drawer "easy" or "very easy" | Usage check during the pilot and the end-of-pilot survey (below) |
 
-The other success criteria are covered by automated tests (SC-002 performance, SC-004 to SC-008), monitoring
-(SC-009) and the restore drill (SC-010) before the pilot starts.
+**Phase 2** ([spec](../../specs/003-project-views-and-team/spec.md))
+
+| Criterion | Target | How it is measured |
+|-----------|--------|--------------------|
+| **P2 SC-001** | A Project Admin adds three colleagues with different roles to a project in under 2 minutes | Timed task session C (below) |
+| **P2 SC-007** | At least 90% of pilot users find every open task assigned to them within 30 seconds of signing in, without help | Timed task session D (below) |
+| **P2 SC-008** | A contributor moves a task two weeks later on the timeline in under 15 seconds, with a mouse or with the keyboard alone | Timed task session E (below) |
+
+The other success criteria are covered by automated tests (Phase 1 SC-002 performance, SC-004 to SC-008;
+Phase 2 SC-002 to SC-006 and SC-009, recorded in
+[validation.md](../../specs/003-project-views-and-team/validation.md)), monitoring (Phase 1 SC-009) and the
+restore drill (Phase 1 SC-010) before the pilot starts.
 
 ## Before the pilot
 
 - [ ] Production-like environment deployed ([deployment.md](../operations/deployment.md)) with monitoring on
       `/health/ready`.
 - [ ] Restore drill done and recorded ([backup-restore.md](../operations/backup-restore.md)).
-- [ ] Pilot teams chosen: 1–2 teams of 5–12 people with ongoing, non-confidential work (Phase 1 is an open
-      workspace: every signed-in user can see every project).
+- [ ] Pilot teams chosen: 1–2 teams of 5–12 people with ongoing work. With Phase 1 alone, choose
+      non-confidential work: every signed-in user can see every project. With Phase 2, only a project's members
+      and the administrators see it. Project names are still unique across the organization, so avoid
+      confidential words in them ([security review, P2-O1](../security/phase2-asvs-review.md#open-items)).
+- [ ] If the teams used Phase 1 first: Phase 2 installed on the same database
+      ([quickstart](../../specs/003-project-views-and-team/quickstart.md), step 1), and each team lead checks their
+      project's Members page. Owners become Project Admins and everyone who worked on the project becomes a
+      Member (P2 SC-006).
+- [ ] For session D: the facilitator assigns each participant three open tasks in two projects, one of them
+      overdue, the day before.
 - [ ] Accounts created; temporary passwords delivered through a secure channel.
 - [ ] At least two administrators, so accounts can be managed when one is away.
 - [ ] A facilitator (runs the timed sessions) and an observer (takes notes) named for each team.
@@ -49,12 +70,47 @@ Completed when the settings page shows all four changes. Record the time.
 
 **Pass**: every owner completes it in under 2 minutes.
 
+### Session C: build the team (P2 SC-001), each Project Admin
+
+Using the participant's project:
+
+> "Add three colleagues to your project: one as a Project Admin, one as a Member and one as a Viewer."
+
+Completed when the Members page lists all three with those roles. Record the time.
+
+**Pass**: every Project Admin completes it in under 2 minutes.
+
+### Session D: find my work (P2 SC-007), every participant
+
+Start the stopwatch when the participant has signed in and sees the project list:
+
+> "Find every open task that is assigned to you, in all your projects."
+
+Completed when the participant has named or pointed to their three tasks, for example on "My tasks". Record
+the time and whether help was needed.
+
+**Pass**: at least 90% of participants find all three within 30 seconds without help.
+
+### Session E: reschedule on the timeline (P2 SC-008), every contributor
+
+Using a project with dated tasks:
+
+> "On the timeline, move the task '…' two weeks later."
+
+Run it once with the mouse and, for anyone who works with the keyboard, once with the keyboard alone. Completed
+when the task's bar shows the new dates. Record each time.
+
+**Pass**: every contributor completes it in under 15 seconds, with the mouse or with the keyboard.
+
 ### Recording sheet
 
 | Participant (code) | Role | Session | Time (m:ss) | Without help? | Observations (hesitations, errors, comments) |
 |--------------------|------|---------|-------------|---------------|-----------------------------------------------|
 | P01 | member | A | | | |
 | P01 | owner | B | | | |
+| P01 | Project Admin | C | | | |
+| P01 | member | D | | | |
+| P01 | member | E (mouse / keyboard) | | | |
 
 Use participant codes, not names, in the sheet.
 
@@ -83,6 +139,8 @@ Sent to every pilot participant on the last day; anonymous; five minutes.
 5. What should we improve first? *free text*
 6. Did you use the keyboard or a screen reader to work with U-PMS? If so, what worked and what did not?
    *free text*
+7. With Phase 2: how easy was it to see your own work ("My tasks", the "Only my tasks" filter) and to plan
+   with the List and Timeline views? *Very easy / Easy / Neither / Difficult / Very difficult*
 
 **SC-011 part 2 passes** when at least 80% of the pilot team's respondents answer "Easy" or "Very easy" to
 both question 1 and question 2.
@@ -96,7 +154,10 @@ At the end of the pilot, the product owner summarizes:
 | SC-001 | _% of participants under 3 minutes without help (median time)_ | |
 | SC-003 | _owners under 2 minutes (times)_ | |
 | SC-011 | _team(s) fully on the board; % easy or very easy for board and drawer_ | |
+| P2 SC-001 | _Project Admins under 2 minutes (times)_ | |
+| P2 SC-007 | _% of participants within 30 seconds without help (median time)_ | |
+| P2 SC-008 | _contributors under 15 seconds with the mouse, and with the keyboard (times)_ | |
 
-together with the top problems from the report channel and survey questions 4–6. The decision options are:
-roll out Phase 1 more widely, fix the listed problems and repeat the affected sessions, or change the plan for
-Phase 2.
+together with the top problems from the report channel and survey questions 4–7. The decision options are:
+roll out more widely, fix the listed problems and repeat the affected sessions, or change the plan for the next
+phase.

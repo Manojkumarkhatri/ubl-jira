@@ -49,8 +49,8 @@ Use four accounts besides the administrator: **owen** (creates the project), **a
 1. In the drawer of `WEB-1`, choose amina as assignee; the card shows her initials and the history the
    change (scenario 1). As bilal, use **Assign to me** on an unassigned task (scenario 2).
 2. Open the assignee choice: only active Project Admins and Members, plus "Unassigned" (scenario 3).
-3. Set start 1 October and due 10 October; then try a due date before the start date: refused, input
-   kept (scenario 4).
+3. In the drawer of `WEB-3`, set start 1 October and due 10 October; then try a due date before the start
+   date: refused, input kept (scenario 4).
 4. Give `WEB-1` a due date of yesterday: "Overdue" on the card, in the list and on My tasks; move it to
    Done and the mark disappears (scenario 5).
 5. As amina, turn on **Only my tasks**: only her cards remain and columns show "matching of total"
@@ -74,8 +74,9 @@ Use four accounts besides the administrator: **owen** (creates the project), **a
 
 1. Date four of six tasks (one with a due date only). **Timeline**, months: four bars (the one-date task
    as a one-day bar), today line, two unscheduled tasks; switch to weeks and quarters (scenarios 1, 2).
-2. Drag a bar two weeks later: both dates move 14 days, one history entry (scenario 3). Drag another
-   bar's right end: only its due date changes; it cannot pass the start (scenario 4).
+2. Drag a bar two weeks later: both dates move 14 days, recorded as one change (the history lists the start
+   and the due date with the same time) (scenario 3). Drag another bar's right end: only its due date
+   changes; it cannot pass the start (scenario 4).
 3. Tab to a bar, press Left, then Enter: one day earlier, saved once; Shift and Ctrl change one date;
    Escape cancels (scenario 5).
 4. **Schedule** an unscheduled task: today to six days later (scenario 6). Expand a task with sub-tasks

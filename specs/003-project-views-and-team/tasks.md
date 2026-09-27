@@ -192,11 +192,11 @@ task's dates and history match (spec US4).
 **Purpose**: Improvements that affect multiple user stories
 
 - [X] T064 [P] Extend `tests/Upms.E2E.Tests/ResponsiveAndKeyboardTests.cs` to the members screen, the list, the timeline and "My tasks": usable at 360 px, and each story's main path completes with the keyboard only (FR-041, SC-009)
-- [ ] T065 Run the SC-002 suite with every Phase 1 and Phase 2 action at 300 users and about 500,000 work items, tune indexes until p95 ≤ 1 s, and record the results in `specs/003-project-views-and-team/validation.md` (SC-002)
-- [ ] T066 [P] Review the Phase 2 changes against OWASP ASVS Level 2 (access control on every project-scoped call and task key, no leaks through "My tasks", filters or people search, audit of membership changes) in `docs/security/phase2-asvs-review.md`, and fix findings (constitution III)
-- [ ] T067 [P] Add a "Phase 2 screens" section (members, list, timeline, "My tasks", drawer changes) to the manual screen-reader script in `docs/accessibility/phase1-screen-reader-review.md`
-- [ ] T068 [P] Update `README.md` (status, features, test commands) and `docs/pilot/phase1-pilot-plan.md` for Phase 2: members-only projects, "My tasks", and how the pilot measures SC-001 (adding three colleagues in under 2 minutes), SC-007 (finding one's tasks within 30 seconds) and SC-008 (rescheduling on the timeline in under 15 seconds)
-- [ ] T069 Run every step of `specs/003-project-views-and-team/quickstart.md`, including the upgrade of a Phase 1 database, and record the results in `specs/003-project-views-and-team/validation.md`
+- [X] T065 Run the SC-002 suite with every Phase 1 and Phase 2 action at 300 users and about 500,000 work items, tune indexes until p95 ≤ 1 s, and record the results in `specs/003-project-views-and-team/validation.md` (SC-002)
+- [X] T066 [P] Review the Phase 2 changes against OWASP ASVS Level 2 (access control on every project-scoped call and task key, no leaks through "My tasks", filters or people search, audit of membership changes) in `docs/security/phase2-asvs-review.md`, and fix findings (constitution III)
+- [X] T067 [P] Add a "Phase 2 screens" section (members, list, timeline, "My tasks", drawer changes) to the manual screen-reader script in `docs/accessibility/phase1-screen-reader-review.md`
+- [X] T068 [P] Update `README.md` (status, features, test commands) and `docs/pilot/phase1-pilot-plan.md` for Phase 2: members-only projects, "My tasks", and how the pilot measures SC-001 (adding three colleagues in under 2 minutes), SC-007 (finding one's tasks within 30 seconds) and SC-008 (rescheduling on the timeline in under 15 seconds)
+- [X] T069 Run every step of `specs/003-project-views-and-team/quickstart.md`, including the upgrade of a Phase 1 database, and record the results in `specs/003-project-views-and-team/validation.md`
 - [ ] T070 Do the manual screen-reader pass (NVDA with Edge) on the Phase 2 screens and fix findings (needs a person; constitution VI)
 
 ---
@@ -370,3 +370,27 @@ Decisions made while implementing are recorded here so the documents match the c
 - **Seeded teams** (T027, research R15): the largest project has 40 Members so that every tenth simulated
   user works on it as a different person. Simulated Project Admins add someone as a Viewer and later
   remove them, so the contributors the other simulated users act as stay in their teams.
+- **Keyboard and 360 px checks** (T064): a year typed digit by digit in the drawer's date fields ("0002" on
+  the way to 2026) is not saved until it has four digits. Browser tests wait for in-app address changes by
+  polling the address (`WaitForPathAsync`), because `WaitForURLAsync` can miss a change that lands just before
+  it starts.
+- **Performance** (T065): with every Phase 1 and Phase 2 action at 300 users and 498,935 work items, the
+  highest p95 was 211 ms (assigning), with no failures; the planned indexes needed no tuning
+  (validation.md).
+- **Security review** (T066): the one finding, fixed, was that the timeline's drag offset came from the
+  browser unchecked. Offsets longer than the span of allowed dates are now ignored. A list address with
+  thousands of values that mean nothing still gets the right answer (a test documents it). Open item P2-O1
+  (organization-wide unique project names reveal that a name is taken) needs a product decision
+  (`docs/security/phase2-asvs-review.md`).
+- **Round trips through the browser** (T069, found by the scripted quickstart run): three timing bugs that
+  in-process tests could not see, all fixed test-first:
+  - Timeline saves now run one at a time, each with the version the previous one returned. Keys pressed
+    meanwhile build on the dates being saved, and changes queued behind a failed save are dropped.
+  - List filters, chips, the timeline's scale and "Hide completed" build on the last choice asked for, not on
+    the address still shown, and a late list answer for an older address is ignored. `SlowNavigationManager`
+    in the web tests delays address changes as a browser does.
+  - After the drawer closes, pages put focus back only if it was lost (`upms.focusByIdIfLost`), because the
+    dialog already returns it.
+- **Accessibility tree review** (T067): each project on "My tasks" is now linked by its name and key
+  ("Website Revamp (WEB)") rather than by its key alone. The manual script asks the tester to check whether
+  NVDA passes the timeline's arrow keys through in browse mode.
