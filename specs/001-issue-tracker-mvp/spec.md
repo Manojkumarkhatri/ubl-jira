@@ -6,7 +6,11 @@
 
 **Last Updated**: 2026-09-27 (re-specified after the prototype review)
 
-**Status**: Draft
+**Status**: Reference: product vision and requirement backlog
+
+> **Roadmap change (2026-09-27):** delivery is now phased. Phase 1 (core Kanban project) is specified
+> in `specs/002-kanban-project-core`; Phase 2 (views and project team) and Phase 3 (enterprise and
+> portfolio) will get their own specs, drawing on the requirements in this document.
 
 **Input**: User description: "I am planning to build a software like jira". Follow-up answers: it is
 for one company/team; projects and issues (type, status, priority, assignee, search) are the core; the

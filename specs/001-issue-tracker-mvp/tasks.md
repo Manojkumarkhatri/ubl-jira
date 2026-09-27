@@ -5,9 +5,9 @@ description: "Task list for the Issue Tracker MVP (specs/001-issue-tracker-mvp)"
 
 # Tasks: Issue Tracker MVP
 
-> **⚠️ Out of date (2026-09-27):** the spec was re-specified after the prototype review (new story
-> order, portfolios, the Structured template, timeline, and dashboards). This document still reflects
-> the previous spec. Regenerate it with `/speckit-plan` and `/speckit-tasks` before implementing.
+> **⚠️ Superseded (2026-09-27):** delivery is now phased, and each phase has its own spec, plan and
+> tasks (Phase 1: `specs/002-kanban-project-core`). This document is kept for reference only; do not
+> implement from it.
 
 **Input**: Design documents from `specs/001-issue-tracker-mvp/`
 
