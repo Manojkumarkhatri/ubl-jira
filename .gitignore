@@ -27,3 +27,6 @@ Thumbs.db
 .env
 .env.*
 appsettings.*.local.json
+
+# Tool state that lands in a folder when HOME is unusual
+.local/
