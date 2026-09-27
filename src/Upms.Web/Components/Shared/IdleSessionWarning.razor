@@ -1,1 +1,120 @@
-@* Stub: implemented in T042. *@
+@implements IDisposable
+@inject ISessionActivity Activity
+@inject IOrganizationSettingsReader Settings
+@inject TimeProvider Time
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<div data-upms-session hidden></div>
+@if (_warning)
+{
+    <div class="idle-backdrop"></div>
+    <div class="idle-warning card" role="alertdialog" aria-modal="true" aria-labelledby="idle-title"
+         aria-describedby="idle-text" data-testid="idle-warning">
+        <h2 id="idle-title">Are you still there?</h2>
+        <p id="idle-text">For security, you will be signed out in @RemainingText because there has been no activity.</p>
+        <button type="button" class="btn btn-primary" data-testid="stay-signed-in" @ref="_stayButton"
+                @onclick="StaySignedInAsync">Stay signed in</button>
+    </div>
+}
+
+@code {
+    /// <summary>The warning appears this long before the idle timeout (FR-006).</summary>
+    public static readonly TimeSpan WarningLeadTime = TimeSpan.FromMinutes(2);
+
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(15);
+
+    private ITimer? _timer;
+    private TimeSpan _timeout = TimeSpan.FromMinutes(30);
+    private bool _warning;
+    private bool _expired;
+    private bool _focusPending;
+    private ElementReference _stayButton;
+
+    private string RemainingText
+    {
+        get
+        {
+            var remaining = _timeout - (Time.GetUtcNow() - Activity.LastActivity);
+            return remaining.TotalSeconds <= 60 ? "less than a minute" : $"{Math.Ceiling(remaining.TotalMinutes)} minutes";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await Settings.GetAsync(CancellationToken.None);
+        _timeout = TimeSpan.FromMinutes(settings.IdleTimeoutMinutes);
+        _timer = Time.CreateTimer(_ => _ = InvokeAsync(CheckAsync), null, CheckInterval, CheckInterval);
+    }
+
+    private async Task CheckAsync()
+    {
+        if (_expired)
+        {
+            return;
+        }
+
+        var idle = Time.GetUtcNow() - Activity.LastActivity;
+        if (idle >= _timeout)
+        {
+            await ExpireAsync();
+            return;
+        }
+
+        var showWarning = idle >= _timeout - WarningLeadTime;
+        if (showWarning != _warning || showWarning)
+        {
+            _focusPending = showWarning && !_warning;
+            _warning = showWarning;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StaySignedInAsync()
+    {
+        Activity.Touch();
+        _warning = false;
+        bool renewed;
+        try
+        {
+            renewed = await JS.InvokeAsync<bool>("upmsIdle.keepAlive");
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            renewed = true; // The server-side session was renewed; the cookie renews on the next request.
+        }
+
+        if (!renewed)
+        {
+            await ExpireAsync();
+        }
+    }
+
+    private async Task ExpireAsync()
+    {
+        _expired = true;
+        _warning = false;
+        _timer?.Dispose();
+        Activity.Expire();
+        try
+        {
+            // Posts the sign-out form, which clears the cookie and returns to sign-in.
+            await JS.InvokeVoidAsync("upmsIdle.expire");
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
+        {
+            Navigation.NavigateTo("Account/Login?expired=1", forceLoad: true);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending && _warning)
+        {
+            _focusPending = false;
+            await _stayButton.FocusAsync();
+        }
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

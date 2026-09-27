@@ -18,6 +18,7 @@ public static class ApplicationServiceCollectionExtensions
         services.Configure<SetupOptions>(configuration.GetSection(SetupOptions.SectionName));
 
         services.AddScoped<ICallerContext, CallerContext>();
+        services.AddScoped<IUserStatusReader, UserStatusReader>();
         services.AddScoped<TimeZoneResolver>();
 
         // Identity module

@@ -63,13 +63,13 @@ public sealed class HostSecurityTests(WebDatabaseFixture database) : IAsyncLifet
     }
 
     [Fact]
-    public async Task A_signed_in_user_reaches_the_project_list()
+    public async Task A_signed_in_user_reaches_their_pages()
     {
-        await _factory.CreateUserAsync("bilal", "bilal's own passphrase");
+        await _factory.CreateUserAsync("bilal", "my own long passphrase");
         using var client = _factory.CreateHttpsClient();
 
-        using var login = await UpmsWebApplicationFactory.PostLoginAsync(client, "bilal", "bilal's own passphrase");
-        using var response = await client.GetAsync(new Uri("/projects", UriKind.Relative), Ct);
+        using var login = await UpmsWebApplicationFactory.PostLoginAsync(client, "bilal", "my own long passphrase");
+        using var response = await client.GetAsync(new Uri("/account/profile", UriKind.Relative), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }

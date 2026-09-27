@@ -1,0 +1,22 @@
+@page "/Error"
+@attribute [AllowAnonymous]
+@layout AuthLayout
+@using System.Diagnostics
+
+<PageTitle>Error · U-PMS</PageTitle>
+
+<h1>Something went wrong</h1>
+<p>The request could not be completed. Try again, and if the problem continues, contact your administrator.</p>
+@if (!string.IsNullOrEmpty(_requestId))
+{
+    <p class="hint">Reference: <code>@_requestId</code></p>
+}
+
+@code {
+    private string? _requestId;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override void OnInitialized() => _requestId = Activity.Current?.TraceId.ToString() ?? HttpContext?.TraceIdentifier;
+}

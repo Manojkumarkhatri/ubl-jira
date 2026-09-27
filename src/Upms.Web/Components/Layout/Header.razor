@@ -1,0 +1,30 @@
+@inject IAccountService Accounts
+
+<header class="topbar">
+    <a class="brand" href="projects">
+        <span class="brand-mark" aria-hidden="true">U</span>
+        <span>U-PMS <small>UBL Project Management</small></span>
+    </a>
+    <nav class="top-nav" aria-label="Main">
+        <NavItem Href="projects">Projects</NavItem>
+        @if (_profile?.IsAdministrator == true)
+        {
+            <NavItem Href="admin/users">Accounts</NavItem>
+        }
+    </nav>
+    <span class="spacer"></span>
+    @if (_profile is not null)
+    {
+        <UserMenu DisplayName="@_profile.DisplayName" />
+    }
+</header>
+
+@code {
+    private MyProfile? _profile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Accounts.GetProfileAsync(CancellationToken.None);
+        _profile = result.IsSuccess ? result.Value : null;
+    }
+}

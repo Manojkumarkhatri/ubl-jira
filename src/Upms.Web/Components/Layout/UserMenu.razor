@@ -1,0 +1,47 @@
+<div class="user-menu-wrap">
+    <button type="button" class="btn btn-ghost user-btn" aria-expanded="@(_open ? "true" : "false")" aria-controls="user-menu"
+            @onclick="Toggle" @ref="_button">
+        <span class="avatar" aria-hidden="true">@Initials</span>
+        <span class="btn-label">@DisplayName</span>
+        <span class="sr-only">(account menu)</span>
+    </button>
+    @if (_open)
+    {
+        <div class="menu-backdrop" @onclick="CloseAsync"></div>
+        <div id="user-menu" class="user-menu" @onkeydown="OnKeyDownAsync">
+            <p class="menu-heading">Signed in as <strong>@DisplayName</strong></p>
+            <a class="menu-item" href="account/profile" @onclick="CloseAsync">Profile and time zone</a>
+            <a class="menu-item" href="Account/ChangePassword">Change password</a>
+            <button type="submit" form="upms-logout-form" class="menu-item">Sign out</button>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open;
+    private ElementReference _button;
+
+    [Parameter, EditorRequired]
+    public string DisplayName { get; set; } = "";
+
+    private string Initials => string.Concat(DisplayName
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .Take(2)
+        .Select(part => char.ToUpperInvariant(part[0])));
+
+    private void Toggle() => _open = !_open;
+
+    private async Task CloseAsync()
+    {
+        _open = false;
+        await _button.FocusAsync();
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await CloseAsync();
+        }
+    }
+}

@@ -1,0 +1,307 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = AuthorizationPolicies.Administrator)]
+@inject IUserAdminService Admin
+@inject LiveAnnouncer Announcer
+@inject IJSRuntime JS
+
+<PageTitle>Accounts · U-PMS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <div class="crumbs">Administration</div>
+        <h1>Accounts</h1>
+    </div>
+    <span class="spacer"></span>
+    @if (!_adding)
+    {
+        <button type="button" class="btn btn-primary" @onclick="StartAdding">Add user</button>
+    }
+</div>
+
+@if (_secret is not null)
+{
+    <div class="alert alert-success" role="status" data-testid="temporary-password">
+        <p><strong>@_secret.Heading</strong></p>
+        <p>
+            Temporary password (shown only once): <code class="temp-password">@_secret.Password</code>
+            <button type="button" class="btn btn-sm" @onclick="CopySecretAsync">@(_copied ? "Copied" : "Copy")</button>
+        </p>
+        <p class="hint">Give it to the person through a secure channel. They must choose their own password when they first sign in.</p>
+        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _secret = null">Done</button>
+    </div>
+}
+
+@if (_adding)
+{
+    <section class="card form-card" aria-labelledby="add-user-heading">
+        <h2 id="add-user-heading">Add a user</h2>
+        <EditForm Model="_newUser" OnSubmit="AddAsync" FormName="add-user" class="form">
+            @if (_addError is { Kind: not ErrorKind.Validation })
+            {
+                <div class="alert alert-error" role="alert">@_addError.Message</div>
+            }
+            <div class="row">
+                <div class="field">
+                    <label for="new-username">User name</label>
+                    <InputText id="new-username" class="input" @bind-Value="_newUser.UserName" autocomplete="off"
+                               aria-describedby="new-username-hint new-username-error" />
+                    <span id="new-username-hint" class="hint">3–64 letters, digits, ".", "-" or "_".</span>
+                    <span id="new-username-error" class="error-text">@FieldError("UserName")</span>
+                </div>
+                <div class="field">
+                    <label for="new-displayname">Display name</label>
+                    <InputText id="new-displayname" class="input" @bind-Value="_newUser.DisplayName" autocomplete="off"
+                               aria-describedby="new-displayname-error" />
+                    <span id="new-displayname-error" class="error-text">@FieldError("DisplayName")</span>
+                </div>
+                <div class="field">
+                    <label for="new-email">Email address</label>
+                    <InputText id="new-email" type="email" class="input" @bind-Value="_newUser.Email" autocomplete="off"
+                               aria-describedby="new-email-error" />
+                    <span id="new-email-error" class="error-text">@FieldError("Email")</span>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Create account</button>
+                <button type="button" class="btn" @onclick="() => _adding = false">Cancel</button>
+            </div>
+        </EditForm>
+    </section>
+}
+
+<div class="toolbar">
+    <label for="user-search" class="sr-only">Search accounts</label>
+    <input id="user-search" type="search" class="input search" placeholder="Search by name, user name or email"
+           @bind="_search" @bind:event="oninput" @bind:after="SearchAsync" />
+</div>
+
+@if (_page is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else if (_page.Items.Count == 0)
+{
+    <EmptyState Title="No accounts found" Text="Try a different search." />
+}
+else
+{
+    <div class="table-wrap">
+        <table class="tbl">
+            <caption class="sr-only">Accounts, page @_page.PageNumber of @Math.Max(1, _page.PageCount)</caption>
+            <thead>
+                <tr>
+                    <th scope="col">User</th>
+                    <th scope="col" class="hide-sm">Email</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="hide-sm">Last sign-in</th>
+                    <th scope="col"><span class="sr-only">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in _page.Items)
+                {
+                    <tr>
+                        <td><strong>@user.DisplayName</strong><br /><span class="muted">@user.UserName</span></td>
+                        <td class="hide-sm">@user.Email</td>
+                        <td>@(user.Role == Upms.Domain.Identity.OrganizationRole.Administrator ? "Administrator" : "User")</td>
+                        <td>
+                            @if (!user.IsActive)
+                            {
+                                <span class="lozenge lozenge-off">Deactivated</span>
+                            }
+                            else if (user.IsLockedOut)
+                            {
+                                <span class="lozenge lozenge-warn">Locked</span>
+                            }
+                            else
+                            {
+                                <span class="lozenge lozenge-ok">Active</span>
+                            }
+                        </td>
+                        <td class="hide-sm">
+                            @if (user.LastSignInAt is { } lastSignIn)
+                            {
+                                <LocalTime Value="lastSignIn" />
+                            }
+                            else
+                            {
+                                <span class="muted">Never</span>
+                            }
+                        </td>
+                        <td class="actions">
+                            @if (_confirming?.UserId == user.Id)
+                            {
+                                <span class="confirm-text">@_confirming.Question</span>
+                                <button type="button" class="btn btn-sm btn-primary" @onclick="ConfirmAsync">Yes, @_confirming.Verb</button>
+                                <button type="button" class="btn btn-sm" @onclick="() => _confirming = null">Cancel</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm" @onclick="() => Ask(user, AdminAction.ResetPassword)">Reset password</button>
+                                @if (user.IsActive)
+                                {
+                                    <button type="button" class="btn btn-sm btn-danger" @onclick="() => Ask(user, AdminAction.Deactivate)">Deactivate</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm" @onclick="() => Ask(user, AdminAction.Reactivate)">Reactivate</button>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Account pages" OnPageChanged="GoToPageAsync" />
+}
+@if (_actionError is not null)
+{
+    <div class="alert alert-error" role="alert">@_actionError</div>
+}
+
+@code {
+    private Page<UserSummary>? _page;
+    private string _search = "";
+    private int _pageNumber = 1;
+    private bool _adding;
+    private NewUserInput _newUser = new();
+    private AppError? _addError;
+    private Secret? _secret;
+    private bool _copied;
+    private PendingAction? _confirming;
+    private string? _actionError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await Admin.ListUsersAsync(_search, new PageRequest(_pageNumber), CancellationToken.None);
+        _page = result.Value ?? Page<UserSummary>.Empty(PageRequest.First);
+    }
+
+    private async Task SearchAsync()
+    {
+        _pageNumber = 1;
+        await LoadAsync();
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _pageNumber = page;
+        await LoadAsync();
+    }
+
+    private void StartAdding()
+    {
+        _adding = true;
+        _addError = null;
+        _newUser = new();
+    }
+
+    private string? FieldError(string field) =>
+        _addError?.FieldErrors is { } errors && errors.TryGetValue(field, out var messages) ? string.Join(" ", messages) : null;
+
+    private async Task AddAsync()
+    {
+        var result = await Admin.AddUserAsync(_newUser.UserName, _newUser.DisplayName, _newUser.Email, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _addError = result.Error;
+            return;
+        }
+
+        _adding = false;
+        _copied = false;
+        _secret = new Secret($"Account {result.Value!.UserName} created.", result.Value.TemporaryPassword);
+        Announcer.Announce($"Account {result.Value.UserName} created.");
+        await LoadAsync();
+    }
+
+    private void Ask(UserSummary user, AdminAction action)
+    {
+        _actionError = null;
+        _confirming = action switch
+        {
+            AdminAction.ResetPassword => new PendingAction(user.Id, user.UserName, action, $"Reset the password of {user.UserName}?", "reset"),
+            AdminAction.Deactivate => new PendingAction(user.Id, user.UserName, action, $"Deactivate {user.UserName}? They will be signed out.", "deactivate"),
+            _ => new PendingAction(user.Id, user.UserName, action, $"Reactivate {user.UserName}?", "reactivate"),
+        };
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_confirming is not { } pending)
+        {
+            return;
+        }
+
+        _confirming = null;
+        switch (pending.Action)
+        {
+            case AdminAction.ResetPassword:
+                var reset = await Admin.ResetPasswordAsync(pending.UserId, CancellationToken.None);
+                if (reset.IsSuccess)
+                {
+                    _copied = false;
+                    _secret = new Secret($"The password of {pending.UserName} was reset.", reset.Value!);
+                    Announcer.Announce($"Password of {pending.UserName} reset.");
+                }
+                else
+                {
+                    _actionError = reset.Error!.Message;
+                }
+
+                break;
+            case AdminAction.Deactivate:
+                var deactivated = await Admin.DeactivateAsync(pending.UserId, CancellationToken.None);
+                _actionError = deactivated.Error?.Message;
+                if (deactivated.IsSuccess)
+                {
+                    Announcer.Announce($"{pending.UserName} deactivated.");
+                }
+
+                break;
+            default:
+                var reactivated = await Admin.ReactivateAsync(pending.UserId, CancellationToken.None);
+                _actionError = reactivated.Error?.Message;
+                if (reactivated.IsSuccess)
+                {
+                    Announcer.Announce($"{pending.UserName} reactivated.");
+                }
+
+                break;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task CopySecretAsync()
+    {
+        if (_secret is not null)
+        {
+            _copied = await JS.InvokeAsync<bool>("upms.clipboard.copy", _secret.Password);
+        }
+    }
+
+    private enum AdminAction
+    {
+        ResetPassword,
+        Deactivate,
+        Reactivate,
+    }
+
+    private sealed record PendingAction(Guid UserId, string UserName, AdminAction Action, string Question, string Verb);
+
+    private sealed record Secret(string Heading, string Password);
+
+    private sealed class NewUserInput
+    {
+        public string UserName { get; set; } = "";
+
+        public string DisplayName { get; set; } = "";
+
+        public string Email { get; set; } = "";
+    }
+}

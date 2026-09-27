@@ -96,10 +96,13 @@ the same scenarios.
 ## 5. Run the automated tests
 
 ```bash
-dotnet test                                                   # unit, integration, component, architecture
-dotnet test --filter "FullyQualifiedName~US3_"                 # one story's acceptance tests
+dotnet test --project tests/Upms.Domain.Tests                  # unit
+dotnet test --project tests/Upms.Application.Tests             # services on a real SQL Server
+dotnet test --project tests/Upms.Web.Tests                     # components and host security
+dotnet test --project tests/Upms.Architecture.Tests            # module boundaries
+dotnet test --solution Upms.slnx --filter "FullyQualifiedName~US3_"   # one story's acceptance tests
 pwsh tests/Upms.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install   # once: browsers for Playwright
-dotnet test tests/Upms.E2E.Tests                               # journeys + axe accessibility scans
+dotnet test --project tests/Upms.E2E.Tests                     # journeys + axe accessibility scans
 ```
 
 Integration and end-to-end tests start their own SQL Server container through Testcontainers; only a
@@ -120,7 +123,7 @@ dotnet ef migrations has-pending-model-changes --project src/Upms.Infrastructure
 
 ```bash
 dotnet run --project tools/Upms.Seed -- --users 2000 --projects 200 --tasks 500000
-dotnet test tests/Upms.Performance.Tests --filter "Category=Performance"
+dotnet test --project tests/Upms.Performance.Tests
 ```
 
 **Expected**: with 300 simulated concurrent users, p95 ≤ 1 second for project list and board loads (up

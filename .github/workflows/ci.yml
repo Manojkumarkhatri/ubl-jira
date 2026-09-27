@@ -31,10 +31,12 @@ jobs:
       - name: Build (warnings as errors, NuGet audit)
         run: dotnet build Upms.slnx -c Release --no-restore
       - name: Test (unit, integration, component, architecture)
-        run: >-
-          dotnet test Upms.slnx -c Release --no-build
-          --filter "Category!=Performance&FullyQualifiedName!~Upms.E2E.Tests"
-          --logger "trx;LogFilePrefix=results" --results-directory TestResults
+        # The performance suite is opt-in (quickstart step 7); end-to-end tests run in their own job.
+        run: |
+          for project in Domain Application Web Architecture; do
+            dotnet test --project "tests/Upms.$project.Tests" -c Release --no-build \
+              --results-directory TestResults --report-xunit-trx --report-xunit-trx-filename "$project.trx"
+          done
       - name: EF Core model and migrations in sync
         run: dotnet ef migrations has-pending-model-changes --project src/Upms.Infrastructure --startup-project src/Upms.Web -c Release --no-build
       - name: Upload test results
@@ -57,7 +59,9 @@ jobs:
       - name: Install Playwright browsers
         run: pwsh tests/Upms.E2E.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - name: End-to-end tests with accessibility scans
-        run: dotnet test tests/Upms.E2E.Tests -c Release --no-build --logger "trx;LogFilePrefix=e2e" --results-directory TestResults
+        run: >-
+          dotnet test --project tests/Upms.E2E.Tests -c Release --no-build
+          --results-directory TestResults --report-xunit-trx --report-xunit-trx-filename e2e.trx
       - name: Upload results and traces
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,24 @@
+@if (PageCount > 1)
+{
+    <nav class="pager" aria-label="@Label">
+        <button type="button" class="btn btn-sm" disabled="@(PageNumber <= 1)" @onclick="() => GoAsync(PageNumber - 1)">Previous</button>
+        <span>Page @PageNumber of @PageCount</span>
+        <button type="button" class="btn btn-sm" disabled="@(PageNumber >= PageCount)" @onclick="() => GoAsync(PageNumber + 1)">Next</button>
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public int PageNumber { get; set; }
+
+    [Parameter, EditorRequired]
+    public int PageCount { get; set; }
+
+    [Parameter]
+    public string Label { get; set; } = "Pages";
+
+    [Parameter]
+    public EventCallback<int> OnPageChanged { get; set; }
+
+    private Task GoAsync(int page) => OnPageChanged.InvokeAsync(Math.Clamp(page, 1, PageCount));
+}

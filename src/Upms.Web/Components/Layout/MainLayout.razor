@@ -1,0 +1,22 @@
+@inherits LayoutComponentBase
+
+<a class="skip" href="#main">Skip to main content</a>
+<Header />
+<main id="main" tabindex="-1">
+    @Body
+</main>
+<LiveRegion />
+<AuthorizeView>
+    <Authorized>
+        <IdleSessionWarning />
+        <EnforcePasswordChange />
+    </Authorized>
+</AuthorizeView>
+<form id="upms-logout-form" method="post" action="Account/Logout" hidden>
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="Account/Login" />
+</form>
+<div id="blazor-error-ui" data-nosnippet role="alert">
+    Something went wrong. <a href="." class="reload">Reload the page</a>
+    <button type="button" class="dismiss" aria-label="Dismiss">×</button>
+</div>

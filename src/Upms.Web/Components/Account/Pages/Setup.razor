@@ -1,0 +1,119 @@
+@page "/setup"
+@attribute [AllowAnonymous]
+
+@using System.ComponentModel.DataAnnotations
+
+@inject ISetupService SetupService
+@inject NavigationManager Navigation
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>First-time setup · U-PMS</PageTitle>
+
+@if (_open)
+{
+    <h1>First-time setup</h1>
+    <p class="muted">Create the first administrator. You need the setup token from the server configuration (<code>Setup:Token</code>).</p>
+
+    <StatusMessage Message="@_errorMessage" IsError="true" />
+
+    <EditForm Model="Input" method="post" OnValidSubmit="CreateAsync" FormName="setup" class="form">
+        <DataAnnotationsValidator />
+        <div class="field">
+            <label for="setup-token">Setup token</label>
+            <InputText type="password" @bind-Value="Input.SetupToken" id="setup-token" class="input" autocomplete="off" aria-required="true" />
+            <ValidationMessage For="() => Input.SetupToken" class="error-text" />
+        </div>
+        <div class="field">
+            <label for="setup-username">User name</label>
+            <InputText @bind-Value="Input.UserName" id="setup-username" class="input" autocomplete="username" aria-required="true" aria-describedby="setup-username-hint" />
+            <span id="setup-username-hint" class="hint">3–64 letters, digits, ".", "-" or "_".</span>
+            <ValidationMessage For="() => Input.UserName" class="error-text" />
+        </div>
+        <div class="field">
+            <label for="setup-displayname">Display name</label>
+            <InputText @bind-Value="Input.DisplayName" id="setup-displayname" class="input" autocomplete="name" aria-required="true" />
+            <ValidationMessage For="() => Input.DisplayName" class="error-text" />
+        </div>
+        <div class="field">
+            <label for="setup-email">Email address</label>
+            <InputText type="email" @bind-Value="Input.Email" id="setup-email" class="input" autocomplete="email" aria-required="true" />
+            <ValidationMessage For="() => Input.Email" class="error-text" />
+        </div>
+        <div class="field">
+            <label for="setup-password">Password</label>
+            <InputText type="password" @bind-Value="Input.Password" id="setup-password" class="input" autocomplete="new-password" aria-required="true" aria-describedby="setup-password-hint" />
+            <span id="setup-password-hint" class="hint">At least 12 characters, not containing the user name.</span>
+            <ValidationMessage For="() => Input.Password" class="error-text" />
+        </div>
+        <div class="field">
+            <label for="setup-confirm">Confirm the password</label>
+            <InputText type="password" @bind-Value="Input.ConfirmPassword" id="setup-confirm" class="input" autocomplete="new-password" aria-required="true" />
+            <ValidationMessage For="() => Input.ConfirmPassword" class="error-text" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Create the administrator</button>
+    </EditForm>
+}
+
+@code {
+    private string? _errorMessage;
+    private bool _open;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        _open = await SetupService.IsSetupOpenAsync(HttpContext.RequestAborted);
+        if (!_open)
+        {
+            // Setup closes for good once an administrator exists (FR-002).
+            Navigation.NotFound();
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        var result = await SetupService.CreateFirstAdministratorAsync(Input.SetupToken, Input.UserName, Input.DisplayName,
+            Input.Email, Input.Password, HttpContext.RequestAborted);
+        if (result.IsSuccess)
+        {
+            RedirectManager.RedirectTo("Account/Login?setup=done");
+            return;
+        }
+
+        _errorMessage = result.Error!.Message;
+        Input.SetupToken = "";
+        Input.Password = "";
+        Input.ConfirmPassword = "";
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Enter the setup token.")]
+        public string SetupToken { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter a user name.")]
+        [StringLength(64, MinimumLength = 3, ErrorMessage = "The user name must have 3–64 characters.")]
+        [RegularExpression("^[A-Za-z0-9._-]+$", ErrorMessage = "Use only letters, digits, \".\", \"-\" and \"_\".")]
+        public string UserName { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter a display name.")]
+        [StringLength(100, ErrorMessage = "The display name can have at most 100 characters.")]
+        public string DisplayName { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter an email address.")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter a password.")]
+        [StringLength(256, MinimumLength = 12, ErrorMessage = "The password must have at least 12 characters.")]
+        public string Password { get; set; } = "";
+
+        [Compare(nameof(Password), ErrorMessage = "The two passwords do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

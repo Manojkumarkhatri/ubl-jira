@@ -44,6 +44,7 @@ public sealed class ModuleBoundaryTests
                 Types().That().ResideInNamespaceMatching($@"^Upms\.Domain\.{module}(\..+)?$")
                     .Should().NotDependOnAny(Types().That().ResideInNamespaceMatching($@"^Upms\.Domain\.{other}(\..+)?$"))
                     .Because($"the {module} domain must not reach into the {other} domain")
+                    .WithoutRequiringPositiveResults() // a module may have no types yet
                     .Check(Architecture);
             }
         }
@@ -61,6 +62,7 @@ public sealed class ModuleBoundaryTests
                 Types().That().ResideInNamespaceMatching($@"^Upms\.Application\.{module}(\..+)?$")
                     .Should().NotDependOnAny(Types().That().ResideInNamespaceMatching(forbidden))
                     .Because($"the {module} module may use the {other} module only through Upms.Application.{other}.Contracts")
+                    .WithoutRequiringPositiveResults() // a module may have no types yet
                     .Check(Architecture);
             }
         }

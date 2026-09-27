@@ -1,0 +1,22 @@
+@inject ViewerTimeZone ViewerTimeZone
+
+<time datetime="@Value.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture)" title="@Title">@_text</time>
+
+@code {
+    private string _text = "";
+
+    /// <summary>A UTC timestamp, shown in the viewer's time zone (FR-043).</summary>
+    [Parameter, EditorRequired]
+    public DateTimeOffset Value { get; set; }
+
+    [Parameter]
+    public string Format { get; set; } = "d MMM yyyy, HH:mm";
+
+    private string Title => Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var zone = await ViewerTimeZone.GetAsync();
+        _text = TimeZoneInfo.ConvertTime(Value, zone).ToString(Format, System.Globalization.CultureInfo.InvariantCulture);
+    }
+}

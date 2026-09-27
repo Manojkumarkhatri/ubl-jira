@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
+using Upms.Application.Identity;
 using Upms.Domain.Identity;
 
 namespace Upms.Infrastructure.Identity;
@@ -13,11 +14,11 @@ public sealed class UpmsClaimsPrincipalFactory(UserManager<User> userManager, IO
     protected override async Task<ClaimsIdentity> GenerateClaimsAsync(User user)
     {
         var identity = await base.GenerateClaimsAsync(user);
-        identity.AddClaim(new Claim(IdentitySetup.Claims.DisplayName, user.DisplayName));
-        identity.AddClaim(new Claim(IdentitySetup.Claims.SessionId, Guid.NewGuid().ToString("N")));
+        identity.AddClaim(new Claim(UpmsClaimTypes.DisplayName, user.DisplayName));
+        identity.AddClaim(new Claim(UpmsClaimTypes.SessionId, Guid.NewGuid().ToString("N")));
         if (user.MustChangePassword)
         {
-            identity.AddClaim(new Claim(IdentitySetup.Claims.MustChangePassword, "true"));
+            identity.AddClaim(new Claim(UpmsClaimTypes.MustChangePassword, "true"));
         }
 
         return identity;

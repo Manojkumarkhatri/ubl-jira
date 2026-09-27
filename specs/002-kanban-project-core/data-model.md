@@ -22,7 +22,7 @@ erDiagram
 
 ## Identity module
 
-### User (`AspNetUsers`, extends `IdentityUser<Guid>`)
+### User (`AspNetUsers`, extends `IdentityUser<Guid>`; no Identity role tables: organization roles are a column)
 
 | Field | Type | Rules |
 |-------|------|-------|
@@ -79,9 +79,9 @@ erDiagram
 | Description | nvarchar(2000) null | plain text (FR-011) |
 | OwnerId | uniqueidentifier | FK → Users; the creator (FR-011); becomes first Project Admin in Phase 2 |
 | NextItemNumber | int | starts at 1; incremented atomically on work item creation (research R13) |
-| BoardVersion | int | starts at 1; incremented on every column change (research R11) |
+| BoardVersion | int | starts at 1; incremented on every column change (research R11); concurrency token |
+| DetailsVersion | int | starts at 1; incremented when the name or description changes; concurrency token (replaces a rowversion, which task creation would bump through `NextItemNumber`) |
 | CreatedAt, UpdatedAt | datetimeoffset | |
-| RowVersion | rowversion | guards edits to name and description |
 
 ### ProjectStatus (`ProjectStatuses`): a board column
 

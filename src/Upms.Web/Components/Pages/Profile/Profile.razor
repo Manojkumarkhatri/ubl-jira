@@ -1,0 +1,104 @@
+@page "/account/profile"
+@inject IAccountService Accounts
+@inject ViewerTimeZone ViewerTimeZone
+@inject LiveAnnouncer Announcer
+
+<PageTitle>Profile · U-PMS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <div class="crumbs">Your account</div>
+        <h1>Profile</h1>
+    </div>
+</div>
+
+@if (_profile is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else
+{
+    <section class="card form-card" aria-labelledby="profile-heading">
+        <h2 id="profile-heading">Name and time zone</h2>
+        <p class="hint">Signed in as <strong>@_profile.UserName</strong> (@_profile.Email).</p>
+        <EditForm Model="_input" OnSubmit="SaveAsync" FormName="profile" class="form">
+            <div class="field">
+                <label for="profile-name">Display name</label>
+                <InputText id="profile-name" class="input" @bind-Value="_input.DisplayName" maxlength="100"
+                           aria-invalid="@(Error("DisplayName") is null ? "false" : "true")" aria-describedby="profile-name-error" />
+                <span id="profile-name-error" class="error-text">@Error("DisplayName")</span>
+            </div>
+            <div class="field">
+                <label for="profile-zone">Time zone</label>
+                <InputSelect id="profile-zone" class="select" @bind-Value="_input.TimeZoneId"
+                             aria-describedby="profile-zone-hint profile-zone-error">
+                    <option value="">Organization default (@_organizationZone)</option>
+                    @foreach (var (id, label) in TimeZoneOptions.All)
+                    {
+                        <option value="@id">@label</option>
+                    }
+                </InputSelect>
+                <span id="profile-zone-hint" class="hint">Dates and times are shown in this time zone.</span>
+                <span id="profile-zone-error" class="error-text">@Error("TimeZoneId")</span>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_saving">Save</button>
+                @if (_saved)
+                {
+                    <span class="saved" role="status">Saved</span>
+                }
+            </div>
+        </EditForm>
+    </section>
+
+    <section class="card form-card" aria-labelledby="password-heading">
+        <h2 id="password-heading">Password</h2>
+        <p><a class="btn" href="Account/ChangePassword">Change password</a></p>
+    </section>
+}
+
+@code {
+    private MyProfile? _profile;
+    private string _organizationZone = "UTC";
+    private readonly ProfileInput _input = new();
+    private AppError? _error;
+    private bool _saving;
+    private bool _saved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Accounts.GetProfileAsync(CancellationToken.None);
+        _profile = result.Value;
+        if (_profile is not null)
+        {
+            _input.DisplayName = _profile.DisplayName;
+            _input.TimeZoneId = _profile.TimeZoneId ?? "";
+            _organizationZone = _profile.TimeZoneId is null ? _profile.EffectiveTimeZoneId : "organization setting";
+        }
+    }
+
+    private string? Error(string field) =>
+        _error?.FieldErrors is { } errors && errors.TryGetValue(field, out var messages) ? string.Join(" ", messages) : null;
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _saved = false;
+        var result = await Accounts.UpdateProfileAsync(_input.DisplayName, _input.TimeZoneId, CancellationToken.None);
+        _saving = false;
+        _error = result.Error;
+        if (result.IsSuccess)
+        {
+            _saved = true;
+            ViewerTimeZone.Invalidate();
+            Announcer.Announce("Profile saved.");
+        }
+    }
+
+    private sealed class ProfileInput
+    {
+        public string DisplayName { get; set; } = "";
+
+        public string TimeZoneId { get; set; } = "";
+    }
+}

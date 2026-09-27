@@ -1,0 +1,29 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+
+<a href="@Href" aria-current="@(IsCurrent ? "page" : null)">@ChildContent</a>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Href { get; set; } = "";
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private bool IsCurrent
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
+            return path.Equals(Href, StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith(Href + "/", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override void OnInitialized() => Navigation.LocationChanged += OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

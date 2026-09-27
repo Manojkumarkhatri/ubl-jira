@@ -1,0 +1,38 @@
+@implements IDisposable
+@inject LiveAnnouncer Announcer
+@inject TimeProvider Time
+
+<div class="sr-only" role="status" aria-live="polite" aria-atomic="true">@_message</div>
+@if (_toastVisible)
+{
+    <div class="toasts" aria-hidden="true"><div class="toast">@_message</div></div>
+}
+
+@code {
+    private string _message = "";
+    private bool _toastVisible;
+    private ITimer? _hideTimer;
+    private int _sequence;
+
+    protected override void OnInitialized() => Announcer.Announced += OnAnnounced;
+
+    private void OnAnnounced(string message) => InvokeAsync(() =>
+    {
+        // A trailing invisible marker makes screen readers repeat identical messages.
+        _message = (++_sequence % 2 == 0) ? message : message + "​";
+        _toastVisible = true;
+        _hideTimer?.Dispose();
+        _hideTimer = Time.CreateTimer(_ => InvokeAsync(() =>
+        {
+            _toastVisible = false;
+            StateHasChanged();
+        }), null, TimeSpan.FromSeconds(5), Timeout.InfiniteTimeSpan);
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Announcer.Announced -= OnAnnounced;
+        _hideTimer?.Dispose();
+    }
+}

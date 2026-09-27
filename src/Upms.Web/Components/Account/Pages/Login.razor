@@ -1,0 +1,98 @@
+@page "/Account/Login"
+@attribute [AllowAnonymous]
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using Upms.Domain.Identity
+
+@inject SignInManager<User> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Sign in · U-PMS</PageTitle>
+
+<h1>Sign in</h1>
+<p class="muted">Use the account your administrator created for you.</p>
+
+@if (Expired is not null)
+{
+    <div class="alert alert-info" role="status">You were signed out after 30 minutes without activity. Sign in again to continue.</div>
+}
+@if (SetupDone is not null)
+{
+    <div class="alert alert-success" role="status">The administrator account was created. Sign in with it.</div>
+}
+<StatusMessage Message="@_errorMessage" IsError="true" />
+
+<EditForm Model="Input" method="post" OnValidSubmit="LoginUserAsync" FormName="login" class="form">
+    <DataAnnotationsValidator />
+    <div class="field">
+        <label for="login-username">User name</label>
+        <InputText @bind-Value="Input.UserName" id="login-username" class="input" autocomplete="username" aria-required="true" />
+        <ValidationMessage For="() => Input.UserName" class="error-text" />
+    </div>
+    <div class="field">
+        <label for="login-password">Password</label>
+        <InputText type="password" @bind-Value="Input.Password" id="login-password" class="input" autocomplete="current-password" aria-required="true" />
+        <ValidationMessage For="() => Input.Password" class="error-text" />
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+</EditForm>
+
+@code {
+    private string? _errorMessage;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "expired")]
+    private string? Expired { get; set; }
+
+    [SupplyParameterFromQuery(Name = "setup")]
+    private string? SetupDone { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+        }
+    }
+
+    private async Task LoginUserAsync()
+    {
+        var result = await SignInManager.PasswordSignInAsync(Input.UserName.Trim(), Input.Password,
+            isPersistent: false, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            RedirectManager.RedirectTo(string.IsNullOrEmpty(ReturnUrl) ? "projects" : ReturnUrl);
+        }
+        else if (result.IsLockedOut)
+        {
+            _errorMessage = "This account is locked after 5 failed sign-in attempts. Try again in 15 minutes.";
+        }
+        else
+        {
+            _errorMessage = "The user name or password is not correct.";
+        }
+
+        Input.Password = "";
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Enter your user name.")]
+        public string UserName { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter your password.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}

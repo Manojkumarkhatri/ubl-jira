@@ -10,14 +10,6 @@ public static class IdentitySetup
     public const int MaxFailedAccessAttempts = 5;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
-    /// <summary>Custom claims written into the authentication cookie.</summary>
-    public static class Claims
-    {
-        public const string DisplayName = "upms:display_name";
-        public const string MustChangePassword = "upms:must_change_password";
-        public const string SessionId = "upms:sid";
-    }
-
     public static void Configure(IdentityOptions options)
     {
         // At least 12 characters, no character-class rules; UsernamePasswordValidator adds the

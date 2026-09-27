@@ -90,7 +90,7 @@ public interface IProjectService
         CancellationToken ct);            // DuplicateProjectKey/Name, InvalidProjectKey; seeds 3 columns (FR-016)
     Task<Result<ProjectDetails>> GetAsync(string projectKey, CancellationToken ct);
     Task<Result> UpdateDetailsAsync(string projectKey, string name, string? description,
-        byte[] expectedVersion, CancellationToken ct);           // Owner/Admin (FR-014)
+        int expectedDetailsVersion, CancellationToken ct);       // Owner/Admin (FR-014)
 }
 public sealed record ProjectSummary(string Key, string Name, string OwnerDisplayName, int OpenItemCount);
 
