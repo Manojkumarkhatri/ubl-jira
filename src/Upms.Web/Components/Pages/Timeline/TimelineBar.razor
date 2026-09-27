@@ -1,0 +1,95 @@
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Common
+
+@* One task on the timeline (Phase 2 FR-034, FR-035, FR-038): a button named with the task, its dates, status type and
+   assignee; the visible text says the same, and the status type has a symbol, not only a colour. Contributors get
+   handles to drag either end (timeline.js). *@
+<button type="button" id="@IdFor(Item.Key)" class="tl-bar tl-@CategoryClass @(IsPending ? "is-pending" : "")" data-key="@Item.Key"
+        data-draggable="@(CanContribute ? "true" : "false")" style="left:@Px(Scale.Left(First));width:@Px(Scale.WidthOf(First, Last))"
+        aria-label="@Name" aria-describedby="tl-help" @onkeydown="e => OnKeyDown.InvokeAsync(e)" @onclick="() => OnActivate.InvokeAsync()">
+    @if (CanContribute)
+    {
+        <span class="tl-handle tl-handle-start" data-drag="start" aria-hidden="true"></span>
+    }
+    <span class="tl-bar-text" aria-hidden="true"><span class="tl-symbol">@Symbol</span> @Item.Key @Item.Title · @StatusLabel(Item.Status.Category)@AssigneeText</span>
+    @if (CanContribute)
+    {
+        <span class="tl-handle tl-handle-end" data-drag="end" aria-hidden="true"></span>
+    }
+</button>
+
+@code {
+    /// <summary>The task with the dates to show: its own, or a change still being made with the keyboard.</summary>
+    [Parameter, EditorRequired]
+    public TimelineItem Item { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public TimelineScale Scale { get; set; } = default!;
+
+    [Parameter]
+    public bool CanContribute { get; set; }
+
+    [Parameter]
+    public bool IsPending { get; set; }
+
+    [Parameter]
+    public EventCallback<KeyboardEventArgs> OnKeyDown { get; set; }
+
+    /// <summary>A click, or Space: saves a pending change, otherwise opens the task.</summary>
+    [Parameter]
+    public EventCallback OnActivate { get; set; }
+
+    public static string IdFor(string key) => $"tl-bar-{key}";
+
+    public static string StatusLabel(StatusCategory category) => category switch
+    {
+        StatusCategory.ToDo => "To do",
+        StatusCategory.InProgress => "In progress",
+        _ => "Done",
+    };
+
+    /// <summary>"5 Oct 2026 to 10 Oct 2026", "starts 1 Oct 2026" or "due 3 Oct 2026".</summary>
+    public static string DatesText(DateOnly? start, DateOnly? due) => (start, due) switch
+    {
+        ({ } s, { } d) => $"{Long(s)} to {Long(d)}",
+        ({ } s, null) => $"starts {Long(s)}",
+        (null, { } d) => $"due {Long(d)}",
+        _ => "no dates",
+    };
+
+    private DateOnly First => (Item.StartDate ?? Item.DueDate)!.Value;
+
+    private DateOnly Last => (Item.DueDate ?? Item.StartDate)!.Value;
+
+    private string CategoryClass => Item.Status.Category switch
+    {
+        StatusCategory.ToDo => "todo",
+        StatusCategory.InProgress => "progress",
+        _ => "done",
+    };
+
+    private string Symbol => Item.Status.Category switch
+    {
+        StatusCategory.ToDo => "○",
+        StatusCategory.InProgress => "◐",
+        _ => "●",
+    };
+
+    private string AssigneeText => Item.Assignee is { } assignee ? $" · {assignee.Initials}" : "";
+
+    private string Name
+    {
+        get
+        {
+            var assignee = Item.Assignee is { } a
+                ? $"assigned to {a.DisplayName}{(a.CanWork ? "" : " (no longer on the project)")}"
+                : "unassigned";
+            return $"{Item.Key} {Item.Title}, {DatesText(Item.StartDate, Item.DueDate)}, {StatusLabel(Item.Status.Category)}, {assignee}";
+        }
+    }
+
+    private static string Long(DateOnly date) => date.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
+
+    private static string Px(double pixels) => pixels.ToString("0.##", CultureInfo.InvariantCulture) + "px";
+}

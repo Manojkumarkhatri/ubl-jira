@@ -1,0 +1,504 @@
+@page "/projects/{Key}/timeline"
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Web.Components.Pages.Drawer
+@implements IDisposable
+@inject ITimelineService Timelines
+@inject ViewerToday ViewerToday
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@(_view?.ProjectName ?? Key) · Timeline · U-PMS</PageTitle>
+
+@* The Timeline view (Phase 2 FR-034–FR-040, research R12): bars positioned from their dates, a today line, the
+   unscheduled tasks beside the track, and rescheduling by dragging (timeline.js) or with the keyboard. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_view is null)
+{
+    <p aria-busy="true">Loading the timeline…</p>
+}
+else
+{
+    var scale = TimelineScale.For(_zoom, ScheduledDates(), _today);
+    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.Timeline"
+                   CanManage="_view.CanManage" CanRestoreDeleted="_view.CanRestoreDeleted" />
+
+    <div class="tl-toolbar">
+        <div class="tl-scales" role="group" aria-label="Scale">
+            @foreach (var zoom in Enum.GetValues<TimelineZoom>())
+            {
+                <button type="button" class="btn btn-sm" data-scale="@ZoomName(zoom)" aria-pressed="@(zoom == _zoom ? "true" : "false")"
+                        @onclick="() => SetZoom(zoom)">@zoom</button>
+            }
+        </div>
+        <button type="button" class="btn btn-sm" data-testid="go-today" @onclick="GoToTodayAsync">Today</button>
+        <button type="button" class="btn btn-sm" data-testid="hide-completed" aria-pressed="@(_view.HidingCompleted ? "true" : "false")"
+                @onclick="ToggleCompleted">Hide completed</button>
+    </div>
+
+    @if (_conflict is not null)
+    {
+        <div class="alert alert-warn" role="alert" data-testid="conflict">
+            @_conflict
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _conflict = null">Dismiss</button>
+        </div>
+    }
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">@_error</div>
+    }
+    @if (_view.ScheduledCount > _view.Rows.Count)
+    {
+        <p class="hint">Showing the latest @_view.Rows.Count of @_view.ScheduledCount scheduled tasks.</p>
+    }
+
+    <p id="tl-help" class="sr-only">
+        @(_view.CanContribute
+            ? "Left and Right arrows move the task by a day; with Shift they change only the due date, with Ctrl only the start date. Enter saves, Escape cancels, and Enter with no change opens the task."
+            : "Enter opens the task.")
+    </p>
+
+    <div class="tl-layout">
+        <div class="tl-scroll" @ref="_scroller" data-ppd="@scale.PixelsPerDay.ToString(CultureInfo.InvariantCulture)" role="region" aria-label="Timeline">
+            @if (_view.Rows.Count == 0)
+            {
+                <EmptyState Title="No task has dates yet." Text="Schedule a task from the unscheduled list, or give a task dates in its details." />
+            }
+            else
+            {
+                <div class="tl-table" style="--tl-track-width:@Px(scale.Width)">
+                    <div class="tl-head">
+                        <div class="tl-label tl-corner">Task</div>
+                        <div class="tl-track tl-headings" aria-hidden="true">
+                            @foreach (var heading in scale.Headings)
+                            {
+                                <span class="tl-heading" style="left:@Px(heading.Left);width:@Px(heading.Width)">@heading.Label</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="tl-today" style="left:calc(var(--tl-label-width) + @Px(scale.TodayLeft))" aria-hidden="true"></div>
+                    @foreach (var row in _view.Rows)
+                    {
+                        var expanded = _expanded.Contains(row.Task.Key);
+                        var task = Shown(row.Task);
+                        <div class="tl-row" data-testid="tl-row" data-key="@row.Task.Key" @key="row.Task.Key">
+                            <div class="tl-label">
+                                @if (row.ScheduledSubtasks.Count + row.UnscheduledSubtasks.Count > 0)
+                                {
+                                    <button type="button" class="tl-expand icon-btn" aria-expanded="@(expanded ? "true" : "false")"
+                                            aria-label="@($"{(expanded ? "Hide" : "Show")} sub-tasks of {row.Task.Key}")"
+                                            @onclick="() => ToggleExpanded(row.Task.Key)">@(expanded ? "▾" : "▸")</button>
+                                }
+                                <a id="@LinkId(row.Task.Key)" class="task-link" href="@TaskHref(row.Task.Key)"><span class="key">@row.Task.Key</span> @row.Task.Title</a>
+                            </div>
+                            <div class="tl-track">
+                                @if (task.IsScheduled)
+                                {
+                                    <TimelineBar Item="task" Scale="scale" CanContribute="_view.CanContribute" IsPending="@(_pending?.Key == task.Key)"
+                                                 OnKeyDown="e => BarKeyDownAsync(row.Task, e)" OnActivate="() => ActivateAsync(row.Task)" />
+                                }
+                                else
+                                {
+                                    <span class="tl-nodates hint">No dates</span>
+                                }
+                            </div>
+                        </div>
+                        @if (expanded)
+                        {
+                            @foreach (var subtask in row.ScheduledSubtasks)
+                            {
+                                <div class="tl-row tl-subrow" data-testid="tl-subrow" data-key="@subtask.Key" @key="subtask.Key">
+                                    <div class="tl-label">
+                                        <a id="@LinkId(subtask.Key)" class="task-link" href="@TaskHref(subtask.Key)"><span class="key">@subtask.Key</span> @subtask.Title</a>
+                                    </div>
+                                    <div class="tl-track">
+                                        <TimelineBar Item="Shown(subtask)" Scale="scale" CanContribute="_view.CanContribute" IsPending="@(_pending?.Key == subtask.Key)"
+                                                     OnKeyDown="e => BarKeyDownAsync(subtask, e)" OnActivate="() => ActivateAsync(subtask)" />
+                                    </div>
+                                </div>
+                            }
+                            @if (row.UnscheduledSubtasks.Count > 0)
+                            {
+                                <div class="tl-row tl-subrow" data-testid="tl-unscheduled-subtasks" @key="@($"{row.Task.Key}-unscheduled")">
+                                    <div class="tl-label">
+                                        <span class="hint">Not scheduled:</span>
+                                        @foreach (var subtask in row.UnscheduledSubtasks)
+                                        {
+                                            <a class="task-link" href="@TaskHref(subtask.Key)"><span class="key">@subtask.Key</span> @subtask.Title</a>
+                                        }
+                                    </div>
+                                    <div class="tl-track"></div>
+                                </div>
+                            }
+                        }
+                    }
+                </div>
+            }
+        </div>
+
+        <aside class="tl-unscheduled" aria-labelledby="unscheduled-heading">
+            <h2 id="unscheduled-heading">Unscheduled (@_view.Unscheduled.TotalCount)</h2>
+            @if (_unscheduled.Count == 0)
+            {
+                <p class="hint">Every task has dates.</p>
+            }
+            else
+            {
+                <ul class="tl-unscheduled-list">
+                    @foreach (var item in _unscheduled)
+                    {
+                        <li data-testid="unscheduled-item" data-key="@item.Key" @key="item.Key">
+                            <a class="task-link" href="@TaskHref(item.Key)"><span class="key">@item.Key</span> @item.Title</a>
+                            @if (_view.CanContribute)
+                            {
+                                <button type="button" class="btn btn-sm schedule-btn" aria-label="Schedule @item.Key" @onclick="() => ScheduleAsync(item)">Schedule</button>
+                            }
+                        </li>
+                    }
+                </ul>
+                @if (_unscheduled.Count < _view.Unscheduled.TotalCount)
+                {
+                    <button type="button" class="btn btn-sm btn-ghost show-more" @onclick="ShowMoreUnscheduledAsync">
+                        Show more (@(_view.Unscheduled.TotalCount - _unscheduled.Count) more)
+                    </button>
+                }
+            }
+        </aside>
+    </div>
+
+    @if (!string.IsNullOrEmpty(TaskKey))
+    {
+        <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+    }
+}
+
+@code {
+    private enum DateEnd { Both, Start, Due }
+
+    private sealed record Pending(string Key, DateOnly? Start, DateOnly? Due);
+
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private TimelineView? _view;
+    private List<TimelineItem> _unscheduled = [];
+    private int _unscheduledPage = 1;
+    private bool _notFound;
+    private bool? _loadedHide;
+    private string? _error;
+    private string? _conflict;
+    private Pending? _pending;
+    private DateOnly _today;
+    private TimelineZoom _zoom = TimelineZoom.Months;
+    private ElementReference _scroller;
+    private DotNetObjectReference<TimelinePage>? _self;
+    private bool _scriptReady;
+    private string? _focusAfterRender;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary><c>?scale=weeks|months|quarters</c>; months when absent.</summary>
+    [SupplyParameterFromQuery(Name = "scale")]
+    public string? ScaleValue { get; set; }
+
+    /// <summary><c>?completed=hide</c> leaves out completed tasks (FR-040).</summary>
+    [SupplyParameterFromQuery(Name = "completed")]
+    public string? CompletedValue { get; set; }
+
+    /// <summary><c>?task={KEY-N}</c> opens the task's details drawer over the timeline (FR-040).</summary>
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    // A new scale or opening the drawer changes only the address: the timeline is not read again, and a change being
+    // made with the keyboard stays pending.
+    protected override async Task OnParametersSetAsync()
+    {
+        _zoom = Enum.GetValues<TimelineZoom>().FirstOrDefault(z => ZoomName(z) == ScaleValue?.Trim().ToLowerInvariant(), TimelineZoom.Months);
+        var hide = CompletedValue == "hide";
+        if (_loadedHide != hide)
+        {
+            _loadedHide = hide;
+            await LoadAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (!_scriptReady && _view is not null)
+            {
+                _scriptReady = true;
+                _self = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("upms.timeline.init", _scroller, _self);
+                await JS.InvokeVoidAsync("upms.timeline.scrollToToday", _scroller);
+            }
+
+            if (_focusAfterRender is { } id && string.IsNullOrEmpty(TaskKey))
+            {
+                _focusAfterRender = null;
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    /// <summary>Called by timeline.js when a bar or one of its ends was dragged by whole days.</summary>
+    [JSInvokable]
+    public async Task OnBarDragged(string key, string mode, int days)
+    {
+        if (_view is not { CanContribute: true } || days == 0 || Find(key) is not { } item)
+        {
+            return;
+        }
+
+        (DateOnly? Start, DateOnly? Due) next = mode switch
+        {
+            // An end never passes the other end (FR-037).
+            "start" => ((item.StartDate ?? item.DueDate)!.Value.AddDays(days) is var start && item.DueDate is { } due && start > due ? due : start,
+                item.DueDate),
+            "end" => (item.StartDate,
+                (item.DueDate ?? item.StartDate)!.Value.AddDays(days) is var end && item.StartDate is { } begin && end < begin ? begin : end),
+            _ => (item.StartDate?.AddDays(days), item.DueDate?.AddDays(days)),
+        };
+        _pending = null;
+        await SaveAsync(item, next.Start, next.Due);
+        StateHasChanged();
+    }
+
+    public void Dispose() => _self?.Dispose();
+
+    private static string ZoomName(TimelineZoom zoom) => zoom.ToString().ToLowerInvariant();
+
+    private static string Px(double pixels) => pixels.ToString("0.##", CultureInfo.InvariantCulture) + "px";
+
+    private static string LinkId(string key) => $"tl-task-{key}";
+
+    private static string Long(DateOnly date) => date.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
+
+    private async Task LoadAsync()
+    {
+        _today = await ViewerToday.GetAsync();
+        var result = await Timelines.GetAsync(Key, CompletedValue == "hide", CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            // Someone removed from the team meanwhile sees what they may see now: "not found" (Phase 2 FR-011).
+            _view = null;
+            _notFound = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
+            _error = _notFound ? null : result.Error.Message;
+            return;
+        }
+
+        _notFound = false;
+        _view = result.Value!;
+        _unscheduled = [.. _view.Unscheduled.Items];
+        _unscheduledPage = 1;
+    }
+
+    private IEnumerable<DateOnly> ScheduledDates()
+    {
+        var items = _view!.Rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)).Select(Shown);
+        return items.SelectMany(i => new[] { i.StartDate, i.DueDate }).OfType<DateOnly>();
+    }
+
+    /// <summary>The item at the dates of a change still being made with the keyboard.</summary>
+    private TimelineItem Shown(TimelineItem item) =>
+        _pending is { } pending && pending.Key == item.Key ? item with { StartDate = pending.Start, DueDate = pending.Due } : item;
+
+    private TimelineItem? Find(string key) =>
+        _view?.Rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)).FirstOrDefault(i => i.Key == key);
+
+    private void SetZoom(TimelineZoom zoom) =>
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("scale", zoom == TimelineZoom.Months ? null : ZoomName(zoom)));
+
+    private void ToggleCompleted() =>
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("completed", _view!.HidingCompleted ? null : "hide"));
+
+    private async Task GoToTodayAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("upms.timeline.scrollToToday", _scroller);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private void ToggleExpanded(string key)
+    {
+        if (!_expanded.Remove(key))
+        {
+            _expanded.Add(key);
+        }
+    }
+
+    private string TaskHref(string key) => Navigation.ToBaseRelativePath(Navigation.GetUriWithQueryParameter("task", key));
+
+    private void OpenDrawer(string key) => Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", key));
+
+    private void CloseDrawer()
+    {
+        // Focus returns to the bar, or to the task's name when it has no bar.
+        if (TaskKey is { } key)
+        {
+            _focusAfterRender = Find(key) is { IsScheduled: true } ? TimelineBar.IdFor(key) : LinkId(key);
+        }
+
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
+    }
+
+    // ----- Keyboard rescheduling (FR-038) -----
+
+    private async Task BarKeyDownAsync(TimelineItem item, KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowLeft" or "ArrowRight" when _view!.CanContribute:
+                Adjust(item, e.Key == "ArrowRight" ? 1 : -1, e.ShiftKey ? DateEnd.Due : e.CtrlKey ? DateEnd.Start : DateEnd.Both);
+                break;
+            case "Enter":
+                await ActivateAsync(item);
+                break;
+            case "Escape" when _pending?.Key == item.Key:
+                _pending = null;
+                Announcer.Announce($"Change to {item.Key} cancelled.");
+                break;
+        }
+    }
+
+    /// <summary>Saves a pending change, or opens the task when there is none.</summary>
+    private async Task ActivateAsync(TimelineItem item)
+    {
+        if (_pending is { } pending && pending.Key == item.Key && _view!.CanContribute)
+        {
+            _pending = null;
+            await SaveAsync(item, pending.Start, pending.Due);
+        }
+        else
+        {
+            OpenDrawer(item.Key);
+        }
+    }
+
+    private void Adjust(TimelineItem item, int days, DateEnd end)
+    {
+        var (start, due) = _pending is { } pending && pending.Key == item.Key ? (pending.Start, pending.Due) : (item.StartDate, item.DueDate);
+        switch (end)
+        {
+            case DateEnd.Due:
+                var newDue = (due ?? start)!.Value.AddDays(days);
+                if (start is { } s && newDue < s)
+                {
+                    Announcer.Announce("The due date cannot be before the start date.");
+                    return;
+                }
+
+                due = newDue;
+                break;
+            case DateEnd.Start:
+                var newStart = (start ?? due)!.Value.AddDays(days);
+                if (due is { } d && newStart > d)
+                {
+                    Announcer.Announce("The start date cannot be after the due date.");
+                    return;
+                }
+
+                start = newStart;
+                break;
+            default:
+                start = start?.AddDays(days);
+                due = due?.AddDays(days);
+                break;
+        }
+
+        _pending = new Pending(item.Key, start, due);
+        Announcer.Announce($"{item.Key}: {TimelineBar.DatesText(start, due)}. Enter saves, Escape cancels.");
+    }
+
+    // ----- Saving (FR-039) -----
+
+    private async Task<bool> SaveAsync(TimelineItem item, DateOnly? start, DateOnly? due, string? savedMessage = null)
+    {
+        var result = await Timelines.RescheduleAsync(item.Key, start, due, item.Version, CancellationToken.None);
+        if (result.IsSuccess)
+        {
+            _conflict = null;
+            _error = null;
+            Replace(result.Value!);
+            Announcer.Announce(savedMessage ?? (start, due) switch
+            {
+                ({ } s, { } d) => $"{item.Key} now runs from {Long(s)} to {Long(d)}.",
+                (null, { } d) => $"{item.Key} is now due {Long(d)}.",
+                ({ } s, null) => $"{item.Key} now starts {Long(s)}.",
+                _ => $"{item.Key} has no dates now.",
+            });
+            return true;
+        }
+
+        var error = result.Error!;
+        if (error.Kind == ErrorKind.Conflict && error.Current is TimelineItem current)
+        {
+            // Someone else changed the task: show its current dates rather than overwrite them.
+            Replace(current);
+            _conflict = error.Message;
+        }
+        else if (error.Kind is ErrorKind.NotFound or ErrorKind.Forbidden)
+        {
+            _error = error.Message;
+            await LoadAsync();
+        }
+        else
+        {
+            _error = error.MessageFor("DueDate");
+        }
+
+        Announcer.Announce(_conflict ?? _error ?? error.Message);
+        return false;
+    }
+
+    private void Replace(TimelineItem item)
+    {
+        if (_view is null)
+        {
+            return;
+        }
+
+        TimelineItem Swap(TimelineItem existing) => existing.Key == item.Key ? item : existing;
+        _view = _view with
+        {
+            Rows = _view.Rows.Select(r => r with { Task = Swap(r.Task), ScheduledSubtasks = r.ScheduledSubtasks.Select(Swap).ToList() }).ToList(),
+        };
+    }
+
+    // ----- Unscheduled tasks (FR-036) -----
+
+    private async Task ScheduleAsync(TimelineItem item)
+    {
+        var (start, due) = (_today, _today.AddDays(6));
+        if (await SaveAsync(item, start, due, $"{item.Key} scheduled from {Long(start)} to {Long(due)}."))
+        {
+            await LoadAsync();
+            _focusAfterRender = TimelineBar.IdFor(item.Key); // its "Schedule" button is gone; the new bar takes focus
+        }
+    }
+
+    private async Task ShowMoreUnscheduledAsync()
+    {
+        var result = await Timelines.ListUnscheduledAsync(Key, CompletedValue == "hide", new PageRequest(_unscheduledPage + 1), CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        _unscheduledPage = result.Value!.PageNumber;
+        var known = _unscheduled.Select(i => i.Key).ToHashSet(StringComparer.Ordinal);
+        _unscheduled.AddRange(result.Value.Items.Where(i => !known.Contains(i.Key)));
+    }
+}

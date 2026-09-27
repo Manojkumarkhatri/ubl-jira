@@ -277,6 +277,57 @@ th[aria-sort="ascending"] .sort-btn::after, th[aria-sort="descending"] .sort-btn
 th[aria-sort="ascending"] .sort-btn::after { border-bottom-color: currentColor; margin-top: -5px; }
 th[aria-sort="descending"] .sort-btn::after { border-top-color: currentColor; margin-top: 5px; }
 .list-table td.key { font-size: 12px; }
+/* Phase 2 Timeline (FR-034–FR-040): the task names stay in place while the track scrolls sideways (FR-041); bars
+   show their status type with a symbol as well as a colour; the text is the page's text colour inside and beyond
+   a short bar, so it keeps its contrast. */
+.tl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+.tl-scales { display: inline-flex; }
+.tl-scales .btn { border-radius: 0; }
+.tl-scales .btn + .btn { margin-left: -1px; }
+.tl-scales .btn:first-child { border-radius: 6px 0 0 6px; }
+.tl-scales .btn:last-child { border-radius: 0 6px 6px 0; }
+.tl-toolbar .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--link); position: relative; }
+.tl-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
+.tl-scroll { --tl-label-width: 240px; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.tl-table { position: relative; width: calc(var(--tl-label-width) + var(--tl-track-width)); min-width: 100%; }
+.tl-head, .tl-row { display: grid; grid-template-columns: var(--tl-label-width) var(--tl-track-width); }
+.tl-head { background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.tl-row { border-bottom: 1px solid var(--border); }
+.tl-row:last-child { border-bottom: 0; }
+.tl-label { position: sticky; left: 0; z-index: 2; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 8px 10px; background: var(--surface); border-right: 1px solid var(--border); font-size: 13px; }
+.tl-label .task-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-corner { background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; }
+.tl-subrow .tl-label { padding-left: 38px; flex-wrap: wrap; }
+.tl-track { position: relative; min-height: 40px; }
+.tl-headings { height: 34px; min-height: 34px; }
+.tl-heading { position: absolute; top: 0; bottom: 0; padding: 8px 6px; overflow: hidden; border-left: 1px solid var(--border); color: var(--text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.tl-today { position: absolute; top: 0; bottom: 0; z-index: 1; width: 2px; margin-left: -1px; background: var(--danger); pointer-events: none; }
+.tl-bar { position: absolute; top: 8px; display: flex; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 12px; color: var(--text); font: inherit; font-size: 12px; text-align: left; white-space: nowrap; cursor: grab; touch-action: pan-y; }
+.tl-bar[data-draggable="false"] { cursor: pointer; }
+.tl-bar:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; z-index: 1; }
+.tl-bar.is-pending { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.tl-bar.is-dragging { opacity: .5; }
+.tl-todo { background: var(--st-todo-bg); }
+.tl-progress { background: var(--st-prog-bg); }
+.tl-done { background: var(--st-done-bg); }
+.tl-bar-text { pointer-events: none; }
+.tl-symbol { margin-right: 2px; }
+.tl-handle { position: absolute; top: -1px; bottom: -1px; width: 10px; cursor: ew-resize; }
+.tl-handle-start { left: -1px; border-radius: 12px 0 0 12px; }
+.tl-handle-end { right: -1px; border-radius: 0 12px 12px 0; }
+.tl-ghost { position: fixed; z-index: 1000; border: 2px dashed var(--accent); border-radius: 12px; background: var(--accent-soft); opacity: .85; pointer-events: none; }
+.tl-nodates { position: absolute; top: 12px; left: 10px; }
+.tl-expand { flex: none; width: 24px; height: 24px; }
+.tl-unscheduled { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.tl-unscheduled h2 { margin: 0 0 8px; font-size: 14px; }
+.tl-unscheduled-list { display: grid; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
+.tl-unscheduled-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+@media (max-width: 860px) {
+  .tl-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .tl-scroll { --tl-label-width: 130px; }
+}
 .inline-create { padding: 6px 8px 10px; }
 .inline-input { background: var(--surface); }
 /* The "Move to" list opens inside the card, so the column's own scrolling never clips it. */

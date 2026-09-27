@@ -95,7 +95,14 @@ public sealed class AppFixture : IAsyncLifetime
 
     /// <summary>Adds tasks at the end of a project's first "to do" column directly, created by its owner, for lists too
     /// long to type; each may have a due date and an assignee (by user name).</summary>
-    public async Task AddTasksAsync(string projectKey, IEnumerable<(string Title, DateOnly? Due, string? Assignee)> tasks)
+    public Task AddTasksAsync(string projectKey, IEnumerable<(string Title, DateOnly? Due, string? Assignee)> tasks) =>
+        AddAsync(projectKey, tasks.Select(t => (t.Title, (DateOnly?)null, t.Due, t.Assignee)));
+
+    /// <summary>Adds tasks with start and due dates directly, as <see cref="AddTasksAsync"/> does.</summary>
+    public Task AddScheduledTasksAsync(string projectKey, IEnumerable<(string Title, DateOnly? Start, DateOnly? Due)> tasks) =>
+        AddAsync(projectKey, tasks.Select(t => (t.Title, t.Start, t.Due, (string?)null)));
+
+    private async Task AddAsync(string projectKey, IEnumerable<(string Title, DateOnly? Start, DateOnly? Due, string? Assignee)> tasks)
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
@@ -108,15 +115,15 @@ public sealed class AppFixture : IAsyncLifetime
         var rank = await db.WorkItems.Where(w => w.StatusId == toDo.Id && w.ParentId == null).MaxAsync(w => (string?)w.Rank);
         var people = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.UserName!, u => new PersonRef(u.Id, u.DisplayName));
         await using var transaction = await db.Database.BeginTransactionAsync();
-        foreach (var (title, due, assignee) in tasks)
+        foreach (var (title, start, due, assignee) in tasks)
         {
             var context = ChangeContext.New(project.OwnerId, DateTimeOffset.UtcNow);
             rank = Rank.After(rank);
             var item = WorkItem.CreateTask(project.Id, project.Key, await numbers.NextAsync(project.Id, CancellationToken.None), title,
                 new StatusRef(toDo.Id, toDo.Name, toDo.Category), rank, context).Value!;
-            if (due is not null)
+            if (start is not null || due is not null)
             {
-                item.Schedule(null, due, context);
+                item.Schedule(start, due, context);
             }
 
             if (assignee is not null)

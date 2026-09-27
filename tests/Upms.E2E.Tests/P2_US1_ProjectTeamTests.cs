@@ -44,14 +44,14 @@ public sealed class P2_US1_ProjectTeamTests(AppFixture app) : BrowserTest(app)
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("TCH");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await pita.WaitForURLAsync("**/projects/TCH/board");
+        await WaitForPathAsync(pita, "/projects/TCH/board");
         await WaitForInteractivityAsync(pita);
         await AddTaskAsync(pita, "Draft the charter");
         await Assertions.Expect(pita.GetByTestId("card-TCH-1")).ToBeVisibleAsync();
 
         // P2_US1_AS1: the creator is the only member, as Project Admin.
         await pita.GetByRole(AriaRole.Link, new() { Name = "Members" }).ClickAsync();
-        await pita.WaitForURLAsync("**/projects/TCH/members");
+        await WaitForPathAsync(pita, "/projects/TCH/members");
         await WaitForInteractivityAsync(pita);
         await Assertions.Expect(pita.GetByTestId("member-row")).ToHaveCountAsync(1);
         await Assertions.Expect(MemberRow(pita, "Pita Owens")).ToContainTextAsync("(you)");

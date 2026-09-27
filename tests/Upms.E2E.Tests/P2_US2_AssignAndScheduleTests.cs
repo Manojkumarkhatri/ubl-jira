@@ -24,7 +24,7 @@ public sealed class P2_US2_AssignAndScheduleTests(AppFixture app) : BrowserTest(
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync(key);
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await page.WaitForURLAsync($"**/projects/{key}/board");
+        await WaitForPathAsync(page, $"/projects/{key}/board");
         await WaitForInteractivityAsync(page);
     }
 
@@ -139,7 +139,7 @@ public sealed class P2_US2_AssignAndScheduleTests(AppFixture app) : BrowserTest(
 
         // P2_US2_AS7: "My tasks" lists her open tasks by project, soonest due first.
         await sadia.GetByRole(AriaRole.Link, new() { Name = "My tasks" }).ClickAsync();
-        await sadia.WaitForURLAsync("**/my-tasks");
+        await WaitForPathAsync(sadia, "/my-tasks");
         await WaitForInteractivityAsync(sadia);
         var rows = sadia.GetByTestId("my-task");
         await Assertions.Expect(rows).ToHaveCountAsync(3);

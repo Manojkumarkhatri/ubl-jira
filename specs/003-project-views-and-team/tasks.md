@@ -170,18 +170,18 @@ task's dates and history match (spec US4).
 
 ### Tests for User Story 4 (write first, must fail) ⚠️
 
-- [ ] T055 [P] [US4] Write `tests/Upms.Application.Tests/Work/TimelineServiceTests.cs`: rows are top-level tasks that are scheduled or have scheduled sub-tasks, ordered by first date, due date and key; one-date tasks included; sub-tasks split into scheduled and unscheduled; "hide completed"; unscheduled tasks 50 at a time; `RescheduleAsync` moves both dates or one, returns `InvalidDates`, `Conflict` with the current item on a stale version, `Forbidden` for Viewers, and records one change set (FR-034–FR-039)
-- [ ] T056 [P] [US4] Write `tests/Upms.Web.Tests/Timeline/TimelineScaleTests.cs`: pixels per day for weeks, months and quarters; the range covers every scheduled date and today; headings per week, month or quarter; positions and widths, including one-day bars
-- [ ] T057 [P] [US4] Write bUnit tests `tests/Upms.Web.Tests/Timeline/TimelinePageTests.cs`: bars named with key, title, dates, status and assignee; `P2_US4_AS5` arrows, Shift and Ctrl adjust a pending change with an announcement, Enter saves once, Escape cancels, Enter with nothing pending opens the drawer; `P2_US4_AS6` "Schedule"; `P2_US4_AS7` expanding a row; `P2_US4_AS8` a conflict shows the message and the current dates; `P2_US4_AS9` Viewers cannot adjust or schedule; "Hide completed"; switching the scale keeps a pending change
-- [ ] T058 [P] [US4] Write `tests/Upms.E2E.Tests/P2_US4_TimelineTests.cs`: the US4 Independent Test end to end, dragging a bar and a bar's end with the mouse and moving one with the keyboard, plus axe scans at 1280 px and 360 px
+- [X] T055 [P] [US4] Write `tests/Upms.Application.Tests/Work/TimelineServiceTests.cs`: rows are top-level tasks that are scheduled or have scheduled sub-tasks, ordered by first date, due date and key; one-date tasks included; sub-tasks split into scheduled and unscheduled; "hide completed"; unscheduled tasks 50 at a time; `RescheduleAsync` moves both dates or one, returns `InvalidDates`, `Conflict` with the current item on a stale version, `Forbidden` for Viewers, and records one change set (FR-034–FR-039)
+- [X] T056 [P] [US4] Write `tests/Upms.Web.Tests/Timeline/TimelineScaleTests.cs`: pixels per day for weeks, months and quarters; the range covers every scheduled date and today; headings per week, month or quarter; positions and widths, including one-day bars
+- [X] T057 [P] [US4] Write bUnit tests `tests/Upms.Web.Tests/Timeline/TimelinePageTests.cs`: bars named with key, title, dates, status and assignee; `P2_US4_AS5` arrows, Shift and Ctrl adjust a pending change with an announcement, Enter saves once, Escape cancels, Enter with nothing pending opens the drawer; `P2_US4_AS6` "Schedule"; `P2_US4_AS7` expanding a row; `P2_US4_AS8` a conflict shows the message and the current dates; `P2_US4_AS9` Viewers cannot adjust or schedule; "Hide completed"; switching the scale keeps a pending change
+- [X] T058 [P] [US4] Write `tests/Upms.E2E.Tests/P2_US4_TimelineTests.cs`: the US4 Independent Test end to end, dragging a bar and a bar's end with the mouse and moving one with the keyboard, plus axe scans at 1280 px and 360 px
 
 ### Implementation for User Story 4
 
-- [ ] T059 [US4] Implement `src/Upms.Application/Work/ITimelineService.cs` and `TimelineService.cs` (`GetAsync`, `ListUnscheduledAsync`, `RescheduleAsync` through `WorkItem.Schedule`), registered as operation-scoped (make T055 pass)
-- [ ] T060 [P] [US4] Implement `src/Upms.Web/Components/Pages/Timeline/TimelineScale.cs` (make T056 pass)
-- [ ] T061 [US4] Create `src/Upms.Web/Components/Pages/Timeline/TimelinePage.razor` at `/projects/{key}/timeline` and `TimelineBar.razor` (scale switch `?scale=`, today line and "Today", "Hide completed", expandable rows, "Unscheduled" list with "Schedule", keyboard rescheduling with live announcements, conflicts, drawer through `?task=`), and add the "Timeline" view link to `ProjectHeader` (make T057 pass)
-- [ ] T062 [US4] Create `src/Upms.Web/wwwroot/js/timeline.js` (pointer dragging with a preview; one call to the component with the day offsets on release) and the timeline styles in `src/Upms.Web/wwwroot/app.css`
-- [ ] T063 [US4] Add "timeline load" and "rescheduling" to `tests/Upms.Performance.Tests/Sc002LoadTests.cs`; then make T058 pass end to end
+- [X] T059 [US4] Implement `src/Upms.Application/Work/ITimelineService.cs` and `TimelineService.cs` (`GetAsync`, `ListUnscheduledAsync`, `RescheduleAsync` through `WorkItem.Schedule`), registered as operation-scoped (make T055 pass)
+- [X] T060 [P] [US4] Implement `src/Upms.Web/Components/Pages/Timeline/TimelineScale.cs` (make T056 pass)
+- [X] T061 [US4] Create `src/Upms.Web/Components/Pages/Timeline/TimelinePage.razor` at `/projects/{key}/timeline` and `TimelineBar.razor` (scale switch `?scale=`, today line and "Today", "Hide completed", expandable rows, "Unscheduled" list with "Schedule", keyboard rescheduling with live announcements, conflicts, drawer through `?task=`), and add the "Timeline" view link to `ProjectHeader` (make T057 pass)
+- [X] T062 [US4] Create `src/Upms.Web/wwwroot/js/timeline.js` (pointer dragging with a preview; one call to the component with the day offsets on release) and the timeline styles in `src/Upms.Web/wwwroot/app.css`
+- [X] T063 [US4] Add "timeline load" and "rescheduling" to `tests/Upms.Performance.Tests/Sc002LoadTests.cs`; then make T058 pass end to end
 
 **Checkpoint**: All four user stories work independently.
 
@@ -353,6 +353,18 @@ Decisions made while implementing are recorded here so the documents match the c
   tuning. T065 repeats the run with the timeline and records it.
 - **Many tasks in browser tests** (T051): `AppFixture.AddTasksAsync` adds tasks through the domain for lists
   too long to type.
+- **Timeline rows** (T059): at most 500 rows are shown, the latest by first date, with a note giving the
+  total ("Showing the latest 500 of N scheduled tasks"). A task without dates whose sub-tasks are scheduled
+  heads a row placed by its earliest sub-task date. `ListUnscheduledAsync` also takes `hideCompleted`, so
+  "Show more" follows the same setting.
+- **Timeline keyboard and pointer** (T061, T062): the page handles Enter on keydown (save a pending change,
+  otherwise open the task); `timeline.js` keeps arrows from scrolling and Enter from also clicking the bar,
+  and swallows the click that ends a drag. A click or Space saves a pending change or opens the task. For a
+  task with one date, Shift or Ctrl sets the missing date starting from the one it has. The drag preview is
+  a floating copy outside the component's markup, so the script never edits elements Blazor draws.
+- **Browser-test fixture** (T058): `AppFixture.AddScheduledTasksAsync` adds tasks with start and due dates.
+- **Matrix rows** (T063): the "See the project…" and "Assign tasks and set their dates (drawer or
+  timeline)" rows also run the List view, the timeline and rescheduling on it (311 cells).
 - **Today in component tests**: the bUnit base registers the viewer's time zone and `ViewerToday` (UTC
   unless a test registers another account service).
 - **Seeded teams** (T027, research R15): the largest project has 40 Members so that every tenth simulated

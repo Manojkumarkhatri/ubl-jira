@@ -10,8 +10,9 @@ using Upms.Domain.Work;
 namespace Upms.Performance.Tests;
 
 /// <summary>SC-002: with 300 concurrent users on 500,000 work items, the project list, "My tasks", a board of up to
-/// 500 visible cards, the List view (sorted and filtered), inline creation, a card move, opening the drawer, saving an
-/// edit, assigning, setting dates and a membership change each respond within 1 second at the 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix
+/// 500 visible cards, the List view (sorted and filtered), the timeline, inline creation, a card move, opening the
+/// drawer, saving an edit, assigning, setting dates, rescheduling on the timeline and a membership change each respond
+/// within 1 second at the 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix
 /// of actions with 1 to 3 seconds of thinking time in a project they belong to (<see cref="LoadDatabase.Subjects"/>):
 /// every tenth user works on the largest board, and every tenth (offset by five) is a Project Admin who also changes
 /// the team.</summary>
@@ -22,8 +23,8 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
 
     private static readonly string[] Operations =
     [
-        "project list", "My tasks load", "board load", "list load (sorted and filtered)", "inline creation", "card move",
-        "drawer open", "saving an edit",
+        "project list", "My tasks load", "board load", "list load (sorted and filtered)", "timeline load", "inline creation",
+        "card move", "drawer open", "saving an edit", "rescheduling",
         "assigning", "setting dates", "membership change",
     ];
 
@@ -85,6 +86,7 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
         private WorkItemDetails? _details;
         private TeamView? _team;
         private Guid? _guest;
+        private List<TimelineItem>? _scheduled;
 
         public async Task RunAsync(CancellationToken ct)
         {
@@ -101,6 +103,7 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
                     _board = null;
                     _details = null;
                     _team = null;
+                    _scheduled = null;
                 }
 
                 await Task.Delay(_random.Next(1_000, 3_000), ct);
@@ -133,14 +136,26 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
                 return;
             }
 
+            if (roll < 25)
+            {
+                await LoadTimelineAsync(ct);
+                return;
+            }
+
             if (_board is null || roll < 40)
             {
                 await LoadBoardAsync(ct);
                 return;
             }
 
+            if (roll is >= 78 and < 80)
+            {
+                await RescheduleAsync(ct);
+                return;
+            }
+
             var cards = _board.Columns.SelectMany(c => c.Cards).ToList();
-            if (roll < 62 || (roll < 80 && _details is null))
+            if (roll < 62 || (roll < 78 && _details is null))
             {
                 if (cards.Count > 0)
                 {
@@ -153,7 +168,7 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
                 return;
             }
 
-            if (roll < 80)
+            if (roll < 78)
             {
                 var details = _details!;
                 var (operation, edit) = roll switch
@@ -161,7 +176,7 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
                     < 70 => ("saving an edit", _random.Next(2) == 0
                         ? new WorkItemEdit.Priority(Priorities[_random.Next(Priorities.Length)])
                         : (WorkItemEdit)new WorkItemEdit.Title($"{details.Title.Split(" (", 2)[0]} ({_random.Next(1_000)})")),
-                    < 75 => ("assigning", new WorkItemEdit.Assignee(
+                    < 74 => ("assigning", new WorkItemEdit.Assignee(
                         details.AssigneeOptions.Count == 0 || _random.Next(10) == 0
                             ? null
                             : details.AssigneeOptions[_random.Next(details.AssigneeOptions.Count)].UserId)),
@@ -248,6 +263,32 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
             }
 
             _team = changed.Value ?? changed.Error?.Current as TeamView;
+        }
+
+        /// <summary>Opens the timeline, now and then without completed tasks, and remembers its bars.</summary>
+        private async Task LoadTimelineAsync(CancellationToken ct)
+        {
+            var loaded = await MeasureAsync("timeline load", () =>
+                harness.CallAsync<ITimelineService, Result<TimelineView>>(_userId, s => s.GetAsync(_projectKey, _random.Next(3) == 0, ct)));
+            _scheduled = loaded.Value?.Rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)).Where(i => i.IsScheduled).ToList();
+        }
+
+        /// <summary>Moves a bar up to two weeks either way, as a drag or the arrow keys would.</summary>
+        private async Task RescheduleAsync(CancellationToken ct)
+        {
+            if (_scheduled is not { Count: > 0 })
+            {
+                await LoadTimelineAsync(ct);
+                return;
+            }
+
+            var index = _random.Next(_scheduled.Count);
+            var item = _scheduled[index];
+            var days = _random.Next(1, 15) * (_random.Next(2) == 0 ? -1 : 1);
+            var moved = await MeasureAsync("rescheduling", () =>
+                harness.CallAsync<ITimelineService, Result<TimelineItem>>(_userId, s =>
+                    s.RescheduleAsync(item.Key, item.StartDate?.AddDays(days), item.DueDate?.AddDays(days), item.Version, ct)));
+            _scheduled[index] = moved.Value ?? moved.Error?.Current as TimelineItem ?? item;
         }
 
         private async Task LoadBoardAsync(CancellationToken ct)

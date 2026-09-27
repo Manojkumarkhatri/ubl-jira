@@ -36,6 +36,8 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         ["See the project, its board, list, timeline, task drawers and member list"] =
         [
             ("open a board", (t, _) => t.Try<IBoardService, BoardView>(s => s.GetAsync("WEB", false, Ct))),
+            ("open the list", (t, _) => t.Try<IWorkItemListService, WorkItemListView>(s => s.ListAsync("WEB", new WorkItemListQuery(), new DateOnly(2026, 9, 27), Ct))),
+            ("open the timeline", (t, _) => t.Try<ITimelineService, TimelineView>(s => s.GetAsync("WEB", false, Ct))),
             ("open a task drawer", (t, _) => t.Try<IWorkItemService, WorkItemDetails>(s => s.GetAsync("WEB-1", Ct))),
             ("see the member list", (t, _) => t.Try<IProjectMemberService, TeamView>(s => s.GetTeamAsync("WEB", Ct))),
         ],
@@ -90,6 +92,8 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         [
             ("assign a task", (t, w) => t.Edit(new WorkItemEdit.Assignee(w.Other.Id), w.Task1Version)),
             ("set a task's dates", (t, w) => t.Edit(new WorkItemEdit.Dates(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10)), w.Task1Version)),
+            ("reschedule on the timeline", (t, w) => t.Try<ITimelineService, TimelineItem>(s =>
+                s.RescheduleAsync("WEB-1", new DateOnly(2026, 10, 5), new DateOnly(2026, 10, 12), w.Task1Version, Ct))),
         ],
         ["Add comments"] =
         [

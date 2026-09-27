@@ -108,6 +108,7 @@ public static class WebServiceCollectionExtensions
         services.AddOperationScoped<Upms.Application.Work.ICommentService>();
         services.AddOperationScoped<Upms.Application.Work.IMyTasksService>();
         services.AddOperationScoped<Upms.Application.Work.IWorkItemListService>();
+        services.AddOperationScoped<Upms.Application.Work.ITimelineService>();
         return services;
     }
 

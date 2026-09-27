@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 
 namespace Upms.E2E.Tests.Fixtures;
@@ -55,6 +56,12 @@ public abstract class BrowserTest(AppFixture app) : IAsyncLifetime
 
     protected static Task WaitForInteractivityAsync(IPage page) =>
         page.Locator("main[data-interactive='true']").WaitForAsync();
+
+    /// <summary>Waits until the address ends with <paramref name="path"/>. In-app links change the address
+    /// without loading a page, and <c>WaitForURLAsync</c> can miss such a change when it lands just before the
+    /// wait starts; this checks the address itself, repeatedly, so it cannot.</summary>
+    protected static Task WaitForPathAsync(IPage page, string path) =>
+        Assertions.Expect(page).ToHaveURLAsync(new Regex(Regex.Escape(path) + "$"), new() { Timeout = 15000 });
 
     public async ValueTask DisposeAsync()
     {

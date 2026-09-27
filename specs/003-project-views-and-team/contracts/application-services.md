@@ -140,15 +140,18 @@ public sealed record WorkItemRow(string Key, string Title, string? ParentKey, St
 public interface ITimelineService                                 // FR-034–FR-040
 {
     Task<Result<TimelineView>> GetAsync(string projectKey, bool hideCompleted, CancellationToken ct);   // View
-    Task<Result<Page<TimelineItem>>> ListUnscheduledAsync(string projectKey, PageRequest page,
+    Task<Result<Page<TimelineItem>>> ListUnscheduledAsync(string projectKey, bool hideCompleted, PageRequest page,
         CancellationToken ct);                                                                          // View
     // Contribute; the same rules and conflict check as WorkItemEdit.Dates; Conflict carries the current item.
     Task<Result<TimelineItem>> RescheduleAsync(string workItemKey, DateOnly? start, DateOnly? due,
         byte[] expectedVersion, CancellationToken ct);            // InvalidDates
 }
-public sealed record TimelineView(string ProjectKey, string ProjectName, bool CanContribute,
-    IReadOnlyList<TimelineRow> Rows,                              // by first date, then due date, then key
+public sealed record TimelineView(string ProjectKey, string ProjectName, bool CanContribute, bool CanManage,
+    bool CanRestoreDeleted,
+    IReadOnlyList<TimelineRow> Rows,        // by first date, then due date, then key; at most 500 (the latest) —
+    int ScheduledCount,                     // how many rows there are before that limit
     Page<TimelineItem> Unscheduled, bool HidingCompleted);
+// A task without dates whose sub-tasks are scheduled heads a row, placed by its earliest sub-task date.
 public sealed record TimelineRow(TimelineItem Task, IReadOnlyList<TimelineItem> ScheduledSubtasks,
     IReadOnlyList<TimelineItem> UnscheduledSubtasks);
 public sealed record TimelineItem(string Key, string Title, StatusOption Status, AssigneeRef? Assignee,

@@ -36,7 +36,7 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("TRS");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await page.WaitForURLAsync("**/projects/TRS/board");
+        await WaitForPathAsync(page, "/projects/TRS/board");
         await WaitForInteractivityAsync(page);
         foreach (var title in new[] { "Reconcile nostro", "Review limits", "Update the cash forecast" })
         {
@@ -120,7 +120,7 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("AUD");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await page.WaitForURLAsync("**/projects/AUD/board");
+        await WaitForPathAsync(page, "/projects/AUD/board");
         await GotoAsync(page, "/projects/AUD/settings");
 
         await ColumnRow(page, "Done").GetByRole(AriaRole.Button, new() { Name = "Delete" }).ClickAsync();

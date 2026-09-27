@@ -5,6 +5,7 @@ public enum ProjectPage
 {
     Board,
     List,
+    Timeline,
     Members,
     Settings,
     Deleted,

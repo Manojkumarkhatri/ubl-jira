@@ -29,7 +29,7 @@ public sealed partial class P2_US3_ListViewTests(AppFixture app) : BrowserTest(a
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("CAT");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await ilyas.WaitForURLAsync("**/projects/CAT/board");
+        await WaitForPathAsync(ilyas, "/projects/CAT/board");
         await App.AddMemberAsync("CAT", "junaid");
         // Due dates at least two days away from today, so the result is the same in every viewer's time zone.
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -45,7 +45,7 @@ public sealed partial class P2_US3_ListViewTests(AppFixture app) : BrowserTest(a
         // P2_US3_AS1: the List view shows the first 50 tasks, newest first, with the total.
         await GotoAsync(ilyas, "/projects/CAT/board");
         await ilyas.Locator("nav.project-nav").GetByRole(AriaRole.Link, new() { Name = "List" }).ClickAsync();
-        await ilyas.WaitForURLAsync("**/projects/CAT/list");
+        await WaitForPathAsync(ilyas, "/projects/CAT/list");
         await WaitForInteractivityAsync(ilyas);
         var rows = ilyas.GetByTestId("list-row");
         await Assertions.Expect(rows).ToHaveCountAsync(50);

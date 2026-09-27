@@ -52,6 +52,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<ICommentService, CommentService>();
         services.AddScoped<IMyTasksService, MyTasksService>();
         services.AddScoped<IWorkItemListService, WorkItemListService>();
+        services.AddScoped<ITimelineService, TimelineService>();
         return services;
     }
 }

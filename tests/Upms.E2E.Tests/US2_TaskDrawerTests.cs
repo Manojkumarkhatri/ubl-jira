@@ -21,7 +21,7 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync(key);
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await page.WaitForURLAsync($"**/projects/{key}/board");
+        await WaitForPathAsync(page, $"/projects/{key}/board");
         await WaitForInteractivityAsync(page);
     }
 
