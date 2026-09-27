@@ -1,10 +1,13 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Upms.E2E.Tests.Fixtures;
 
 namespace Upms.E2E.Tests;
 
-/// <summary>Every Phase 1 screen works at 360 px wide, and each story's main path works with the keyboard alone
-/// (FR-042, SC-008). Keyboard steps reach controls with Tab, so each control is also proven to be in the tab order.</summary>
+/// <summary>Every Phase 1 and Phase 2 screen works at 360 px wide, and each story's main path works with the keyboard
+/// alone (Phase 1 FR-042, SC-008; Phase 2 FR-041, SC-009). Keyboard steps reach controls with Tab, so each control is
+/// also proven to be in the tab order.</summary>
 public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app)
 {
     private static ILocator Column(IPage page, int index) => page.GetByTestId("column").Nth(index);
@@ -29,6 +32,22 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
     {
         var overflow = await page.EvaluateAsync<int>("() => document.documentElement.scrollWidth - document.documentElement.clientWidth");
         Assert.True(overflow <= 0, $"{page.Url} is {overflow}px wider than the screen.");
+    }
+
+    private static string Long(DateOnly date) => date.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
+
+    /// <summary>Creates a project in the browser, waiting for the suggested key before typing over it.</summary>
+    private static async Task CreateProjectAsync(IPage page, string name, string key)
+    {
+        await GotoAsync(page, "/projects");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        var dialog = page.GetByTestId("create-project");
+        await dialog.GetByLabel("Name").FillAsync(name);
+        await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
+        await dialog.GetByLabel("Key").FillAsync(key);
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
+        await WaitForPathAsync(page, $"/projects/{key}/board");
+        await WaitForInteractivityAsync(page);
     }
 
     private async Task<IPage> SignInWithKeyboardAsync(string userName, string password, int width = 1280)
@@ -58,7 +77,7 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("SML");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await desk.WaitForURLAsync("**/projects/SML/board");
+        await WaitForPathAsync(desk, "/projects/SML/board");
         await WaitForInteractivityAsync(desk);
         var box = Column(desk, 0).GetByPlaceholder("What needs to be done?");
         await box.FillAsync("A task with a fairly long title that has to wrap on a phone screen");
@@ -110,7 +129,7 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await page.Keyboard.PressAsync("Control+A");
         await page.Keyboard.TypeAsync("KBD");
         await page.Keyboard.PressAsync("Enter");
-        await page.WaitForURLAsync("**/projects/KBD/board");
+        await WaitForPathAsync(page, "/projects/KBD/board");
         await WaitForInteractivityAsync(page);
 
         await TabToAsync(page, Column(page, 0).GetByPlaceholder("What needs to be done?"));
@@ -142,7 +161,7 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("KDR");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await page.WaitForURLAsync("**/projects/KDR/board");
+        await WaitForPathAsync(page, "/projects/KDR/board");
         await WaitForInteractivityAsync(page);
         var box = Column(page, 0).GetByPlaceholder("What needs to be done?");
         await box.FillAsync("Draft the letter");
@@ -196,7 +215,7 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("KCL");
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await page.WaitForURLAsync("**/projects/KCL/board");
+        await WaitForPathAsync(page, "/projects/KCL/board");
         await GotoAsync(page, "/projects/KCL/settings");
 
         await TabToAsync(page, page.Locator("#new-column-name"), maxPresses: 120);
@@ -219,5 +238,114 @@ public sealed class ResponsiveAndKeyboardTests(AppFixture app) : BrowserTest(app
         await page.Keyboard.PressAsync("Enter");
         await Assertions.Expect(page.Locator(".column-name")).ToHaveTextAsync(["To Do", "QA", "In Progress", "Done"]);
         await Assertions.Expect(page.GetByTestId("column-row").Nth(1).GetByRole(AriaRole.Button, new() { Name = "Rename" })).ToBeFocusedAsync();
+    }
+
+    [Fact]
+    public async Task P2_The_members_list_timeline_and_My_tasks_screens_work_at_360_px()
+    {
+        var password = await App.CreateUserAsync("nasir", "Nasir Jamshed");
+        var desk = await SignInAsync("nasir", password);
+        await CreateProjectAsync(desk, "Phone Check", "PHN");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await App.AddScheduledTasksAsync("PHN",
+        [
+            ("Measure the room for the new layout", today.AddDays(1), today.AddDays(4)),
+            ("Order the chairs", null, today.AddDays(-2)),
+            ("Someday, maybe", null, null),
+        ]);
+        await App.AddTasksAsync("PHN", [("Mine to do, with a title long enough to wrap on a phone", today.AddDays(3), "nasir")]);
+
+        var phone = await SignInAsync("nasir", password);
+        await phone.SetViewportSizeAsync(360, 740);
+        foreach (var (url, shown) in new[]
+        {
+            ("/projects/PHN/members", phone.GetByTestId("member-row")),
+            ("/projects/PHN/list", phone.GetByTestId("list-row").First),
+            ("/projects/PHN/timeline", phone.Locator("button.tl-bar").First),
+            ("/my-tasks", phone.GetByTestId("my-task").First),
+        })
+        {
+            await GotoAsync(phone, url);
+            await Assertions.Expect(shown).ToBeVisibleAsync();
+            await AssertNoSidewaysScrollAsync(phone); // the list table and the timeline track scroll within their own areas
+            await phone.AssertNoAccessibilityViolationsAsync();
+        }
+    }
+
+    [Fact]
+    public async Task P2_Main_paths_with_the_keyboard_only()
+    {
+        var password = await App.CreateUserAsync("osman", "Osman Khawaja");
+        await App.CreateUserAsync("pervez", "Pervez Rasool");
+        var page = await SignInWithKeyboardAsync("osman", password);
+        await CreateProjectAsync(page, "Keys Only", "KYB");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await App.AddScheduledTasksAsync("KYB", [("Measure the room", today.AddDays(1), today.AddDays(4)), ("Someday", null, null)]);
+        var drawer = page.GetByTestId("drawer");
+
+        // Story 1: add a Viewer, then make him a Member.
+        await GotoAsync(page, "/projects/KYB/members");
+        await TabToAsync(page, page.Locator("#member-search"));
+        await page.Keyboard.TypeAsync("perv");
+        var person = page.GetByRole(AriaRole.Radio, new() { Name = "Pervez Rasool" });
+        await TabToAsync(page, person);
+        await page.Keyboard.PressAsync("Space");
+        await TabToAsync(page, page.Locator("#member-role"));
+        await page.Keyboard.PressAsync("ArrowDown"); // Member → Viewer
+        await TabToAsync(page, page.Locator("#add-member"));
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(page.GetByTestId("members-saved")).ToContainTextAsync("Pervez Rasool added as Viewer.");
+        await Assertions.Expect(page.Locator("#member-search")).ToBeFocusedAsync();
+        var role = page.GetByLabel("Role of Pervez Rasool");
+        await TabToAsync(page, role);
+        await page.Keyboard.PressAsync("ArrowUp"); // Viewer → Member
+        await Assertions.Expect(page.GetByTestId("members-saved")).ToContainTextAsync("Pervez Rasool is now a Member.");
+        await Assertions.Expect(role).ToBeFocusedAsync();
+
+        // Story 2: open a task from the board and assign it to myself; find it on "My tasks".
+        await GotoAsync(page, "/projects/KYB/board");
+        await TabToAsync(page, page.Locator("#card-KYB-1-title"));
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(page.Locator("#drawer-heading")).ToBeFocusedAsync();
+        await TabToAsync(page, drawer.GetByTestId("assign-to-me"));
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(drawer.GetByTestId("drawer-saved")).ToContainTextAsync("Assigned to you");
+        await page.Keyboard.PressAsync("Escape");
+        await Assertions.Expect(drawer).ToBeHiddenAsync();
+        await TabToAsync(page, page.GetByRole(AriaRole.Link, new() { Name = "My tasks", Exact = true }), backwards: true);
+        await page.Keyboard.PressAsync("Enter");
+        await WaitForPathAsync(page, "/my-tasks");
+        await WaitForInteractivityAsync(page);
+        var myTask = page.Locator("[data-key='KYB-1'] a.task-link");
+        await TabToAsync(page, myTask);
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(drawer.GetByTestId("drawer-key")).ToHaveTextAsync("KYB-1");
+        await page.Keyboard.PressAsync("Escape");
+        await Assertions.Expect(myTask).ToBeFocusedAsync();
+
+        // Story 3: filter the list to my tasks and open one.
+        await GotoAsync(page, "/projects/KYB/list");
+        await TabToAsync(page, page.Locator("#filter-assignee"));
+        await page.Keyboard.PressAsync("ArrowDown"); // Anyone → Me
+        await Assertions.Expect(page).ToHaveURLAsync(new Regex("assignee=me"));
+        await Assertions.Expect(page.GetByTestId("list-row")).ToHaveCountAsync(1);
+        var row = page.Locator("[data-key='KYB-1'] a.task-link");
+        await TabToAsync(page, row);
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(drawer.GetByTestId("drawer-key")).ToHaveTextAsync("KYB-1");
+        await page.Keyboard.PressAsync("Escape");
+        await Assertions.Expect(row).ToBeFocusedAsync();
+
+        // Story 4: move a bar one day later and schedule a task.
+        await GotoAsync(page, "/projects/KYB/timeline");
+        var bar = page.Locator("button.tl-bar[data-key='KYB-1']");
+        await TabToAsync(page, bar, maxPresses: 120);
+        await page.Keyboard.PressAsync("ArrowRight");
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(bar).ToHaveAttributeAsync("aria-label", new Regex(Regex.Escape($"{Long(today.AddDays(2))} to {Long(today.AddDays(5))}")));
+        await Assertions.Expect(bar).ToBeFocusedAsync();
+        await TabToAsync(page, page.GetByRole(AriaRole.Button, new() { Name = "Schedule KYB-2" }));
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(page.Locator("button.tl-bar[data-key='KYB-2']")).ToBeFocusedAsync();
     }
 }

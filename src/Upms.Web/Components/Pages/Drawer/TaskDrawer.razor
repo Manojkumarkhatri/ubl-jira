@@ -637,6 +637,11 @@
             return;
         }
 
+        if (start is { Year: < 1000 } || due is { Year: < 1000 })
+        {
+            return; // a year still being typed digit by digit ("0002", "0020"…): wait until it is complete
+        }
+
         if (start == details.StartDate && due == details.DueDate)
         {
             ClearDateDrafts();

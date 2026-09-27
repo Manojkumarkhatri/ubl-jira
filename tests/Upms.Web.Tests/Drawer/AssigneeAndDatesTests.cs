@@ -138,6 +138,20 @@ public sealed class AssigneeAndDatesTests : BunitTestBase
     }
 
     [Fact]
+    public void A_year_still_being_typed_is_not_saved()
+    {
+        var cut = Open();
+
+        cut.Find("#drawer-due").Change("0002-10-10");
+
+        Assert.Empty(_items.Edits);
+        Assert.Equal("0002-10-10", cut.Find("#drawer-due").GetAttribute("value"));
+        Assert.Equal("", cut.Find("#drawer-dates-error").TextContent.Trim());
+        cut.Find("#drawer-due").Change("2026-10-10");
+        Assert.Single(_items.Edits);
+    }
+
+    [Fact]
     public void P2_US2_AS4_Invalid_dates_show_the_message_and_keep_what_was_entered()
     {
         _items.Details = _items.Details with { StartDate = new DateOnly(2026, 10, 12) };

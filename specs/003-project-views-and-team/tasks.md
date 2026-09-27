@@ -191,7 +191,7 @@ task's dates and history match (spec US4).
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T064 [P] Extend `tests/Upms.E2E.Tests/ResponsiveAndKeyboardTests.cs` to the members screen, the list, the timeline and "My tasks": usable at 360 px, and each story's main path completes with the keyboard only (FR-041, SC-009)
+- [X] T064 [P] Extend `tests/Upms.E2E.Tests/ResponsiveAndKeyboardTests.cs` to the members screen, the list, the timeline and "My tasks": usable at 360 px, and each story's main path completes with the keyboard only (FR-041, SC-009)
 - [ ] T065 Run the SC-002 suite with every Phase 1 and Phase 2 action at 300 users and about 500,000 work items, tune indexes until p95 ≤ 1 s, and record the results in `specs/003-project-views-and-team/validation.md` (SC-002)
 - [ ] T066 [P] Review the Phase 2 changes against OWASP ASVS Level 2 (access control on every project-scoped call and task key, no leaks through "My tasks", filters or people search, audit of membership changes) in `docs/security/phase2-asvs-review.md`, and fix findings (constitution III)
 - [ ] T067 [P] Add a "Phase 2 screens" section (members, list, timeline, "My tasks", drawer changes) to the manual screen-reader script in `docs/accessibility/phase1-screen-reader-review.md`
