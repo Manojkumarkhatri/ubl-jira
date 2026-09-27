@@ -39,7 +39,11 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IWorkItemCounts, WorkItemCounts>();
         services.AddScoped<RankRebalancer>();
         services.AddScoped<IRankRebalancer>(sp => sp.GetRequiredService<RankRebalancer>());
+        services.AddScoped<CardRanker>();
+        services.AddScoped<WorkItemReads>();
         services.AddScoped<IBoardService, BoardService>();
+        services.AddScoped<IWorkItemService, WorkItemService>();
+        services.AddScoped<ICommentService, CommentService>();
         return services;
     }
 }

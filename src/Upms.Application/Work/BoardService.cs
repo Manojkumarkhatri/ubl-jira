@@ -13,6 +13,7 @@ internal sealed class BoardService(
     IProjectAccess access,
     IProjectWorkflow workflow,
     IWorkItemNumberAllocator numbers,
+    CardRanker ranker,
     RankRebalancer rebalancer,
     TimeProvider time) : IBoardService
 {
@@ -57,7 +58,8 @@ internal sealed class BoardService(
             return new ColumnView(s.Id, s.Name, s.Category, s.WipLimit, columnCards.Count,
                 s.WipLimit is { } limit && columnCards.Count > limit, columnCards);
         }).ToList();
-        return new BoardView(info.Key, info.Name, info.BoardVersion, allowed.Value.CanManage, showAllDone, hiddenDone, columns);
+        return new BoardView(info.Key, info.Name, info.BoardVersion, allowed.Value.CanManage, showAllDone, hiddenDone, columns,
+            CanRestoreDeleted: allowed.Value.IsAdministrator);
     }
 
     public async Task<Result<CardView>> CreateInlineAsync(string projectKey, long columnId, string title, CancellationToken ct)
@@ -82,7 +84,7 @@ internal sealed class BoardService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var number = await numbers.NextAsync(projectId, ct);
-        var rank = await RankAtEdgeAsync(projectId, columnId, excludeId: null, atTop: false, ct);
+        var rank = await ranker.AtEdgeAsync(projectId, columnId, excludeId: null, atTop: false, ct);
         var item = WorkItem.CreateTask(projectId, allowed.Value.Key, number, title, ToRef(column), rank,
             ChangeContext.New(allowed.Value.UserId, time.GetUtcNow())).Value!;
         db.WorkItems.Add(item);
@@ -134,8 +136,8 @@ internal sealed class BoardService(
                 return await CardAsync(item, statuses, ct);
             }
 
-            oldPosition = await PositionOfAsync(item, ct);
-            newPosition = await CountBeforeAsync(item, rank, ct) + 1;
+            oldPosition = await ranker.PositionOfAsync(item, ct);
+            newPosition = await ranker.CountBeforeAsync(item, rank, ct) + 1;
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -165,10 +167,10 @@ internal sealed class BoardService(
         {
             var (rank, note) = placement switch
             {
-                CardPlacement.Top => (await RankAtEdgeAsync(item.ProjectId, columnId, item.Id, atTop: true, ct), "moved to top"),
-                CardPlacement.Before before when await RankOfCardAsync(item, columnId, before.WorkItemKey, ct) is { } targetRank =>
-                    (Rank.Between(await RankBeforeAsync(item, columnId, targetRank, ct), targetRank), $"moved above {before.WorkItemKey}"),
-                _ => (await RankAtEdgeAsync(item.ProjectId, columnId, item.Id, atTop: false, ct), "moved to bottom"),
+                CardPlacement.Top => (await ranker.AtEdgeAsync(item.ProjectId, columnId, item.Id, atTop: true, ct), "moved to top"),
+                CardPlacement.Before before when await ranker.BeforeCardAsync(item, columnId, before.WorkItemKey, ct) is { } between =>
+                    (between, $"moved above {before.WorkItemKey}"),
+                _ => (await ranker.AtEdgeAsync(item.ProjectId, columnId, item.Id, atTop: false, ct), "moved to bottom"),
             };
             if (rank.Length <= Rank.MaxLength || attempt > 0)
             {
@@ -179,50 +181,6 @@ internal sealed class BoardService(
             await rebalancer.RebalanceColumnAsync(item.ProjectId, columnId, ct);
         }
     }
-
-    private async Task<string> RankAtEdgeAsync(long projectId, long columnId, long? excludeId, bool atTop, CancellationToken ct)
-    {
-        var column = db.WorkItems.Where(w => w.ProjectId == projectId && w.StatusId == columnId && w.ParentId == null
-            && w.Id != excludeId);
-        var edge = atTop
-            ? await column.OrderBy(w => w.Rank).Select(w => w.Rank).FirstOrDefaultAsync(ct)
-            : await column.OrderByDescending(w => w.Rank).Select(w => w.Rank).FirstOrDefaultAsync(ct);
-        var rank = atTop ? Rank.Before(edge) : Rank.After(edge);
-        if (rank.Length > Rank.MaxLength)
-        {
-            await rebalancer.RebalanceColumnAsync(projectId, columnId, ct);
-            return await RankAtEdgeAsync(projectId, columnId, excludeId, atTop, ct);
-        }
-
-        return rank;
-    }
-
-    private Task<string?> RankOfCardAsync(WorkItem item, long columnId, string key, CancellationToken ct) =>
-        db.WorkItems
-            .Where(w => w.ProjectId == item.ProjectId && w.StatusId == columnId && w.ParentId == null && w.Key == key && w.Id != item.Id)
-            .Select(w => w.Rank)
-            .FirstOrDefaultAsync(ct);
-
-    // Rank comparisons run in SQL, where the column's binary collation makes them ordinal (research R14);
-    // EF does not translate the StringComparison overloads.
-#pragma warning disable CA1309
-    private Task<string?> RankBeforeAsync(WorkItem item, long columnId, string targetRank, CancellationToken ct) =>
-        db.WorkItems
-            .Where(w => w.ProjectId == item.ProjectId && w.StatusId == columnId && w.ParentId == null && w.Id != item.Id
-                && string.Compare(w.Rank, targetRank) < 0)
-            .OrderByDescending(w => w.Rank)
-            .Select(w => w.Rank)
-            .FirstOrDefaultAsync(ct);
-
-    private async Task<int> PositionOfAsync(WorkItem item, CancellationToken ct) =>
-        await db.WorkItems.CountAsync(w => w.ProjectId == item.ProjectId && w.StatusId == item.StatusId && w.ParentId == null
-            && w.Id != item.Id && (string.Compare(w.Rank, item.Rank) < 0 || (w.Rank == item.Rank && w.Id < item.Id)), ct) + 1;
-
-    private Task<int> CountBeforeAsync(WorkItem item, string rank, CancellationToken ct) =>
-        db.WorkItems.CountAsync(w => w.ProjectId == item.ProjectId && w.StatusId == item.StatusId && w.ParentId == null
-            && w.Id != item.Id && string.Compare(w.Rank, rank) < 0, ct);
-
-#pragma warning restore CA1309
 
     private async Task<AppError> ConflictAsync(WorkItem item, CancellationToken ct)
     {

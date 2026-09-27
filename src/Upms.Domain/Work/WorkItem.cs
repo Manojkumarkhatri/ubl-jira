@@ -124,6 +124,110 @@ public sealed class WorkItem
     /// <summary>Assigns a new rank without changing the order (rebalancing); not a change to the item.</summary>
     public void Rerank(string rank) => Rank = rank;
 
+    /// <summary>Changes the title (FR-026); unchanged titles record nothing.</summary>
+    public DomainError? Rename(string title, ChangeContext context)
+    {
+        if (ValidateTitle(title) is { } error)
+        {
+            return error;
+        }
+
+        var trimmed = title.Trim();
+        if (trimmed != Title)
+        {
+            Record(WorkItemField.Title, Title, trimmed, null, context);
+            Title = trimmed;
+            UpdatedAt = context.At;
+        }
+
+        return null;
+    }
+
+    /// <summary>Changes the plain-text description; blank clears it (FR-025, FR-026).</summary>
+    public DomainError? Describe(string? description, ChangeContext context)
+    {
+        var value = string.IsNullOrWhiteSpace(description) ? null : description;
+        if (value is { Length: > DescriptionMaxLength })
+        {
+            return DomainError.Invalid("Description", $"The description can have at most {DescriptionMaxLength:N0} characters.");
+        }
+
+        if (value != Description)
+        {
+            Record(WorkItemField.Description, Description, value, null, context);
+            Description = value;
+            UpdatedAt = context.At;
+        }
+
+        return null;
+    }
+
+    /// <summary>Changes the priority (FR-026).</summary>
+    public void Prioritize(Priority priority, ChangeContext context)
+    {
+        if (priority != Priority)
+        {
+            Record(WorkItemField.Priority, Priority.ToString(), priority.ToString(), null, context);
+            Priority = priority;
+            UpdatedAt = context.At;
+        }
+    }
+
+    /// <summary>A sub-task of this task with its own key (FR-028). Sub-tasks cannot have sub-tasks.</summary>
+    public DomainResult<WorkItem> AddSubtask(int number, string title, StatusRef status, string rank, ChangeContext context)
+    {
+        if (Type != WorkItemType.Task)
+        {
+            return DomainError.Rule(SubtaskDepthCode, "A sub-task cannot have sub-tasks of its own.");
+        }
+
+        var created = CreateTask(ProjectId, ProjectKey, number, title, status, rank, context);
+        if (!created.IsSuccess)
+        {
+            return created;
+        }
+
+        var subtask = created.Value!;
+        subtask.Type = WorkItemType.Subtask;
+        subtask.ParentId = Id;
+        RecordActivity(WorkItemField.SubtaskAdded, null, subtask.Key, context, subtask.Title);
+        return subtask;
+    }
+
+    /// <summary>Soft-deletes the item with its sub-tasks in one change set (FR-033).</summary>
+    public void Delete(IEnumerable<WorkItem> subtasks, ChangeContext context)
+    {
+        foreach (var item in subtasks.Where(s => !s.IsDeleted).Prepend(this))
+        {
+            item.IsDeleted = true;
+            item.DeletedAt = context.At;
+            item.DeletedById = context.ActorId;
+            item.Record(WorkItemField.Deleted, null, null, null, context);
+        }
+    }
+
+    /// <summary>Restores the item and the sub-tasks that were deleted with it (FR-033).</summary>
+    public void Restore(IEnumerable<WorkItem> subtasks, ChangeContext context)
+    {
+        var deletedAt = DeletedAt;
+        foreach (var item in subtasks.Where(s => s.IsDeleted && s.DeletedAt == deletedAt).Prepend(this))
+        {
+            item.IsDeleted = false;
+            item.DeletedAt = null;
+            item.DeletedById = null;
+            item.Record(WorkItemField.Restored, null, null, null, context);
+        }
+    }
+
+    /// <summary>Records activity on the item (comments, sub-tasks added) without changing the item itself, so
+    /// that people editing the task are not told it changed (FR-031, FR-032).</summary>
+    public void RecordActivity(WorkItemField field, string? oldValue, string? newValue, ChangeContext context, string? note = null) =>
+        Record(field, oldValue, newValue, note, context);
+
+    public const string SubtaskDepthCode = "SubtaskDepth";
+
+    private string ProjectKey => Key[..Key.LastIndexOf('-')];
+
     public static DomainError? ValidateTitle(string? title)
     {
         var trimmed = title?.Trim() ?? "";

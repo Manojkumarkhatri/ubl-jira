@@ -90,6 +90,8 @@ public sealed class AppFixture : IAsyncLifetime
             builder.UseSetting("ConnectionStrings:Default", connectionString);
             builder.UseSetting("Setup:Token", setupToken);
             builder.UseSetting("Database:MigrateOnStartup", "true");
+            // Every test signs in from 127.0.0.1; the real limit (10 per minute) is covered by HostSecurityTests.
+            builder.UseSetting("RateLimiting:SignInPerMinute", "1000");
         }
     }
 }

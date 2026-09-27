@@ -163,26 +163,26 @@ card shows High and "1/3", and the history lists each change (spec US2).
 
 ### Tests for User Story 2 (write first, must fail) ⚠️
 
-- [ ] T077 [P] [US2] Write `tests/Upms.Domain.Tests/Work/WorkItemEditingTests.cs`: `Rename` ("1–255 characters", trimmed), `Describe` ("at most 32,000 characters"), `Prioritize` each record history with old and new values; `AddSubtask` requires a `Task` parent in the same project and refuses sub-tasks of sub-tasks (`SubtaskDepth`); moving to `Done` with open sub-tasks returns a warning listing them; `Delete` soft-deletes the sub-tasks and `Restore` restores them (FR-026, FR-028, FR-029, FR-033)
-- [ ] T078 [P] [US2] Write `tests/Upms.Web.Tests/Shared/PlainTextTests.cs`: line breaks are kept; `http` and `https` URLs become links with `rel="noopener noreferrer"` opening in a new tab; HTML and `<script>` render as text; `javascript:` never becomes a link (FR-025, FR-044, research R10)
-- [ ] T079 [P] [US2] Write `tests/Upms.Application.Tests/Work/WorkItemServiceTests.cs`: `US2_AS1` details include key, title, status, priority, description, sub-tasks, comments and history (first pages of 50, with paged "Show more"); `US2_AS2` title, `US2_AS3` description (line breaks kept), `US2_AS4` priority and `US2_AS5` status edits save and show on the board; `US2_AS10` a stale version returns `Conflict` with the current values; unknown keys return `NotFound` (FR-025–FR-027, FR-032)
-- [ ] T080 [P] [US2] Write `tests/Upms.Application.Tests/Work/SubtaskTests.cs`: `US2_AS6` three sub-tasks get their own keys and start in the leftmost "to do" column; "mark done" moves one to the leftmost "done" column and the parent card shows "1/3"; `US2_AS7` sub-tasks never appear as board cards (FR-017, FR-028, FR-040)
-- [ ] T081 [P] [US2] Write `tests/Upms.Application.Tests/Work/CommentServiceTests.cs`: `US2_AS8` comments list oldest first with author and time, 50 at a time, and authors' names stay after they are deactivated; authors edit (`EditedAt` set) and delete (placeholder) their own; editing or deleting someone else's returns `CommentNotOwned`; body "1–32,000 characters"; history records `CommentAdded`, `CommentEdited`, `CommentDeleted` (FR-030)
-- [ ] T082 [P] [US2] Write `tests/Upms.Application.Tests/Work/HistoryTests.cs`: `US2_AS9` history is complete and time-ordered with who, when, what, old and new values, 50 entries at a time; direct SQL `UPDATE` or `DELETE` on `WorkItemChanges` fails (FR-031, constitution IV)
-- [ ] T083 [P] [US2] Write `tests/Upms.Application.Tests/Work/DeleteRestoreTests.cs`: `US2_AS11` the creator, the owner and Administrators can delete, others get `Forbidden`; the preview reports the sub-task count; deleted tasks leave the board and return `NotFound`; Administrators list them (50 per page) and restore them; keys are never reused after deletion (FR-024, FR-033)
-- [ ] T084 [P] [US2] Write bUnit tests `tests/Upms.Web.Tests/Drawer/TaskDrawerTests.cs`, `SubtaskListTests.cs` and `CommentThreadTests.cs`: each field saves with a visible confirmation; validation errors keep the input; the conflict banner keeps the user's text; focus moves into the drawer on open, `Esc` closes it and focus returns to the card (research R20)
-- [ ] T085 [P] [US2] Write `tests/Upms.E2E.Tests/US2_TaskDrawerTests.cs`: the US2 Independent Test end to end, including opening `…/board?task=WEB-1` from a second browser (FR-023), plus an axe scan of the drawer
+- [X] T077 [P] [US2] Write `tests/Upms.Domain.Tests/Work/WorkItemEditingTests.cs`: `Rename` ("1–255 characters", trimmed), `Describe` ("at most 32,000 characters"), `Prioritize` each record history with old and new values; `AddSubtask` requires a `Task` parent in the same project and refuses sub-tasks of sub-tasks (`SubtaskDepth`); moving to `Done` with open sub-tasks returns a warning listing them; `Delete` soft-deletes the sub-tasks and `Restore` restores them (FR-026, FR-028, FR-029, FR-033)
+- [X] T078 [P] [US2] Write `tests/Upms.Web.Tests/Shared/PlainTextTests.cs`: line breaks are kept; `http` and `https` URLs become links with `rel="noopener noreferrer"` opening in a new tab; HTML and `<script>` render as text; `javascript:` never becomes a link (FR-025, FR-044, research R10)
+- [X] T079 [P] [US2] Write `tests/Upms.Application.Tests/Work/WorkItemServiceTests.cs`: `US2_AS1` details include key, title, status, priority, description, sub-tasks, comments and history (first pages of 50, with paged "Show more"); `US2_AS2` title, `US2_AS3` description (line breaks kept), `US2_AS4` priority and `US2_AS5` status edits save and show on the board; `US2_AS10` a stale version returns `Conflict` with the current values; unknown keys return `NotFound` (FR-025–FR-027, FR-032)
+- [X] T080 [P] [US2] Write `tests/Upms.Application.Tests/Work/SubtaskTests.cs`: `US2_AS6` three sub-tasks get their own keys and start in the leftmost "to do" column; "mark done" moves one to the leftmost "done" column and the parent card shows "1/3"; `US2_AS7` sub-tasks never appear as board cards (FR-017, FR-028, FR-040)
+- [X] T081 [P] [US2] Write `tests/Upms.Application.Tests/Work/CommentServiceTests.cs`: `US2_AS8` comments list oldest first with author and time, 50 at a time, and authors' names stay after they are deactivated; authors edit (`EditedAt` set) and delete (placeholder) their own; editing or deleting someone else's returns `CommentNotOwned`; body "1–32,000 characters"; history records `CommentAdded`, `CommentEdited`, `CommentDeleted` (FR-030)
+- [X] T082 [P] [US2] Write `tests/Upms.Application.Tests/Work/HistoryTests.cs`: `US2_AS9` history is complete and time-ordered with who, when, what, old and new values, 50 entries at a time; direct SQL `UPDATE` or `DELETE` on `WorkItemChanges` fails (FR-031, constitution IV)
+- [X] T083 [P] [US2] Write `tests/Upms.Application.Tests/Work/DeleteRestoreTests.cs`: `US2_AS11` the creator, the owner and Administrators can delete, others get `Forbidden`; the preview reports the sub-task count; deleted tasks leave the board and return `NotFound`; Administrators list them (50 per page) and restore them; keys are never reused after deletion (FR-024, FR-033)
+- [X] T084 [P] [US2] Write bUnit tests `tests/Upms.Web.Tests/Drawer/TaskDrawerTests.cs`, `SubtaskListTests.cs` and `CommentThreadTests.cs`: each field saves with a visible confirmation; validation errors keep the input; the conflict banner keeps the user's text; focus moves into the drawer on open, `Esc` closes it and focus returns to the card (research R20)
+- [X] T085 [P] [US2] Write `tests/Upms.E2E.Tests/US2_TaskDrawerTests.cs`: the US2 Independent Test end to end, including opening `…/board?task=WEB-1` from a second browser (FR-023), plus an axe scan of the drawer
 
 ### Implementation for User Story 2
 
-- [ ] T086 [US2] Extend `WorkItem` in `src/Upms.Domain/Work/WorkItem.cs` with `Rename`, `Describe`, `Prioritize`, `AddSubtask`, `Delete` and `Restore` (cascading to sub-tasks), all recording history (make T077 pass)
-- [ ] T087 [P] [US2] Create `Comment` in `src/Upms.Domain/Work/Comment.cs` (`Body` "plain text, 1–32,000 characters", `CreatedAt`, `EditedAt` "non-null → shown as edited", `IsDeleted`, `DeletedAt`, `RowVersion`), its configuration in `src/Upms.Infrastructure/Persistence/Configurations/Work/CommentConfiguration.cs` (index `(WorkItemId, CreatedAt)`), and migration `Comments`
-- [ ] T088 [P] [US2] Implement `src/Upms.Web/Components/Shared/PlainText.razor` per research R10, never rendering user text as raw markup (make T078 pass)
-- [ ] T089 [US2] Implement `WorkItemService` (`GetAsync`, `UpdateAsync`, `AddSubtaskAsync`, `MarkSubtaskDoneAsync`, `PreviewDeleteAsync`, `DeleteAsync`, and the paged `ListDeletedAsync`, `RestoreAsync`, `ListSubtasksAsync`, `GetHistoryAsync`) in `src/Upms.Application/Work/WorkItemService.cs` (make T079, T080, T082 and T083 pass)
-- [ ] T090 [US2] Implement `CommentService` in `src/Upms.Application/Work/CommentService.cs` (make T081 pass)
-- [ ] T091 [US2] Add sub-task done/total counts to the card projection in `src/Upms.Application/Work/BoardService.cs` and show them on `TaskCard.razor` (FR-017)
-- [ ] T092 [US2] Create in `src/Upms.Web/Components/Pages/Drawer/`: `TaskDrawer.razor` (dialog semantics; opened from a card or `?task={KEY-N}`; title, status, priority and description editors; delete with preview), `SubtaskList.razor` (add by title, status per sub-task, "mark done", open with a link back to the parent), `CommentThread.razor`, `HistoryList.razor`; use `PlainText` for description and comments; sub-tasks, comments and history load 50 at a time with "Show more" (make T084 pass)
-- [ ] T093 [US2] Create `src/Upms.Web/Components/Pages/Settings/DeletedTasks.razor` at `/projects/{key}/deleted` (Administrators: list 50 per page and restore), then make T085 pass
+- [X] T086 [US2] Extend `WorkItem` in `src/Upms.Domain/Work/WorkItem.cs` with `Rename`, `Describe`, `Prioritize`, `AddSubtask`, `Delete` and `Restore` (cascading to sub-tasks), all recording history (make T077 pass)
+- [X] T087 [P] [US2] Create `Comment` in `src/Upms.Domain/Work/Comment.cs` (`Body` "plain text, 1–32,000 characters", `CreatedAt`, `EditedAt` "non-null → shown as edited", `IsDeleted`, `DeletedAt`, `RowVersion`), its configuration in `src/Upms.Infrastructure/Persistence/Configurations/Work/CommentConfiguration.cs` (index `(WorkItemId, CreatedAt)`), and migration `Comments`
+- [X] T088 [P] [US2] Implement `src/Upms.Web/Components/Shared/PlainText.razor` per research R10, never rendering user text as raw markup (make T078 pass)
+- [X] T089 [US2] Implement `WorkItemService` (`GetAsync`, `UpdateAsync`, `AddSubtaskAsync`, `MarkSubtaskDoneAsync`, `PreviewDeleteAsync`, `DeleteAsync`, and the paged `ListDeletedAsync`, `RestoreAsync`, `ListSubtasksAsync`, `GetHistoryAsync`) in `src/Upms.Application/Work/WorkItemService.cs` (make T079, T080, T082 and T083 pass)
+- [X] T090 [US2] Implement `CommentService` in `src/Upms.Application/Work/CommentService.cs` (make T081 pass)
+- [X] T091 [US2] Add sub-task done/total counts to the card projection in `src/Upms.Application/Work/BoardService.cs` and show them on `TaskCard.razor` (FR-017)
+- [X] T092 [US2] Create in `src/Upms.Web/Components/Pages/Drawer/`: `TaskDrawer.razor` (dialog semantics; opened from a card or `?task={KEY-N}`; title, status, priority and description editors; delete with preview), `SubtaskList.razor` (add by title, status per sub-task, "mark done", open with a link back to the parent), `CommentThread.razor`, `HistoryList.razor`; use `PlainText` for description and comments; sub-tasks, comments and history load 50 at a time with "Show more" (make T084 pass)
+- [X] T093 [US2] Create `src/Upms.Web/Components/Pages/Settings/DeletedTasks.razor` at `/projects/{key}/deleted` (Administrators: list 50 per page and restore), then make T085 pass
 
 **Checkpoint**: User Stories 1 and 2 both work independently.
 
@@ -364,3 +364,23 @@ Decisions made while implementing, recorded so the documents match the code:
   which suits the 500-visible-card envelope. The performance suite (T106) confirms it.
 - **Interactivity marker**: the main layout sets `data-interactive="true"` once the Blazor circuit
   has taken over from prerendering, so browser tests act only on live pages.
+- **History for comments and sub-tasks** (T089, T090): adding a sub-task or adding, editing or deleting a
+  comment writes a history row on the task without updating the task row, so `UpdatedAt` and the row
+  version change only when the task's own fields change and open drawers see no false conflicts. The
+  drawer's history shows "added a comment" without the text: comment text stays in the audit rows but is
+  not shown again, so a deleted comment stays deleted.
+- **Open sub-task warning** (T077, T079): the warning when a task becomes done with open sub-tasks is
+  built by `WorkItemService` from the database and tested at the service level, not in the domain.
+- **Drawer behaviour** (T092): the drawer is a native modal `<dialog>`. Esc closes it through the
+  browser's own dialog handling, except while the focused text field holds typed text
+  (`data-escape-guard`), so a comment or description being written is not lost. Links to a sub-task or
+  back to its parent change `?task=` and show the other item in the same dialog. Opening or closing the
+  drawer does not reload the board.
+- **Deleted tasks link** (T093): the board shows "Deleted tasks" to administrators from
+  `BoardView.CanRestoreDeleted`, not from a policy check on each render.
+- **Policy checks in circuits**: `UserStatusAuthorizationHandler` reads the user's status in a scope of its
+  own, because checks from several components of one circuit can overlap and a shared `DbContext` allows
+  one query at a time.
+- **Rate limits** are configuration (`RateLimiting:SignInPerMinute`, `SetupPerMinute`,
+  `KeepAlivePerMinute`) with the contract's values as defaults; only the browser-test host raises the
+  sign-in limit, because every test signs in from the same address.

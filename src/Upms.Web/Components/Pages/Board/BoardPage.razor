@@ -1,7 +1,10 @@
 @page "/projects/{Key}/board"
 @using Upms.Application.Work
+@using Upms.Web.Components.Pages.Drawer
 @inject IBoardService Boards
 @inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>@(_board?.ProjectName ?? Key) · Board · U-PMS</PageTitle>
 
@@ -29,6 +32,10 @@ else
         {
             <a class="btn" href="projects/@Key/board?done=all">Show all completed (@_board.HiddenDoneCount more)</a>
         }
+        @if (_board.CanRestoreDeleted)
+        {
+            <a class="btn" href="projects/@Key/deleted">Deleted tasks</a>
+        }
         @if (_board.CanManageColumns)
         {
             <a class="btn" href="projects/@Key/settings">Project settings</a>
@@ -55,13 +62,18 @@ else
         <div class="board">
             @foreach (var column in _board.Columns)
             {
-                <BoardColumn @key="column.Id" Column="column" ProjectKey="@Key" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
+                <BoardColumn @key="column.Id" Column="column" ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
                              OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
                              OnDropBefore="DropBeforeAsync" OnDropAtEnd="DropAtEndAsync" OnMove="MoveFromMenuAsync"
                              OnCreate="CreateAsync" />
             }
         </div>
     </div>
+
+    @if (!string.IsNullOrEmpty(TaskKey))
+    {
+        <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+    }
 }
 
 @code {
@@ -72,6 +84,8 @@ else
     private IReadOnlyList<string> _warnings = [];
     private CardView? _dragging;
     private IReadOnlyList<ColumnOption> _moveTargets = [];
+    private (string Key, string? Done)? _loaded;
+    private string? _focusCardKey;
 
     [Parameter]
     public string Key { get; set; } = "";
@@ -80,20 +94,51 @@ else
     [SupplyParameterFromQuery(Name = "done")]
     public string? Done { get; set; }
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    /// <summary><c>?task={KEY-N}</c> opens that task's details drawer over the board (FR-023).</summary>
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    // Opening or closing the drawer changes only the query string: the board is not loaded again.
+    protected override Task OnParametersSetAsync() =>
+        _loaded == (Key, Done) ? Task.CompletedTask : LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusCardKey is { } key && string.IsNullOrEmpty(TaskKey))
+        {
+            // Focus returns to the card whose drawer was closed, even if its column changed meanwhile.
+            _focusCardKey = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", $"card-{key}-title");
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
 
     private async Task LoadAsync()
     {
+        _loaded = (Key, Done);
         var result = await Boards.GetAsync(Key, Done == "all", CancellationToken.None);
         if (!result.IsSuccess)
         {
+            _board = null;
             _notFound = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
             _error = _notFound ? null : result.Error.Message;
             return;
         }
 
+        _notFound = false;
         _board = result.Value!;
         _moveTargets = _board.Columns.Select(c => new ColumnOption(c.Id, c.Name)).ToList();
+    }
+
+    private void CloseDrawer()
+    {
+        _focusCardKey = TaskKey;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
     }
 
     private async Task DropBeforeAsync(CardView target)

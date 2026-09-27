@@ -5,7 +5,7 @@
          @ondragstart="() => OnDragStart.InvokeAsync(Card)" @ondragend="() => OnDragEnd.InvokeAsync()"
          @ondragenter="() => _dropHint = true" @ondragleave="() => _dropHint = false"
          @ondragover:preventDefault @ondrop:preventDefault @ondrop="DropAsync">
-    <a id="@TitleId" class="card-title" href="projects/@ProjectKey/board?task=@Card.Key" draggable="false">@Card.Title</a>
+    <a id="@TitleId" class="card-title" href="@TaskHref" draggable="false">@Card.Title</a>
     <div class="foot">
         <PriorityIcon Priority="Card.Priority" />
         <span class="key">@Card.Key</span>
@@ -31,6 +31,9 @@
     public IReadOnlyList<ColumnOption> MoveTargets { get; set; } = [];
 
     [Parameter]
+    public bool ShowAllDone { get; set; }
+
+    [Parameter]
     public bool IsDragging { get; set; }
 
     [Parameter]
@@ -47,6 +50,9 @@
     public EventCallback<(CardView Card, MoveRequest Request)> OnMove { get; set; }
 
     private string TitleId => $"card-{Card.Key}-title";
+
+    // Opens the details drawer over the board (FR-023), keeping the "show all completed" view.
+    private string TaskHref => $"projects/{ProjectKey}/board?{(ShowAllDone ? "done=all&" : "")}task={Card.Key}";
 
     private async Task DropAsync()
     {

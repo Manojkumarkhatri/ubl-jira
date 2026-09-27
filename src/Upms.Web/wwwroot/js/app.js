@@ -8,8 +8,19 @@
     open(dialog, dotnetRef) {
       if (!dialog || dialog.open) return;
       const returnFocus = document.activeElement;
+      // In a dialog marked data-escape-guard (the task drawer), Esc does not close the dialog while the
+      // focused text field holds typed text, so the text is not lost; the field's own Esc handling still runs.
+      const onCancel = (e) => {
+        const active = document.activeElement;
+        const typing = active && dialog.contains(active) && active.closest('dialog') === dialog &&
+          (active.tagName === 'TEXTAREA' || (active.tagName === 'INPUT' && active.type === 'text')) &&
+          active.value.trim() !== '';
+        if (typing && dialog.hasAttribute('data-escape-guard')) e.preventDefault();
+      };
+      dialog.addEventListener('cancel', onCancel);
       dialog.addEventListener('close', function onClose() {
         dialog.removeEventListener('close', onClose);
+        dialog.removeEventListener('cancel', onCancel);
         if (returnFocus && returnFocus.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus();
         if (dotnetRef) dotnetRef.invokeMethodAsync('OnDialogClosed').catch(() => {});
       });

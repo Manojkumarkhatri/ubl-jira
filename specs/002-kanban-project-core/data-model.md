@@ -124,7 +124,7 @@ erDiagram
 | StatusId | bigint | FK → ProjectStatuses of the same project |
 | Rank | varchar(64), binary collation | fractional index (research R14) |
 | CreatedById | uniqueidentifier | the creator; may delete the item (FR-033) |
-| CreatedAt, UpdatedAt | datetimeoffset | `UpdatedAt` changes with every recorded change |
+| CreatedAt, UpdatedAt | datetimeoffset | `UpdatedAt` changes when the item's own fields change (title, description, priority, status, order, deletion); comment and sub-task activity adds history only |
 | ResolvedAt | datetimeoffset null | set when entering a `Done` status, cleared when leaving (FR-027) |
 | IsDeleted, DeletedAt, DeletedById | bit, datetimeoffset null, uniqueidentifier null | soft delete (FR-033) |
 | RowVersion | rowversion | |

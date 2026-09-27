@@ -1,0 +1,136 @@
+@page "/projects/{Key}/deleted"
+@attribute [Authorize(Policy = AuthorizationPolicies.Administrator)]
+@using Upms.Application.Work
+@inject IWorkItemService Items
+@inject LiveAnnouncer Announcer
+
+<PageTitle>Deleted tasks · @Key · U-PMS</PageTitle>
+
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else
+{
+    <div class="page-head">
+        <div>
+            <div class="crumbs"><a href="projects">Projects</a> / <a href="projects/@Key/board">@Key</a></div>
+            <h1>Deleted tasks</h1>
+        </div>
+    </div>
+
+    @if (_restored is not null)
+    {
+        <div class="alert alert-success" role="status" data-testid="restored">
+            Restored <a href="projects/@Key/board?task=@_restored">@_restored</a>.
+        </div>
+    }
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">@_error</div>
+    }
+
+    @if (_page is null)
+    {
+        <p aria-busy="true">Loading…</p>
+    }
+    else if (_page.TotalCount == 0)
+    {
+        <EmptyState Title="No deleted tasks" Text="Tasks deleted in this project appear here, and an administrator can restore them." />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="tbl">
+                <caption class="sr-only">Deleted tasks, page @_page.PageNumber of @Math.Max(1, _page.PageCount)</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Task</th>
+                        <th scope="col">Deleted</th>
+                        <th scope="col" class="hide-sm">Deleted by</th>
+                        <th scope="col" class="hide-sm">Sub-tasks</th>
+                        <th scope="col"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _page.Items)
+                    {
+                        <tr @key="item.Key" data-testid="deleted-@item.Key">
+                            <td><span class="key">@item.Key</span> @item.Title</td>
+                            <td><LocalTime Value="item.DeletedAt" /></td>
+                            <td class="hide-sm">@item.DeletedByName</td>
+                            <td class="hide-sm">@item.SubtaskCount</td>
+                            <td class="actions">
+                                <button type="button" class="btn btn-sm" disabled="@_busy" aria-label="Restore @item.Key"
+                                        @onclick="() => RestoreAsync(item)">Restore</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Deleted task pages" OnPageChanged="GoToPageAsync" />
+    }
+}
+
+@code {
+    private Page<DeletedItemView>? _page;
+    private int _pageNumber = 1;
+    private bool _notFound;
+    private string? _restored;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await Items.ListDeletedAsync(Key, new PageRequest(_pageNumber), CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _notFound = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
+            _error = _notFound ? null : result.Error.Message;
+            return;
+        }
+
+        _page = result.Value!;
+        if (_page.Items.Count == 0 && _pageNumber > 1)
+        {
+            _pageNumber = Math.Max(1, _page.PageCount); // the last item on this page was restored
+            await LoadAsync();
+        }
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _pageNumber = page;
+        await LoadAsync();
+    }
+
+    private async Task RestoreAsync(DeletedItemView item)
+    {
+        _busy = true;
+        _error = null;
+        _restored = null;
+        try
+        {
+            var result = await Items.RestoreAsync(item.Key, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            _restored = item.Key;
+            Announcer.Announce($"Restored {item.Key}.");
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

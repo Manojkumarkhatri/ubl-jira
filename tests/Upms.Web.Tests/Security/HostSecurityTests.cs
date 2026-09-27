@@ -1,4 +1,9 @@
 using System.Net;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
+using Upms.Domain.Identity;
+using Upms.Web.Security;
 using Upms.Web.Tests.Fixtures;
 
 namespace Upms.Web.Tests.Security;
@@ -114,5 +119,20 @@ public sealed class HostSecurityTests(WebDatabaseFixture database) : IAsyncLifet
 
         Assert.DoesNotContain(HttpStatusCode.TooManyRequests, statuses.Take(10));
         Assert.Equal(HttpStatusCode.TooManyRequests, statuses[10]);
+    }
+
+    [Fact]
+    public async Task Policy_checks_that_overlap_in_one_circuit_each_read_the_users_status_safely()
+    {
+        var admin = await _factory.CreateUserAsync("ada", "correct horse battery 9", role: OrganizationRole.Administrator);
+        // One scope, like a Blazor circuit in which several components check a policy at the same time.
+        using var scope = _factory.Services.CreateScope();
+        var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
+        var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, admin.Id.ToString())], "test"));
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => authorization.AuthorizeAsync(user, AuthorizationPolicies.Administrator)));
+
+        Assert.All(results, r => Assert.True(r.Succeeded));
     }
 }

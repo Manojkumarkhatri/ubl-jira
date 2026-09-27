@@ -14,7 +14,7 @@
         @foreach (var card in Column.Cards)
         {
             <li @key="card.Key">
-                <TaskCard Card="card" ProjectKey="@ProjectKey" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
+                <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
                           OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" />
             </li>
         }
@@ -35,6 +35,10 @@
 
     [Parameter, EditorRequired]
     public IReadOnlyList<ColumnOption> MoveTargets { get; set; } = [];
+
+    /// <summary>The board shows every completed task (<c>?done=all</c>); card links keep that view.</summary>
+    [Parameter]
+    public bool ShowAllDone { get; set; }
 
     [Parameter]
     public string? DraggingKey { get; set; }

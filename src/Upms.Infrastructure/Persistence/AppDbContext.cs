@@ -25,6 +25,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 
     public DbSet<WorkItemChange> WorkItemChanges => Set<WorkItemChange>();
 
+    public DbSet<Comment> Comments => Set<Comment>();
+
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     /// <summary>A context for tools and tests that run outside the web host.</summary>

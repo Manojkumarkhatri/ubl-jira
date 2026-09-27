@@ -25,6 +25,8 @@ public interface IAppDbContext
 
     DbSet<WorkItemChange> WorkItemChanges { get; }
 
+    DbSet<Comment> Comments { get; }
+
     DatabaseFacade Database { get; }
 
     EntityEntry<TEntity> Entry<TEntity>(TEntity entity)

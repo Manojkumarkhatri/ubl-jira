@@ -1,0 +1,36 @@
+@* User text is plain text (research R10): line breaks are kept, http and https addresses become links
+   that open in a new tab, and nothing the user typed is ever rendered as markup (FR-025, FR-044). *@
+<div class="plain-text @(IsEmpty ? "is-empty" : "") @Class">
+    @if (IsEmpty)
+    {
+        @Placeholder
+    }
+    else
+    {
+        foreach (var part in PlainTextParts.Split(Text!))
+        {
+            if (part.IsLink)
+            {
+                <a href="@part.Text" target="_blank" rel="noopener noreferrer">@part.Text</a>
+            }
+            else
+            {
+                @part.Text
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? Text { get; set; }
+
+    /// <summary>Shown, muted, when <see cref="Text"/> is empty.</summary>
+    [Parameter]
+    public string? Placeholder { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    private bool IsEmpty => string.IsNullOrWhiteSpace(Text);
+}

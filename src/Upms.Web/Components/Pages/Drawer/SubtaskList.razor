@@ -1,0 +1,141 @@
+@using Upms.Application.Work
+@using Upms.Domain.Common
+
+<section class="drawer-section" aria-labelledby="subtasks-title">
+    <h3 id="subtasks-title" class="section-title">
+        Sub-tasks
+        @if (Subtasks.TotalCount > 0)
+        {
+            <span class="hint">@DoneCount of @Subtasks.TotalCount done</span>
+        }
+    </h3>
+    @if (Subtasks.Items.Count == 0)
+    {
+        <p class="hint">No sub-tasks yet.</p>
+    }
+    else
+    {
+        <ul class="child-list">
+            @foreach (var subtask in Subtasks.Items)
+            {
+                <li @key="subtask.Key" data-testid="subtask">
+                    <a class="child-link" href="projects/@ProjectKey/board?task=@subtask.Key">
+                        <span class="key">@subtask.Key</span> <span class="child-title">@subtask.Title</span>
+                    </a>
+                    <label class="sr-only" for="subtask-status-@subtask.Key">Status of @subtask.Key</label>
+                    <select id="subtask-status-@subtask.Key" class="select select-sm"
+                            value="@(_pendingStatus.TryGetValue(subtask.Key, out var pending) ? pending : subtask.Status.Id)"
+                            @onchange="e => ChangeStatusAsync(subtask, e)">
+                        @foreach (var status in Statuses)
+                        {
+                            <option value="@status.Id">@status.Name</option>
+                        }
+                    </select>
+                    @if (subtask.Status.Category != StatusCategory.Done)
+                    {
+                        <button type="button" class="btn btn-sm" data-testid="mark-done" aria-label="Mark done: @subtask.Key"
+                                @onclick="() => OnMarkDone.InvokeAsync(subtask)">Mark done</button>
+                    }
+                </li>
+            }
+        </ul>
+    }
+    @if (Subtasks.Items.Count < Subtasks.TotalCount)
+    {
+        <button type="button" class="btn btn-sm btn-ghost show-more" @onclick="OnShowMore">
+            Show more sub-tasks (@(Subtasks.TotalCount - Subtasks.Items.Count) more)
+        </button>
+    }
+    <div class="add-child">
+        <label class="sr-only" for="add-subtask">New sub-task title</label>
+        <input id="add-subtask" class="input" type="text" placeholder="+ Add a sub-task" autocomplete="off" maxlength="255"
+               @bind="_title" @bind:event="oninput" @onkeydown="KeyDownAsync"
+               aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="add-subtask-error" />
+        <button type="button" class="btn btn-sm" @onclick="AddAsync">Add</button>
+    </div>
+    <span id="add-subtask-error" class="error-text" role="alert">@_error</span>
+</section>
+
+@code {
+    private readonly Dictionary<string, long> _pendingStatus = new(StringComparer.Ordinal);
+    private string _title = "";
+    private string? _error;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public Page<SubtaskView> Subtasks { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<StatusOption> Statuses { get; set; } = [];
+
+    /// <summary>Adds a sub-task with the title; returns an error message, or null when it was added.</summary>
+    [Parameter, EditorRequired]
+    public Func<string, Task<string?>> OnAdd { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<SubtaskView> OnMarkDone { get; set; }
+
+    [Parameter]
+    public EventCallback<(SubtaskView Subtask, long ColumnId)> OnStatusChange { get; set; }
+
+    [Parameter]
+    public EventCallback OnShowMore { get; set; }
+
+    private int DoneCount => Subtasks.Items.Count(s => s.Status.Category == StatusCategory.Done);
+
+    private async Task ChangeStatusAsync(SubtaskView subtask, ChangeEventArgs e)
+    {
+        if (!long.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var columnId))
+        {
+            return;
+        }
+
+        // Rendering the chosen value while the change is saved lets a refused change put the old value back.
+        _pendingStatus[subtask.Key] = columnId;
+        try
+        {
+            await OnStatusChange.InvokeAsync((subtask, columnId));
+        }
+        finally
+        {
+            _pendingStatus.Remove(subtask.Key);
+        }
+    }
+
+    private Task KeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _title = "";
+            _error = null;
+        }
+
+        return e.Key == "Enter" ? AddAsync() : Task.CompletedTask;
+    }
+
+    private async Task AddAsync()
+    {
+        var title = _title.Trim();
+        if (title.Length == 0 || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _error = await OnAdd(title);
+            if (_error is null)
+            {
+                _title = "";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

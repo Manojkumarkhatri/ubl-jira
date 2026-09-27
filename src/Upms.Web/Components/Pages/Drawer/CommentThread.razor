@@ -1,0 +1,267 @@
+@using Upms.Application.Work
+@inject ICommentService Comments
+
+<section class="drawer-section" aria-labelledby="comments-title">
+    <h3 id="comments-title" class="section-title">Comments <span class="hint">(@_total)</span></h3>
+    <div class="comment-new">
+        <label for="new-comment" class="sr-only">Add a comment</label>
+        <textarea id="new-comment" class="textarea comment-box" placeholder="Add a comment…" maxlength="32000"
+                  @bind="_newBody" @bind:event="oninput"
+                  aria-invalid="@(_newError is null ? "false" : "true")" aria-describedby="new-comment-error"></textarea>
+        <span id="new-comment-error" class="error-text" role="alert">@_newError</span>
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-testid="post-comment" disabled="@_busy" @onclick="PostAsync">Comment</button>
+            <span class="saved" role="status">@_status</span>
+        </div>
+    </div>
+    @if (_items.Count == 0)
+    {
+        <p class="hint">No comments yet.</p>
+    }
+    else
+    {
+        <ol class="comment-list">
+            @foreach (var comment in _items)
+            {
+                <li @key="comment.Id" class="comment" data-testid="comment">
+                    <div class="who" id="comment-@comment.Id-meta">
+                        @comment.AuthorName
+                        <span class="when"><LocalTime Value="comment.CreatedAt" />@(comment.EditedAt is not null && !comment.IsDeleted ? " (edited)" : "")</span>
+                    </div>
+                    @if (comment.IsDeleted)
+                    {
+                        <p class="muted comment-deleted">Comment deleted</p>
+                    }
+                    else if (_editingId == comment.Id)
+                    {
+                        <label class="sr-only" for="edit-comment-@comment.Id">Edit your comment</label>
+                        <textarea id="edit-comment-@comment.Id" class="textarea comment-box" maxlength="32000"
+                                  @bind="_editBody" @bind:event="oninput"
+                                  aria-invalid="@(_editError is null ? "false" : "true")" aria-describedby="edit-comment-error"></textarea>
+                        <span id="edit-comment-error" class="error-text" role="alert">@_editError</span>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="save-comment" disabled="@_busy"
+                                    @onclick="() => SaveEditAsync(comment)">Save</button>
+                            <button type="button" class="btn btn-sm" @onclick="CancelEdit">Cancel</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <PlainText Text="@comment.Body" />
+                        @if (comment.IsMine && _confirmDeleteId == comment.Id)
+                        {
+                            <div class="form-actions" role="group" aria-label="Delete this comment?">
+                                <span class="confirm-text">Delete this comment?</span>
+                                <button type="button" class="btn btn-sm btn-danger" disabled="@_busy" @onclick="() => DeleteAsync(comment)">Delete comment</button>
+                                <button type="button" class="btn btn-sm" @onclick="() => _confirmDeleteId = null">Keep it</button>
+                            </div>
+                        }
+                        else if (comment.IsMine)
+                        {
+                            <div class="comment-actions">
+                                <button type="button" class="btn btn-ghost btn-sm" aria-describedby="comment-@comment.Id-meta" @onclick="() => StartEdit(comment)">Edit</button>
+                                <button type="button" class="btn btn-ghost btn-sm" aria-describedby="comment-@comment.Id-meta" @onclick="() => _confirmDeleteId = comment.Id">Delete</button>
+                            </div>
+                        }
+                    }
+                    @if (_rowError is { } rowError && rowError.Id == comment.Id)
+                    {
+                        <span class="error-text" role="alert">@rowError.Message</span>
+                    }
+                </li>
+            }
+        </ol>
+    }
+    @if (_items.Count < _total)
+    {
+        <button type="button" class="btn btn-sm btn-ghost show-more" disabled="@_busy" @onclick="ShowMoreAsync">
+            Show more comments (@(_total - _items.Count) more)
+        </button>
+    }
+</section>
+
+@code {
+    private Page<CommentView>? _initial;
+    private List<CommentView> _items = [];
+    private int _total;
+    private int _page = 1;
+    private string _newBody = "";
+    private string? _newError;
+    private long? _editingId;
+    private string _editBody = "";
+    private string? _editError;
+    private long? _confirmDeleteId;
+    private (long Id, string Message)? _rowError;
+    private string? _status;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string WorkItemKey { get; set; } = "";
+
+    /// <summary>The first page, oldest first, loaded with the task's details.</summary>
+    [Parameter, EditorRequired]
+    public Page<CommentView> Initial { get; set; } = default!;
+
+    /// <summary>Raised after a comment is added, edited or deleted (the task's history changed).</summary>
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(Initial, _initial))
+        {
+            _initial = Initial;
+            _items = Initial.Items.ToList();
+            _total = Initial.TotalCount;
+            _page = Initial.PageNumber;
+        }
+    }
+
+    private async Task PostAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_newBody))
+        {
+            _newError = "Write a comment first.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Comments.AddAsync(WorkItemKey, _newBody, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _newError = result.Error!.MessageFor("Body"); // the typed text stays in the box
+                return;
+            }
+
+            _items.Add(result.Value!);
+            _total++;
+            _newBody = "";
+            _newError = null;
+            _status = "Comment added";
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void StartEdit(CommentView comment)
+    {
+        _editingId = comment.Id;
+        _editBody = comment.Body ?? "";
+        _editError = null;
+        _rowError = null;
+        _confirmDeleteId = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _editError = null;
+    }
+
+    private async Task SaveEditAsync(CommentView comment)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Comments.EditAsync(comment.Id, _editBody, comment.Version, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                var error = result.Error!;
+                _editError = error.MessageFor("Body");
+                if (error.Current is CommentView latest)
+                {
+                    Replace(latest); // a second save applies the kept text to the latest version
+                }
+
+                return;
+            }
+
+            Replace(result.Value!);
+            _editingId = null;
+            _editError = null;
+            _status = "Comment saved";
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync(CommentView comment)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Comments.DeleteAsync(comment.Id, CancellationToken.None);
+            _confirmDeleteId = null;
+            if (!result.IsSuccess)
+            {
+                _rowError = (comment.Id, result.Error!.Message);
+                return;
+            }
+
+            Replace(comment with { Body = null, IsDeleted = true });
+            _status = "Comment deleted";
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ShowMoreAsync()
+    {
+        _busy = true;
+        try
+        {
+            var result = await Comments.ListAsync(WorkItemKey, new PageRequest(_page + 1), CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _newError = result.Error!.Message;
+                return;
+            }
+
+            var page = result.Value!;
+            var known = _items.Select(c => c.Id).ToHashSet();
+            _items.AddRange(page.Items.Where(c => !known.Contains(c.Id)));
+            _items.Sort((a, b) => a.CreatedAt != b.CreatedAt ? a.CreatedAt.CompareTo(b.CreatedAt) : a.Id.CompareTo(b.Id));
+            _total = page.TotalCount;
+            _page = page.PageNumber;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Replace(CommentView comment)
+    {
+        var index = _items.FindIndex(c => c.Id == comment.Id);
+        if (index >= 0)
+        {
+            _items[index] = comment;
+        }
+    }
+}

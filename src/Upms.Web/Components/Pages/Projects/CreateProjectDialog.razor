@@ -47,6 +47,7 @@
     private string _key = "";
     private string _description = "";
     private bool _keyEditedByUser;
+    private int _suggestionRequest;
     private bool _busy;
     private AppError? _error;
 
@@ -63,9 +64,17 @@
 
     private async Task NameChangedAsync()
     {
-        if (!_keyEditedByUser)
+        if (_keyEditedByUser)
         {
-            _key = await Projects.SuggestKeyAsync(_name, CancellationToken.None);
+            return;
+        }
+
+        var request = ++_suggestionRequest;
+        var suggestion = await Projects.SuggestKeyAsync(_name, CancellationToken.None);
+        // A slower, older suggestion never replaces a newer one or a key the user typed meanwhile.
+        if (request == _suggestionRequest && !_keyEditedByUser)
+        {
+            _key = suggestion;
         }
     }
 

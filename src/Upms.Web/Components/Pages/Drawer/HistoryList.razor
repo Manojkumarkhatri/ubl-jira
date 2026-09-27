@@ -1,0 +1,107 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject IWorkItemService Items
+
+@if (_items.Count == 0)
+{
+    <p class="hint">No changes yet.</p>
+}
+else
+{
+    <ol class="history">
+        @foreach (var change in _items)
+        {
+            <li class="hist" data-testid="history-entry">
+                <b>@change.ActorName</b> @Describe(change)
+                <span class="hint">· <LocalTime Value="change.OccurredAt" /></span>
+            </li>
+        }
+    </ol>
+}
+@if (_items.Count < _total)
+{
+    <button type="button" class="btn btn-sm btn-ghost show-more" disabled="@_busy" @onclick="ShowMoreAsync">
+        Show more history (@(_total - _items.Count) more)
+    </button>
+}
+@if (_error is not null)
+{
+    <span class="error-text" role="alert">@_error</span>
+}
+
+@code {
+    private Page<ChangeView>? _initial;
+    private List<ChangeView> _items = [];
+    private int _total;
+    private int _page = 1;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string WorkItemKey { get; set; } = "";
+
+    /// <summary>The first page, oldest first (FR-031).</summary>
+    [Parameter, EditorRequired]
+    public Page<ChangeView> Initial { get; set; } = default!;
+
+    /// <summary>"task" or "sub-task".</summary>
+    [Parameter]
+    public string ItemNoun { get; set; } = "task";
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(Initial, _initial))
+        {
+            _initial = Initial;
+            _items = Initial.Items.ToList();
+            _total = Initial.TotalCount;
+            _page = Initial.PageNumber;
+        }
+    }
+
+    private async Task ShowMoreAsync()
+    {
+        _busy = true;
+        try
+        {
+            var result = await Items.GetHistoryAsync(WorkItemKey, new PageRequest(_page + 1), CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            // Entries are append-only and oldest first, so the next page continues the list.
+            _items.AddRange(result.Value!.Items);
+            _total = result.Value.TotalCount;
+            _page = result.Value.PageNumber;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string Describe(ChangeView change)
+    {
+        var note = string.IsNullOrEmpty(change.Note) ? "" : $" ({change.Note})";
+        return change.Field switch
+        {
+            WorkItemField.Created => $"created the {ItemNoun} in {change.NewValue}",
+            WorkItemField.Title => $"changed the title from “{change.OldValue}” to “{change.NewValue}”",
+            WorkItemField.Description when string.IsNullOrEmpty(change.OldValue) => "added a description",
+            WorkItemField.Description when string.IsNullOrEmpty(change.NewValue) => "removed the description",
+            WorkItemField.Description => "updated the description",
+            WorkItemField.Priority => $"changed the priority from {change.OldValue} to {change.NewValue}",
+            WorkItemField.Status => $"changed the status from {change.OldValue} to {change.NewValue}{note}",
+            WorkItemField.Rank => $"changed the order from position {change.OldValue} to {change.NewValue}{note}",
+            WorkItemField.SubtaskAdded => $"added sub-task {change.NewValue}{(string.IsNullOrEmpty(change.Note) ? "" : $" “{change.Note}”")}",
+            WorkItemField.CommentAdded => "added a comment",
+            WorkItemField.CommentEdited => "edited a comment",
+            WorkItemField.CommentDeleted => "deleted a comment",
+            WorkItemField.Deleted => $"deleted the {ItemNoun}",
+            WorkItemField.Restored => $"restored the {ItemNoun}",
+            _ => $"changed {change.Field}",
+        };
+    }
+}

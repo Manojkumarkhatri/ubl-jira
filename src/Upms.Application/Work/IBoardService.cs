@@ -46,7 +46,8 @@ public sealed record BoardView(
     bool CanManageColumns,
     bool ShowingAllDone,
     int HiddenDoneCount,
-    IReadOnlyList<ColumnView> Columns);
+    IReadOnlyList<ColumnView> Columns,
+    bool CanRestoreDeleted = false);
 
 /// <param name="CardCount">The number of cards the column shows.</param>
 /// <param name="OverLimit">True when <paramref name="CardCount"/> exceeds <paramref name="WipLimit"/> (FR-036).</param>

@@ -26,7 +26,7 @@ public sealed class ActiveUserRequirement : IAuthorizationRequirement;
 
 public sealed class AdministratorRequirement : IAuthorizationRequirement;
 
-internal sealed class UserStatusAuthorizationHandler(IUserStatusReader statusReader) : IAuthorizationHandler
+internal sealed class UserStatusAuthorizationHandler(IServiceScopeFactory scopes) : IAuthorizationHandler
 {
     public async Task HandleAsync(AuthorizationHandlerContext context)
     {
@@ -37,7 +37,10 @@ internal sealed class UserStatusAuthorizationHandler(IUserStatusReader statusRea
             return;
         }
 
-        var status = await statusReader.GetAsync(userId, CancellationToken.None);
+        // A scope of its own: in a Blazor circuit, checks from several components can overlap, and the circuit's
+        // shared DbContext allows only one query at a time.
+        await using var scope = scopes.CreateAsyncScope();
+        var status = await scope.ServiceProvider.GetRequiredService<IUserStatusReader>().GetAsync(userId, CancellationToken.None);
         foreach (var requirement in pending)
         {
             var satisfied = requirement switch

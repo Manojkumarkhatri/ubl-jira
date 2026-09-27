@@ -1,0 +1,671 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@implements IDisposable
+@inject IWorkItemService Items
+@inject LiveAnnouncer Announcer
+@inject IJSRuntime JS
+
+@* The task details drawer (FR-023 to FR-033, research R20): a modal dialog on the right of the board. Focus
+   moves in when it opens, Esc closes it (unless a text field holds typed text) and focus returns to the card. *@
+<dialog @ref="_dialog" class="drawer" aria-labelledby="drawer-heading" data-escape-guard data-testid="drawer">
+    <div class="drawer-head">
+        @if (_details is { } head)
+        {
+            <span class="crumbs drawer-crumbs">
+                @head.ProjectName /
+                @if (head.Parent is { } parent)
+                {
+                    <a href="projects/@head.ProjectKey/board?task=@parent.Key" title="@parent.Title">@parent.Key</a>
+                    <text> / </text>
+                }
+            </span>
+        }
+        <span class="key drawer-key" data-testid="drawer-key">@(_details?.Key ?? WorkItemKey)</span>
+        <span class="saved drawer-saved" role="status" data-testid="drawer-saved">@(_saved is null ? "" : "✓ " + _saved)</span>
+        <span class="spacer"></span>
+        @if (_details?.CanDelete == true)
+        {
+            <button type="button" class="btn btn-ghost btn-sm btn-danger" data-testid="delete-task" disabled="@_busy" @onclick="AskDeleteAsync">Delete</button>
+        }
+        <button type="button" class="icon-btn" aria-label="Close task details" @onclick="CloseAsync">×</button>
+    </div>
+
+    @if (_loadError is not null)
+    {
+        <div class="drawer-body single">
+            <div class="drawer-main">
+                <h2 id="drawer-heading" tabindex="-1">Task not found</h2>
+                <p>@_loadError</p>
+                <button type="button" class="btn" @onclick="CloseAsync">Back to the board</button>
+            </div>
+        </div>
+    }
+    else if (_details is not { } d)
+    {
+        <div class="drawer-body single">
+            <div class="drawer-main">
+                <h2 id="drawer-heading" tabindex="-1" aria-busy="true">Loading @WorkItemKey…</h2>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="drawer-body">
+            <div class="drawer-main">
+                @if (d.Parent is { } parentRef)
+                {
+                    <p class="hint parent-link">Sub-task of <a href="projects/@d.ProjectKey/board?task=@parentRef.Key">@parentRef.Key @parentRef.Title</a></p>
+                }
+
+                @if (_editingTitle)
+                {
+                    <h2 id="drawer-heading" tabindex="-1" class="sr-only">@d.Key: @d.Title</h2>
+                    <div class="title-edit">
+                        <label class="sr-only" for="drawer-title-input">Title</label>
+                        <input id="drawer-title-input" class="input title-input" type="text" maxlength="255" autocomplete="off"
+                               @bind="_titleDraft" @bind:event="oninput" @onkeydown="TitleKeyDownAsync"
+                               aria-invalid="@(_titleError is null ? "false" : "true")" aria-describedby="drawer-title-error" />
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveTitleAsync">Save</button>
+                            <button type="button" class="btn btn-sm" @onclick="CancelTitle">Cancel</button>
+                        </div>
+                        <span id="drawer-title-error" class="error-text" role="alert">@_titleError</span>
+                    </div>
+                }
+                else
+                {
+                    <h2 id="drawer-heading" tabindex="-1" class="drawer-title">
+                        <span class="sr-only">@d.Key: </span>
+                        <button type="button" id="drawer-title-button" class="title-view" data-testid="drawer-title" title="Edit the title"
+                                @onclick="EditTitle">@d.Title</button>
+                    </h2>
+                }
+
+                @if (_conflict is { } conflict)
+                {
+                    <div class="alert alert-warn" role="alert" data-testid="conflict">
+                        <p><strong>@conflict.Message</strong></p>
+                        @if (conflict.Field == ConflictField.Title)
+                        {
+                            <p>Latest title: “@d.Title”</p>
+                        }
+                        else if (conflict.Field == ConflictField.Description)
+                        {
+                            <p>Latest description:</p>
+                            <PlainText Text="@d.Description" Placeholder="(no description)" Class="conflict-latest" />
+                        }
+                        <p class="hint">
+                            Last changed <LocalTime Value="d.UpdatedAt" />.
+                            @(conflict.Field == ConflictField.None
+                                ? "The latest values are shown."
+                                : "Your text is kept below: save again to replace the latest version, or cancel to keep it.")
+                        </p>
+                        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _conflict = null">Dismiss</button>
+                    </div>
+                }
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error" role="alert">@_error</div>
+                }
+                @foreach (var warning in _warnings)
+                {
+                    <div class="alert alert-warn" role="status" data-testid="drawer-warning">@warning</div>
+                }
+
+                <section class="drawer-section" aria-labelledby="description-title">
+                    <div class="section-head">
+                        <h3 id="description-title" class="section-title">Description</h3>
+                        @if (!_editingDescription)
+                        {
+                            <button type="button" class="btn btn-ghost btn-sm" data-testid="edit-description" aria-label="Edit description"
+                                    @onclick="EditDescription">Edit</button>
+                        }
+                    </div>
+                    @if (_editingDescription)
+                    {
+                        <label class="sr-only" for="drawer-description-input">Description</label>
+                        <textarea id="drawer-description-input" class="textarea description-input" maxlength="32000"
+                                  @bind="_descriptionDraft" @bind:event="oninput"
+                                  aria-invalid="@(_descriptionError is null ? "false" : "true")" aria-describedby="drawer-description-error"></textarea>
+                        <span id="drawer-description-error" class="error-text" role="alert">@_descriptionError</span>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="save-description" disabled="@_busy"
+                                    @onclick="SaveDescriptionAsync">Save</button>
+                            <button type="button" class="btn btn-sm" @onclick="CancelDescription">Cancel</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div data-testid="drawer-description">
+                            <PlainText Text="@d.Description" Placeholder="No description yet." />
+                        </div>
+                    }
+                </section>
+
+                @if (d.Type == WorkItemType.Task)
+                {
+                    <SubtaskList @key="@($"subtasks-{d.Key}")" ProjectKey="@d.ProjectKey" Subtasks="d.Subtasks" Statuses="d.Statuses"
+                                 OnAdd="AddSubtaskAsync" OnMarkDone="MarkSubtaskDoneAsync" OnStatusChange="ChangeSubtaskStatusAsync"
+                                 OnShowMore="ShowMoreSubtasksAsync" />
+                }
+
+                <CommentThread @key="@($"comments-{d.Key}")" WorkItemKey="@d.Key" Initial="d.Comments" OnChanged="ReloadHistoryAsync" />
+
+                <details class="drawer-section history-section">
+                    <summary class="section-title">History (@d.History.TotalCount)</summary>
+                    <HistoryList @key="d.Key" WorkItemKey="@d.Key" Initial="d.History" ItemNoun="@Noun(d)" />
+                </details>
+            </div>
+
+            <aside class="drawer-side" aria-label="Details of @d.Key">
+                <div class="detail-row">
+                    <label for="drawer-status">Status</label>
+                    <select id="drawer-status" class="select" disabled="@_busy" value="@(_pendingStatus ?? d.Status.Id)" @onchange="StatusChangedAsync">
+                        @foreach (var status in d.Statuses)
+                        {
+                            <option value="@status.Id">@status.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="detail-row">
+                    <label for="drawer-priority">Priority</label>
+                    <select id="drawer-priority" class="select" disabled="@_busy" value="@((_pendingPriority ?? d.Priority).ToString())" @onchange="PriorityChangedAsync">
+                        @foreach (var priority in Enum.GetValues<Priority>())
+                        {
+                            <option value="@priority.ToString()">@priority</option>
+                        }
+                    </select>
+                </div>
+                <div class="detail-row"><span>Type</span><span>@(d.Type == WorkItemType.Task ? "Task" : "Sub-task")</span></div>
+                <div class="detail-row"><span>Created by</span><span>@d.CreatorName</span></div>
+                <div class="detail-row"><span>Created</span><span class="hint"><LocalTime Value="d.CreatedAt" /></span></div>
+                <div class="detail-row"><span>Updated</span><span class="hint"><LocalTime Value="d.UpdatedAt" /></span></div>
+                @if (d.ResolvedAt is { } resolved)
+                {
+                    <div class="detail-row"><span>Resolved</span><span class="hint"><LocalTime Value="resolved" /></span></div>
+                }
+            </aside>
+        </div>
+    }
+
+    <ModalDialog @ref="_deleteDialog" Title="@($"Delete {_deletePreview?.Key}?")" TestId="delete-confirm">
+        <ChildContent>
+            @if (_deletePreview is { } preview)
+            {
+                <p><strong>@preview.Key</strong> @preview.Title</p>
+                <p>@(preview.SubtaskCount switch
+                   {
+                       0 => "It has no sub-tasks.",
+                       1 => "Its 1 sub-task will be deleted too.",
+                       _ => $"Its {preview.SubtaskCount} sub-tasks will be deleted too.",
+                   })</p>
+                <p class="hint">An administrator can restore deleted tasks.</p>
+                <span class="error-text" role="alert">@_deleteError</span>
+            }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete task</button>
+        </Footer>
+    </ModalDialog>
+</dialog>
+
+@code {
+    private enum ConflictField { None, Title, Description }
+
+    private sealed record ConflictInfo(string Message, ConflictField Field);
+
+    private ElementReference _dialog;
+    private DotNetObjectReference<TaskDrawer>? _self;
+    private ModalDialog? _deleteDialog;
+    private string? _loadedKey;
+    private WorkItemDetails? _details;
+    private string? _loadError;
+    private string? _error;
+    private string? _saved;
+    private IReadOnlyList<string> _warnings = [];
+    private ConflictInfo? _conflict;
+    private bool _editingTitle;
+    private string _titleDraft = "";
+    private string? _titleError;
+    private bool _editingDescription;
+    private string _descriptionDraft = "";
+    private string? _descriptionError;
+    private long? _pendingStatus;
+    private Priority? _pendingPriority;
+    private DeletePreview? _deletePreview;
+    private string? _deleteError;
+    private string? _focusAfterRender;
+    private bool _busy;
+    private bool _closed;
+
+    /// <summary>The task or sub-task shown, from <c>?task={KEY-N}</c>.</summary>
+    [Parameter, EditorRequired]
+    public string WorkItemKey { get; set; } = "";
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    /// <summary>Raised after a change that the board shows (title, priority, status, sub-tasks, deletion).</summary>
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(WorkItemKey, _loadedKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // A link inside the drawer (a sub-task, or back to the parent) shows another item in the same dialog.
+        _loadedKey = WorkItemKey;
+        ResetForNewItem();
+        var result = await Items.GetAsync(WorkItemKey, CancellationToken.None);
+        if (!string.Equals(WorkItemKey, _loadedKey, StringComparison.Ordinal))
+        {
+            return; // another item was opened while this one loaded
+        }
+
+        if (result.IsSuccess)
+        {
+            _details = result.Value!;
+        }
+        else
+        {
+            _loadError = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden
+                ? $"{WorkItemKey} was not found. It may have been deleted, or the link may be wrong."
+                : result.Error.Message;
+        }
+
+        _focusAfterRender = "drawer-heading";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _self = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("upms.dialog.open", _dialog, _self);
+            }
+
+            if (_focusAfterRender is { } id)
+            {
+                _focusAfterRender = null;
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    /// <summary>Called by the browser when the dialog closes (Esc or the close button).</summary>
+    [JSInvokable]
+    public Task OnDialogClosed() => NotifyClosedAsync();
+
+    private async Task CloseAsync()
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("upms.dialog.close", _dialog);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        await NotifyClosedAsync();
+    }
+
+    private async Task NotifyClosedAsync()
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        _closed = true;
+        await OnClose.InvokeAsync();
+    }
+
+    private void ResetForNewItem()
+    {
+        _details = null;
+        _loadError = null;
+        _error = null;
+        _saved = null;
+        _warnings = [];
+        _conflict = null;
+        _editingTitle = false;
+        _titleError = null;
+        _editingDescription = false;
+        _descriptionError = null;
+        _deletePreview = null;
+    }
+
+    private static string Noun(WorkItemDetails details) => details.Type == WorkItemType.Task ? "task" : "sub-task";
+
+    // ----- Fields (FR-026: each field saves on its own with a visible confirmation) -----
+
+    private void EditTitle()
+    {
+        _editingTitle = true;
+        _titleDraft = _details!.Title;
+        _titleError = null;
+        _focusAfterRender = "drawer-title-input";
+    }
+
+    private void CancelTitle()
+    {
+        _editingTitle = false;
+        _titleError = null;
+        _focusAfterRender = "drawer-title-button";
+    }
+
+    private Task TitleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            CancelTitle();
+        }
+
+        return e.Key == "Enter" ? SaveTitleAsync() : Task.CompletedTask;
+    }
+
+    private async Task SaveTitleAsync()
+    {
+        if (string.Equals(_titleDraft.Trim(), _details!.Title, StringComparison.Ordinal))
+        {
+            CancelTitle();
+            return;
+        }
+
+        var outcome = await SaveAsync(new WorkItemEdit.Title(_titleDraft), "Title saved", ConflictField.Title);
+        if (outcome.Saved)
+        {
+            _editingTitle = false;
+            _titleError = null;
+            _focusAfterRender = "drawer-title-button";
+        }
+        else
+        {
+            _titleError = outcome.Error?.MessageFor("Title"); // the typed text stays in the box
+        }
+    }
+
+    private void EditDescription()
+    {
+        _editingDescription = true;
+        _descriptionDraft = _details!.Description ?? "";
+        _descriptionError = null;
+        _focusAfterRender = "drawer-description-input";
+    }
+
+    private void CancelDescription()
+    {
+        _editingDescription = false;
+        _descriptionError = null;
+        if (_conflict?.Field == ConflictField.Description)
+        {
+            _conflict = null;
+        }
+    }
+
+    private async Task SaveDescriptionAsync()
+    {
+        var outcome = await SaveAsync(new WorkItemEdit.Description(_descriptionDraft), "Description saved", ConflictField.Description);
+        if (outcome.Saved)
+        {
+            _editingDescription = false;
+            _descriptionError = null;
+        }
+        else
+        {
+            _descriptionError = outcome.Error?.MessageFor("Description");
+        }
+    }
+
+    private async Task StatusChangedAsync(ChangeEventArgs e)
+    {
+        if (!long.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var columnId))
+        {
+            return;
+        }
+
+        // Rendering the chosen value while saving lets a refused change put the saved value back.
+        _pendingStatus = columnId;
+        try
+        {
+            var name = _details!.Statuses.FirstOrDefault(s => s.Id == columnId)?.Name;
+            await SaveAsync(new WorkItemEdit.Status(columnId), $"Status changed to {name}", ConflictField.None);
+        }
+        finally
+        {
+            _pendingStatus = null;
+        }
+    }
+
+    private async Task PriorityChangedAsync(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<Priority>(e.Value?.ToString(), out var priority))
+        {
+            return;
+        }
+
+        _pendingPriority = priority;
+        try
+        {
+            await SaveAsync(new WorkItemEdit.Priority(priority), $"Priority changed to {priority}", ConflictField.None);
+        }
+        finally
+        {
+            _pendingPriority = null;
+        }
+    }
+
+    /// <summary>Saves one field. A conflict shows the latest values and keeps the user's text (FR-032).</summary>
+    private async Task<(bool Saved, AppError? Error)> SaveAsync(WorkItemEdit edit, string savedMessage, ConflictField field)
+    {
+        if (_details is null || _busy)
+        {
+            return (false, null);
+        }
+
+        _busy = true;
+        _saved = null;
+        _error = null;
+        _warnings = [];
+        try
+        {
+            var result = await Items.UpdateAsync(_details.Key, edit, _details.Version, CancellationToken.None);
+            if (result.IsSuccess)
+            {
+                _details = result.Value!;
+                _conflict = null;
+                _warnings = result.Warnings;
+                _saved = savedMessage;
+                await OnChanged.InvokeAsync();
+                return (true, null);
+            }
+
+            ShowError(result.Error!, field);
+            return (false, result.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ShowError(AppError error, ConflictField field)
+    {
+        switch (error.Kind)
+        {
+            case ErrorKind.Conflict:
+                if (error.Current is WorkItemDetails latest)
+                {
+                    _details = latest; // a second save applies the kept text to the latest version
+                }
+
+                _conflict = new ConflictInfo(error.Message, field);
+                break;
+            case ErrorKind.NotFound:
+                _details = null;
+                _loadError = $"{_loadedKey} was deleted by someone else.";
+                break;
+            case ErrorKind.Validation:
+                break; // shown next to the field
+            default:
+                _error = error.Message;
+                break;
+        }
+    }
+
+    // ----- Sub-tasks (FR-028) -----
+
+    private async Task<string?> AddSubtaskAsync(string title)
+    {
+        var result = await Items.AddSubtaskAsync(_details!.Key, title, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            return result.Error!.MessageFor("Title");
+        }
+
+        _details = result.Value!;
+        _saved = "Sub-task added";
+        await OnChanged.InvokeAsync();
+        StateHasChanged(); // called through a plain delegate from the sub-task list
+        return null;
+    }
+
+    private async Task MarkSubtaskDoneAsync(SubtaskView subtask)
+    {
+        _saved = null;
+        _error = null;
+        var result = await Items.MarkSubtaskDoneAsync(subtask.Key, subtask.Version, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            await ShowSubtaskErrorAsync(result.Error!);
+            return;
+        }
+
+        _details = result.Value!;
+        _saved = $"{subtask.Key} marked done";
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ChangeSubtaskStatusAsync((SubtaskView Subtask, long ColumnId) change)
+    {
+        _saved = null;
+        _error = null;
+        var result = await Items.UpdateAsync(change.Subtask.Key, new WorkItemEdit.Status(change.ColumnId), change.Subtask.Version,
+            CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            await ShowSubtaskErrorAsync(result.Error!);
+            return;
+        }
+
+        await ReloadAsync();
+        _saved = $"{change.Subtask.Key} moved to {result.Value!.Status.Name}";
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ShowSubtaskErrorAsync(AppError error)
+    {
+        _error = error.Message;
+        await ReloadAsync(); // show the sub-tasks as they are now
+    }
+
+    private async Task ShowMoreSubtasksAsync()
+    {
+        var current = _details!;
+        var result = await Items.ListSubtasksAsync(current.Key, new PageRequest(current.Subtasks.PageNumber + 1), CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        var next = result.Value!;
+        var known = current.Subtasks.Items.Select(s => s.Key).ToHashSet(StringComparer.Ordinal);
+        _details = current with
+        {
+            Subtasks = new Page<SubtaskView>([.. current.Subtasks.Items, .. next.Items.Where(s => !known.Contains(s.Key))],
+                next.TotalCount, next.PageNumber, next.PageSize),
+        };
+    }
+
+    // ----- Comments and history (FR-030, FR-031) -----
+
+    private async Task ReloadHistoryAsync()
+    {
+        var result = await Items.GetHistoryAsync(_details!.Key, PageRequest.First, CancellationToken.None);
+        if (result.IsSuccess && _details is not null)
+        {
+            _details = _details with { History = result.Value! };
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        var result = await Items.GetAsync(_loadedKey!, CancellationToken.None);
+        if (result.IsSuccess)
+        {
+            _details = result.Value!;
+        }
+    }
+
+    // ----- Delete (FR-033) -----
+
+    private async Task AskDeleteAsync()
+    {
+        _error = null;
+        _deleteError = null;
+        var result = await Items.PreviewDeleteAsync(_details!.Key, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        _deletePreview = result.Value!;
+        _deleteDialog!.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_deletePreview is not { } preview || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Items.DeleteAsync(preview.Key, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _deleteError = result.Error!.Message;
+                return;
+            }
+
+            await _deleteDialog!.CloseAsync();
+            await OnChanged.InvokeAsync();
+            await CloseAsync();
+            Announcer.Announce($"Deleted {preview.Key}.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    public void Dispose() => _self?.Dispose();
+}
