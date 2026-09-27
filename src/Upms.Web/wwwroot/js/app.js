@@ -47,6 +47,14 @@
     if (el) el.focus();
   };
 
+  // For putting focus back after the drawer closes or an item moves, which reaches the page after a round trip: only
+  // when focus was lost (it is on the page itself), never taking it from where the person has moved it meanwhile.
+  upms.focusByIdIfLost = (id) => {
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    upms.focusById(id);
+  };
+
   // Password fields (OWASP ASVS 2.1.8, 2.1.12): "Show password" reveals what was typed, and new passwords get a
   // strength hint. Listeners are on the document, so pages loaded by enhanced navigation work too.
   document.addEventListener('click', (e) => {

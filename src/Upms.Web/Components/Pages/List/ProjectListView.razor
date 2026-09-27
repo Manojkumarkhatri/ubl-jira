@@ -103,11 +103,11 @@ else
                 {
                     <li class="chip" data-testid="filter-chip">
                         <span class="chip-label">@chip.Label</span>
-                        <button type="button" class="chip-remove" aria-label="Remove filter @chip.Label" @onclick="() => Go(chip.Without)">×</button>
+                        <button type="button" class="chip-remove" aria-label="Remove filter @chip.Label" @onclick="() => Go(chip.Remove(Latest))">×</button>
                     </li>
                 }
             </ul>
-            <button type="button" class="btn btn-sm btn-ghost" data-testid="clear-filters" @onclick="() => Go(State.WithoutFilters())">Clear filters</button>
+            <button type="button" class="btn btn-sm btn-ghost" data-testid="clear-filters" @onclick="() => Go(Latest.WithoutFilters())">Clear filters</button>
         </div>
     }
 
@@ -125,7 +125,7 @@ else
         @if (State.HasFilters)
         {
             <EmptyState Title="No task matches these filters.">
-                <button type="button" class="btn" data-testid="empty-clear-filters" @onclick="() => Go(State.WithoutFilters())">Clear filters</button>
+                <button type="button" class="btn" data-testid="empty-clear-filters" @onclick="() => Go(Latest.WithoutFilters())">Clear filters</button>
             </EmptyState>
         }
         else
@@ -143,7 +143,7 @@ else
                         @foreach (var column in TableColumns)
                         {
                             <th scope="col" class="@column.Class" data-sort="@ListState.NameOf(column.Sort)" aria-sort="@AriaSort(column.Sort)">
-                                <button type="button" class="sort-btn" @onclick="() => Go(State.WithSort(column.Sort))">@column.Label</button>
+                                <button type="button" class="sort-btn" @onclick="() => Go(Latest.WithSort(column.Sort))">@column.Label</button>
                             </th>
                         }
                     </tr>
@@ -177,7 +177,7 @@ else
                 </tbody>
             </table>
         </div>
-        <Pager PageNumber="_view.Rows.PageNumber" PageCount="_view.Rows.PageCount" Label="Pages of the list" OnPageChanged="page => Go(State.WithPage(page))" />
+        <Pager PageNumber="_view.Rows.PageNumber" PageCount="_view.Rows.PageCount" Label="Pages of the list" OnPageChanged="page => Go(Latest.WithPage(page))" />
     }
 
     @if (!string.IsNullOrEmpty(TaskKey))
@@ -243,6 +243,12 @@ else
 
     private ListState State { get; set; } = ListState.Default;
 
+    // A new address reaches the page only after a round trip through the browser: a choice made meanwhile builds on the
+    // one asked for last, not on the address still shown (FR-030).
+    private ListState? _requested;
+
+    private ListState Latest => _requested ?? State;
+
     private string FirstToDoName => _view!.Columns.FirstOrDefault(c => c.Id == _view.FirstToDoColumnId)?.Name ?? "To Do";
 
     private string CountText => _view!.Rows.TotalCount == 1 ? "1 task" : $"{_view.Rows.TotalCount} tasks";
@@ -265,7 +271,12 @@ else
     protected override async Task OnParametersSetAsync()
     {
         State = ListState.Parse(SortValue, DirectionValue, ColumnsValue, TypesValue, PrioritiesValue, AssigneesValue, DueValue, TextValue, PageValue);
-        var address = Key + "?" + string.Join('&', State.ToParameters().Select(p => $"{p.Key}={p.Value}"));
+        var address = AddressOf(State);
+        if (_requested is { } requested && AddressOf(requested) == address)
+        {
+            _requested = null;
+        }
+
         if (address == _loadedAddress)
         {
             return;
@@ -284,7 +295,7 @@ else
             _focusKey = null;
             try
             {
-                await JS.InvokeVoidAsync("upms.focusById", LinkId(key));
+                await JS.InvokeVoidAsync("upms.focusByIdIfLost", LinkId(key));
             }
             catch (JSDisconnectedException)
             {
@@ -292,10 +303,19 @@ else
         }
     }
 
+    private string AddressOf(ListState state) => Key + "?" + string.Join('&', state.ToParameters().Select(p => $"{p.Key}={p.Value}"));
+
     private async Task LoadAsync()
     {
+        var address = _loadedAddress;
+        var query = State.ToQuery();
         _today = await ViewerToday.GetAsync();
-        var result = await Lists.ListAsync(Key, State.ToQuery(), _today, CancellationToken.None);
+        var result = await Lists.ListAsync(Key, query, _today, CancellationToken.None);
+        if (address != _loadedAddress)
+        {
+            return; // the answer for an older address, which arrived after a newer one was asked for
+        }
+
         if (!result.IsSuccess)
         {
             // Someone removed from the team meanwhile sees what they may see now: "not found" (Phase 2 FR-011).
@@ -310,23 +330,27 @@ else
         _view = result.Value!;
     }
 
-    private void Go(ListState state) => Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(state.ToParameters()));
+    private void Go(ListState state)
+    {
+        _requested = state;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(state.ToParameters()));
+    }
 
-    private void Search() => Go(State.WithText(_textDraft));
+    private void Search() => Go(Latest.WithText(_textDraft));
 
     private void ColumnChanged(ChangeEventArgs e) =>
-        Go(State.WithColumn(long.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null));
+        Go(Latest.WithColumn(long.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null));
 
     private void TypeChanged(ChangeEventArgs e) =>
-        Go(State.WithType(Enum.GetValues<StatusCategory>().Where(t => ListState.NameOf(t) == e.Value?.ToString()).Select(t => (StatusCategory?)t).FirstOrDefault()));
+        Go(Latest.WithType(Enum.GetValues<StatusCategory>().Where(t => ListState.NameOf(t) == e.Value?.ToString()).Select(t => (StatusCategory?)t).FirstOrDefault()));
 
     private void PriorityChanged(ChangeEventArgs e) =>
-        Go(State.WithPriority(Enum.TryParse<Priority>(e.Value?.ToString(), ignoreCase: true, out var priority) ? priority : null));
+        Go(Latest.WithPriority(Enum.TryParse<Priority>(e.Value?.ToString(), ignoreCase: true, out var priority) ? priority : null));
 
-    private void AssigneeChanged(ChangeEventArgs e) => Go(State.WithAssignee(e.Value?.ToString() ?? ""));
+    private void AssigneeChanged(ChangeEventArgs e) => Go(Latest.WithAssignee(e.Value?.ToString() ?? ""));
 
     private void DueChanged(ChangeEventArgs e) =>
-        Go(State.WithDue(new[] { DueFilter.Overdue, DueFilter.Next7Days, DueFilter.NoDueDate }.FirstOrDefault(d => ListState.NameOf(d) == e.Value?.ToString())));
+        Go(Latest.WithDue(new[] { DueFilter.Overdue, DueFilter.Next7Days, DueFilter.NoDueDate }.FirstOrDefault(d => ListState.NameOf(d) == e.Value?.ToString())));
 
     private string TaskHref(string key) => Navigation.ToBaseRelativePath(Navigation.GetUriWithQueryParameter("task", key));
 
@@ -381,48 +405,48 @@ else
     };
 
     /// <summary>One removable chip per active filter value, in the order of the filter controls (FR-030).</summary>
-    private IEnumerable<(string Label, ListState Without)> Chips()
+    private IEnumerable<(string Label, Func<ListState, ListState> Remove)> Chips()
     {
         foreach (var id in State.Columns)
         {
             var name = _view!.Columns.FirstOrDefault(c => c.Id == id)?.Name ?? id.ToString(CultureInfo.InvariantCulture);
-            yield return ($"Status: {name}", State with { Columns = State.Columns.Where(c => c != id).ToList(), Page = 1 });
+            yield return ($"Status: {name}", s => s with { Columns = s.Columns.Where(c => c != id).ToList(), Page = 1 });
         }
 
         foreach (var type in State.Types)
         {
-            yield return ($"Status type: {TypeLabel(type)}", State with { Types = State.Types.Where(t => t != type).ToList(), Page = 1 });
+            yield return ($"Status type: {TypeLabel(type)}", s => s with { Types = s.Types.Where(t => t != type).ToList(), Page = 1 });
         }
 
         foreach (var priority in State.Priorities)
         {
-            yield return ($"Priority: {priority}", State with { Priorities = State.Priorities.Where(p => p != priority).ToList(), Page = 1 });
+            yield return ($"Priority: {priority}", s => s with { Priorities = s.Priorities.Where(p => p != priority).ToList(), Page = 1 });
         }
 
         if (State.Me)
         {
-            yield return ("Assignee: Me", State with { Me = false, Page = 1 });
+            yield return ("Assignee: Me", s => s with { Me = false, Page = 1 });
         }
 
         if (State.Unassigned)
         {
-            yield return ("Assignee: Unassigned", State with { Unassigned = false, Page = 1 });
+            yield return ("Assignee: Unassigned", s => s with { Unassigned = false, Page = 1 });
         }
 
         foreach (var person in State.People)
         {
             var name = _view!.People.FirstOrDefault(p => p.UserId == person)?.DisplayName ?? "someone";
-            yield return ($"Assignee: {name}", State with { People = State.People.Where(p => p != person).ToList(), Page = 1 });
+            yield return ($"Assignee: {name}", s => s with { People = s.People.Where(p => p != person).ToList(), Page = 1 });
         }
 
         if (State.Due != DueFilter.Any)
         {
-            yield return ($"Due: {DueLabel(State.Due)}", State with { Due = DueFilter.Any, Page = 1 });
+            yield return ($"Due: {DueLabel(State.Due)}", s => s with { Due = DueFilter.Any, Page = 1 });
         }
 
         if (State.Text.Length > 0)
         {
-            yield return ($"Words: {State.Text}", State with { Text = "", Page = 1 });
+            yield return ($"Words: {State.Text}", s => s with { Text = "", Page = 1 });
         }
     }
 }

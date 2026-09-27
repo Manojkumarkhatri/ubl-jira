@@ -190,8 +190,12 @@ else
     private string? _error;
     private string? _conflict;
     private Pending? _pending;
+    private Pending? _requested;
+    private Task _saving = Task.CompletedTask;
+    private readonly Dictionary<string, int> _failedSaves = new(StringComparer.Ordinal);
     private DateOnly _today;
     private TimelineZoom _zoom = TimelineZoom.Months;
+    private (TimelineZoom Zoom, bool Hide)? _requestedView;
     private ElementReference _scroller;
     private DotNetObjectReference<TimelinePage>? _self;
     private bool _scriptReady;
@@ -218,6 +222,10 @@ else
     {
         _zoom = Enum.GetValues<TimelineZoom>().FirstOrDefault(z => ZoomName(z) == ScaleValue?.Trim().ToLowerInvariant(), TimelineZoom.Months);
         var hide = CompletedValue == "hide";
+        if (_requestedView == (_zoom, hide))
+        {
+            _requestedView = null;
+        }
         if (_loadedHide != hide)
         {
             _loadedHide = hide;
@@ -240,7 +248,7 @@ else
             if (_focusAfterRender is { } id && string.IsNullOrEmpty(TaskKey))
             {
                 _focusAfterRender = null;
-                await JS.InvokeVoidAsync("upms.focusById", id);
+                await JS.InvokeVoidAsync("upms.focusByIdIfLost", id);
             }
         }
         catch (JSDisconnectedException)
@@ -248,23 +256,25 @@ else
         }
     }
 
-    /// <summary>Called by timeline.js when a bar or one of its ends was dragged by whole days.</summary>
+    /// <summary>Called by timeline.js when a bar or one of its ends was dragged by whole days. The offset comes from the
+    /// browser: one longer than the span of dates a task may have (1 Jan 2000 to 31 Dec 2099) cannot come from a drag
+    /// and is ignored.</summary>
     [JSInvokable]
     public async Task OnBarDragged(string key, string mode, int days)
     {
-        if (_view is not { CanContribute: true } || days == 0 || Find(key) is not { } item)
+        const int MaxDragDays = 36_524;
+        if (_view is not { CanContribute: true } || days is 0 or < -MaxDragDays or > MaxDragDays || Find(key) is not { } item)
         {
             return;
         }
 
+        var (first, last) = DatesOf(item);
         (DateOnly? Start, DateOnly? Due) next = mode switch
         {
             // An end never passes the other end (FR-037).
-            "start" => ((item.StartDate ?? item.DueDate)!.Value.AddDays(days) is var start && item.DueDate is { } due && start > due ? due : start,
-                item.DueDate),
-            "end" => (item.StartDate,
-                (item.DueDate ?? item.StartDate)!.Value.AddDays(days) is var end && item.StartDate is { } begin && end < begin ? begin : end),
-            _ => (item.StartDate?.AddDays(days), item.DueDate?.AddDays(days)),
+            "start" => ((first ?? last)!.Value.AddDays(days) is var start && last is { } due && start > due ? due : start, last),
+            "end" => (first, (last ?? first)!.Value.AddDays(days) is var end && first is { } begin && end < begin ? begin : end),
+            _ => (first?.AddDays(days), last?.AddDays(days)),
         };
         _pending = null;
         await SaveAsync(item, next.Start, next.Due);
@@ -313,11 +323,21 @@ else
     private TimelineItem? Find(string key) =>
         _view?.Rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)).FirstOrDefault(i => i.Key == key);
 
-    private void SetZoom(TimelineZoom zoom) =>
-        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("scale", zoom == TimelineZoom.Months ? null : ZoomName(zoom)));
+    private void SetZoom(TimelineZoom zoom) => GoToView(zoom, _requestedView?.Hide ?? CompletedValue == "hide");
 
-    private void ToggleCompleted() =>
-        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("completed", _view!.HidingCompleted ? null : "hide"));
+    private void ToggleCompleted() => GoToView(_requestedView?.Zoom ?? _zoom, !(_requestedView?.Hide ?? CompletedValue == "hide"));
+
+    /// <summary>A new address reaches the page only after a round trip through the browser, so the address is built from
+    /// the choices asked for last: a second choice made meanwhile keeps the first.</summary>
+    private void GoToView(TimelineZoom zoom, bool hide)
+    {
+        _requestedView = (zoom, hide);
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["scale"] = zoom == TimelineZoom.Months ? null : ZoomName(zoom),
+            ["completed"] = hide ? "hide" : null,
+        }));
+    }
 
     private async Task GoToTodayAsync()
     {
@@ -388,7 +408,7 @@ else
 
     private void Adjust(TimelineItem item, int days, DateEnd end)
     {
-        var (start, due) = _pending is { } pending && pending.Key == item.Key ? (pending.Start, pending.Due) : (item.StartDate, item.DueDate);
+        var (start, due) = DatesOf(item);
         switch (end)
         {
             case DateEnd.Due:
@@ -423,7 +443,42 @@ else
 
     // ----- Saving (FR-039) -----
 
+    /// <summary>The dates a new change starts from: the change being made, else the latest one still being saved, else
+    /// the task's own.</summary>
+    private (DateOnly? Start, DateOnly? Due) DatesOf(TimelineItem item) =>
+        _pending is { } pending && pending.Key == item.Key ? (pending.Start, pending.Due)
+        : _requested is { } requested && requested.Key == item.Key ? (requested.Start, requested.Due)
+        : Find(item.Key) is { } current ? (current.StartDate, current.DueDate)
+        : (item.StartDate, item.DueDate);
+
+    /// <summary>Saves one change at a time, in the order asked: over a slow connection the next key can arrive before a
+    /// save answers, and each save needs the version the one before it returned. When a save fails, the changes to the
+    /// same task queued behind it, which were built on it, are dropped.</summary>
     private async Task<bool> SaveAsync(TimelineItem item, DateOnly? start, DateOnly? due, string? savedMessage = null)
+    {
+        var request = new Pending(item.Key, start, due);
+        _requested = request;
+        var failuresBefore = _failedSaves.GetValueOrDefault(item.Key);
+        var previous = _saving;
+        var done = new TaskCompletionSource();
+        _saving = done.Task;
+        try
+        {
+            await previous;
+            return failuresBefore == _failedSaves.GetValueOrDefault(item.Key) && await SaveNowAsync(Find(item.Key) ?? item, start, due, savedMessage);
+        }
+        finally
+        {
+            if (ReferenceEquals(_requested, request))
+            {
+                _requested = null;
+            }
+
+            done.SetResult();
+        }
+    }
+
+    private async Task<bool> SaveNowAsync(TimelineItem item, DateOnly? start, DateOnly? due, string? savedMessage)
     {
         var result = await Timelines.RescheduleAsync(item.Key, start, due, item.Version, CancellationToken.None);
         if (result.IsSuccess)
@@ -458,6 +513,7 @@ else
             _error = error.MessageFor("DueDate");
         }
 
+        _failedSaves[item.Key] = _failedSaves.GetValueOrDefault(item.Key) + 1;
         Announcer.Announce(_conflict ?? _error ?? error.Message);
         return false;
     }

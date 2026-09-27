@@ -150,7 +150,7 @@ public sealed class TimelinePageTests : BunitTestBase
         Assert.NotNull(Bar(cut, "WEB-4"));
         Assert.Empty(cut.FindAll("[data-testid=unscheduled-item]"));
         Assert.Equal("WEB-4 scheduled from 27 Sep 2026 to 3 Oct 2026.", _announced[^1]);
-        Assert.Equal("tl-bar-WEB-4", JSInterop.Invocations.Last(i => i.Identifier == "upms.focusById").Arguments[0]);
+        Assert.Equal("tl-bar-WEB-4", JSInterop.Invocations.Last(i => i.Identifier == "upms.focusByIdIfLost").Arguments[0]);
     }
 
     [Fact]
@@ -200,6 +200,49 @@ public sealed class TimelinePageTests : BunitTestBase
     }
 
     [Fact]
+    public void Keys_pressed_while_a_change_is_being_saved_build_on_it_and_the_next_save_waits_for_it()
+    {
+        // Over a slow connection the next key can arrive before the save has answered.
+        var cut = RenderTimeline();
+        _timeline.Gate = new TaskCompletionSource();
+
+        Press(cut, "WEB-1", "ArrowLeft");
+        Press(cut, "WEB-1", "Enter");                   // 4–9 Oct, being saved
+        Press(cut, "WEB-1", "ArrowRight", shift: true); // builds on 4–9 Oct
+        Press(cut, "WEB-1", "Enter");                   // waits for the first save
+
+        Assert.Equal(("WEB-1", (DateOnly?)Oct(4), (DateOnly?)Oct(9)), Single(_timeline.Reschedules));
+        cut.InvokeAsync(_timeline.Gate.SetResult);
+
+        cut.WaitForAssertion(() => Assert.Equal(2, _timeline.Reschedules.Count));
+        Assert.Equal(("WEB-1", (DateOnly?)Oct(4), (DateOnly?)Oct(10), 9), (_timeline.Reschedules[1].Key, _timeline.Reschedules[1].Start,
+            _timeline.Reschedules[1].Due, (int)_timeline.Reschedules[1].Version.Single())); // with the version the first save returned
+        cut.WaitForAssertion(() => Assert.Equal("WEB-1 Plan the launch, 4 Oct 2026 to 10 Oct 2026, In progress, assigned to Bilal Ahmed",
+            Bar(cut, "WEB-1").GetAttribute("aria-label")));
+        Assert.Empty(cut.FindAll("[data-testid=conflict]"));
+    }
+
+    [Fact]
+    public void A_change_queued_behind_a_save_that_fails_is_dropped()
+    {
+        var current = FakeTimelineService.Item("WEB-1", "Plan the launch", FakeTimelineService.InProgress, Oct(12), Oct(15));
+        _timeline.NextResult = () => AppError.Conflict("WEB-1 was changed by someone else. The timeline now shows its current dates.", current);
+        var cut = RenderTimeline();
+        _timeline.Gate = new TaskCompletionSource();
+
+        Press(cut, "WEB-1", "ArrowLeft");
+        Press(cut, "WEB-1", "Enter");
+        Press(cut, "WEB-1", "ArrowRight", shift: true);
+        Press(cut, "WEB-1", "Enter"); // built on a change that will be refused
+        cut.InvokeAsync(_timeline.Gate.SetResult);
+
+        cut.WaitForAssertion(() => Assert.Contains("WEB-1 was changed by someone else.", cut.Find("[data-testid=conflict]").TextContent,
+            StringComparison.Ordinal));
+        Assert.Equal(("WEB-1", (DateOnly?)Oct(4), (DateOnly?)Oct(9)), Single(_timeline.Reschedules));
+        Assert.Equal("WEB-1 Plan the launch, 12 Oct 2026 to 15 Oct 2026, In progress, unassigned", Bar(cut, "WEB-1").GetAttribute("aria-label"));
+    }
+
+    [Fact]
     public void Hide_completed_is_kept_in_the_address()
     {
         var cut = RenderTimeline();
@@ -238,6 +281,21 @@ public sealed class TimelinePageTests : BunitTestBase
         cut.InvokeAsync(() => cut.Instance.OnBarDragged("WEB-1", mode, days));
 
         Assert.Equal(("WEB-1", (DateOnly?)Oct(start), (DateOnly?)Oct(due)), Single(_timeline.Reschedules));
+    }
+
+    [Theory]
+    [InlineData("move", int.MaxValue)]
+    [InlineData("start", int.MinValue)]
+    [InlineData("end", 40_000)]
+    public async Task An_offset_no_drag_can_produce_is_ignored(string mode, int days)
+    {
+        // The offset comes from the browser, so a page changed by its user could send anything (security review F1).
+        var cut = RenderTimeline();
+
+        await cut.InvokeAsync(() => cut.Instance.OnBarDragged("WEB-1", mode, days));
+
+        Assert.Empty(_timeline.Reschedules);
+        Assert.Contains("left:520px", Style(cut, "WEB-1"), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -35,7 +35,7 @@ else
         var project = group[0];
         <section class="my-tasks-group" data-testid="my-tasks-group" aria-labelledby="group-@project.ProjectKey">
             <h2 class="group-title" id="group-@project.ProjectKey">
-                @project.ProjectName <a class="key" href="projects/@project.ProjectKey/board">(@project.ProjectKey)</a>
+                <a href="projects/@project.ProjectKey/board">@project.ProjectName <span class="key">(@project.ProjectKey)</span></a>
             </h2>
             <div class="table-wrap">
                 <table class="tbl">
@@ -138,7 +138,7 @@ else
             _focusKey = null;
             try
             {
-                await JS.InvokeVoidAsync("upms.focusById", _page?.Items.Any(r => r.Key == key) == true ? LinkId(key) : "my-tasks-heading");
+                await JS.InvokeVoidAsync("upms.focusByIdIfLost", _page?.Items.Any(r => r.Key == key) == true ? LinkId(key) : "my-tasks-heading");
             }
             catch (JSDisconnectedException)
             {

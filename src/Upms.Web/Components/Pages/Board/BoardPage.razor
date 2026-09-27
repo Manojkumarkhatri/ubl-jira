@@ -121,7 +121,7 @@ else
             _focusCardKey = null;
             try
             {
-                await JS.InvokeVoidAsync("upms.focusById", $"card-{key}-title");
+                await JS.InvokeVoidAsync("upms.focusByIdIfLost", $"card-{key}-title");
             }
             catch (JSDisconnectedException)
             {

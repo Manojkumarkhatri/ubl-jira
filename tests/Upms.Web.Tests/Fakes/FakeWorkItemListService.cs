@@ -44,16 +44,35 @@ public sealed class FakeWorkItemListService : IWorkItemListService
 
     public List<(WorkItemListQuery Query, DateOnly Today)> Queries { get; } = [];
 
-    public Task<Result<WorkItemListView>> ListAsync(string projectKey, WorkItemListQuery query, DateOnly today, CancellationToken ct)
+    /// <summary>When set, the status-type filter is applied, so that answers for different addresses differ.</summary>
+    public bool FilterByType { get; set; }
+
+    private readonly Queue<TaskCompletionSource> _holds = new();
+
+    /// <summary>The next query waits for the returned source before answering, as a slow answer would.</summary>
+    public TaskCompletionSource Hold()
+    {
+        var hold = new TaskCompletionSource();
+        _holds.Enqueue(hold);
+        return hold;
+    }
+
+    public async Task<Result<WorkItemListView>> ListAsync(string projectKey, WorkItemListQuery query, DateOnly today, CancellationToken ct)
     {
         Queries.Add((query, today));
-        if (projectKey != "WEB")
+        if (_holds.TryDequeue(out var hold))
         {
-            return Task.FromResult(Result<WorkItemListView>.Fail(AppError.NotFound("project")));
+            await hold.Task;
         }
 
-        var page = new Page<WorkItemRow>(Rows, TotalCount ?? Rows.Count, query.Page, 50);
-        return Task.FromResult(Result<WorkItemListView>.Ok(new WorkItemListView("WEB", "Website Revamp", CanContribute, CanManage: false,
-            CanRestoreDeleted: false, ToDo.Id, [ToDo, InProgress, Done], People, page)));
+        if (projectKey != "WEB")
+        {
+            return Result<WorkItemListView>.Fail(AppError.NotFound("project"));
+        }
+
+        var rows = FilterByType && query.Categories is { Count: > 0 } types ? Rows.Where(r => types.Contains(r.Status.Category)).ToList() : Rows;
+        var page = new Page<WorkItemRow>(rows, TotalCount ?? rows.Count, query.Page, 50);
+        return Result<WorkItemListView>.Ok(new WorkItemListView("WEB", "Website Revamp", CanContribute, CanManage: false,
+            CanRestoreDeleted: false, ToDo.Id, [ToDo, InProgress, Done], People, page));
     }
 }

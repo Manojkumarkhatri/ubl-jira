@@ -35,6 +35,9 @@ public sealed class FakeTimelineService : ITimelineService
     /// <summary>Returned instead of saving the next reschedule.</summary>
     public Func<Result<TimelineItem>>? NextResult { get; set; }
 
+    /// <summary>When set, reschedules wait for it before answering, as over a slow connection.</summary>
+    public TaskCompletionSource? Gate { get; set; }
+
     public static TimelineItem Item(string key, string title, StatusOption status, DateOnly? start, DateOnly? due, AssigneeRef? assignee = null) =>
         new(key, title, status, assignee, start, due, status.Category != StatusCategory.Done, [1, 2, 3]);
 
@@ -53,14 +56,19 @@ public sealed class FakeTimelineService : ITimelineService
     public Task<Result<Page<TimelineItem>>> ListUnscheduledAsync(string projectKey, bool hideCompleted, PageRequest page, CancellationToken ct) =>
         Task.FromResult(Result<Page<TimelineItem>>.Ok(new Page<TimelineItem>([], Unscheduled.Count, page.Page, 50)));
 
-    public Task<Result<TimelineItem>> RescheduleAsync(string workItemKey, DateOnly? start, DateOnly? due, byte[] expectedVersion,
+    public async Task<Result<TimelineItem>> RescheduleAsync(string workItemKey, DateOnly? start, DateOnly? due, byte[] expectedVersion,
         CancellationToken ct)
     {
         Reschedules.Add((workItemKey, start, due, expectedVersion));
+        if (Gate is { } gate)
+        {
+            await gate.Task;
+        }
+
         if (NextResult is { } next)
         {
             NextResult = null;
-            return Task.FromResult(next());
+            return next();
         }
 
         var unscheduled = Unscheduled.FirstOrDefault(i => i.Key == workItemKey);
@@ -68,13 +76,13 @@ public sealed class FakeTimelineService : ITimelineService
         {
             Unscheduled.Remove(unscheduled);
             Rows.Add(new TimelineRow(unscheduled with { StartDate = start, DueDate = due }, [], []));
-            return Task.FromResult(Result<TimelineItem>.Ok(unscheduled with { StartDate = start, DueDate = due }));
+            return Result<TimelineItem>.Ok(unscheduled with { StartDate = start, DueDate = due });
         }
 
         Rows = Rows.ConvertAll(r => r.Task.Key == workItemKey
             ? r with { Task = r.Task with { StartDate = start, DueDate = due, Version = [9] } }
             : r with { ScheduledSubtasks = r.ScheduledSubtasks.Select(s => s.Key == workItemKey ? s with { StartDate = start, DueDate = due } : s).ToList() });
         var saved = Rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)).Single(i => i.Key == workItemKey);
-        return Task.FromResult(Result<TimelineItem>.Ok(saved));
+        return Result<TimelineItem>.Ok(saved);
     }
 }

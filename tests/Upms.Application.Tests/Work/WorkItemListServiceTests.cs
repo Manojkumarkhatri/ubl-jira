@@ -209,6 +209,22 @@ public sealed class WorkItemListServiceTests(SqlServerFixture fixture) : DrawerT
     }
 
     [Fact]
+    public async Task Thousands_of_filter_values_from_an_address_are_answered_as_if_only_the_meaningful_ones_were_given()
+    {
+        // A shared address can be edited by anyone who has it, so its lists may be long and hold values that mean nothing
+        // here (Phase 2 security review, V5).
+        await FilteringSetUpAsync();
+        var unknownColumns = Enumerable.Range(1, 5000).Select(n => ToDo + 100_000 + n).ToList();
+        var unknownPeople = Enumerable.Range(0, 5000).Select(_ => Guid.NewGuid()).ToList();
+
+        Assert.Equal(Keys(6, 4, 3, 1), await KeysAsync(new WorkItemListQuery(ColumnIds: [.. unknownColumns, ToDo])));
+        Assert.Equal(Keys(4, 3), await KeysAsync(new WorkItemListQuery(AssigneeIds: [.. unknownPeople, _bilal.Id])));
+        Assert.Empty(await KeysAsync(new WorkItemListQuery(ColumnIds: unknownColumns)));
+        Assert.Empty(await KeysAsync(new WorkItemListQuery(AssigneeIds: unknownPeople)));
+        Assert.Equal(Keys(6, 2), await KeysAsync(new WorkItemListQuery(Unassigned: true, AssigneeIds: unknownPeople)));
+    }
+
+    [Fact]
     public async Task The_view_offers_the_columns_the_people_and_the_first_to_do_column()
     {
         var dan = await MemberAsync("dan");

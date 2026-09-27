@@ -50,6 +50,15 @@ public sealed class MyTasksPageTests : BunitTestBase
     }
 
     [Fact]
+    public void Each_project_heading_links_to_its_board_by_name()
+    {
+        // A link read out of context, as in a screen reader's list of links, says which project it opens.
+        var cut = RenderPage();
+
+        Assert.Equal("Website Revamp (WEB)", cut.Find("h2.group-title a[href='projects/WEB/board']").TextContent.Trim());
+    }
+
+    [Fact]
     public void The_total_count_is_shown()
     {
         var cut = RenderPage();

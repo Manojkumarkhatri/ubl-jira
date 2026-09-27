@@ -99,6 +99,17 @@ public sealed class P2_US4_TimelineTests(AppFixture app) : BrowserTest(app)
         await kamran.Keyboard.PressAsync("Escape");
         await Assertions.Expect(drawer).ToBeHiddenAsync();
 
+        // Straight after closing the drawer, another bar moved with the keyboard keeps the focus: putting focus back on
+        // the drawer's bar, which reaches the page after a round trip, must not take it away.
+        await Bar(kamran, "RMP-2").FocusAsync();
+        await kamran.Keyboard.PressAsync("ArrowRight");
+        await kamran.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(Bar(kamran, "RMP-2")).Not.ToHaveClassAsync(new System.Text.RegularExpressions.Regex("is-pending"));
+        await Assertions.Expect(Bar(kamran, "RMP-2")).ToHaveAttributeAsync("aria-label",
+            $"RMP-2 Research, {Long(today.AddDays(6))} to {Long(today.AddDays(16))}, To do, unassigned");
+        await Assertions.Expect(Bar(kamran, "RMP-2")).ToBeFocusedAsync();
+        await Assertions.Expect(drawer).ToBeHiddenAsync();
+
         // P2_US4_AS9: a Viewer reads the timeline but has nothing to drag or schedule.
         var lubna = await SignInAsync("lubna", lubnaPassword);
         await GotoAsync(lubna, "/projects/RMP/timeline?scale=weeks");
