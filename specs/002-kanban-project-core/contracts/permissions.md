@@ -1,5 +1,9 @@
 # Contract: Permission Matrix (Phase 1)
 
+> **Superseded in Phase 2**: once Phase 2 is installed, projects are members-only and the rules are those
+> of [specs/003-project-views-and-team/contracts/permissions.md](../../003-project-views-and-team/contracts/permissions.md).
+> This matrix records the Phase 1 rules.
+
 **Feature**: [spec.md](../spec.md) | Implements FR-001, FR-004, FR-008, FR-009, FR-014, FR-015, FR-033,
 FR-034–FR-039 through the single policy point `IProjectAccess` (research R7). Every cell is enforced in
 the application service and covered by an automated test (SC-007).

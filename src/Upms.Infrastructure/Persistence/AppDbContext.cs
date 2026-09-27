@@ -21,6 +21,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 
     public DbSet<ProjectStatus> ProjectStatuses => Set<ProjectStatus>();
 
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
 
     public DbSet<WorkItemChange> WorkItemChanges => Set<WorkItemChange>();

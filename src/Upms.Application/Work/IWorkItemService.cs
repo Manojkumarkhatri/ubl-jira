@@ -23,7 +23,7 @@ public interface IWorkItemService
 
     Task<Result<DeletePreview>> PreviewDeleteAsync(string workItemKey, CancellationToken ct);
 
-    /// <summary>Creator, project owner or Administrator (FR-033); sub-tasks are deleted with it.</summary>
+    /// <summary>The creator (while they can contribute), a Project Admin or an Administrator (FR-033, Phase 2 FR-004); sub-tasks are deleted with it.</summary>
     Task<Result> DeleteAsync(string workItemKey, CancellationToken ct);
 
     /// <summary>Administrators only.</summary>
@@ -73,7 +73,8 @@ public sealed record WorkItemDetails(
     byte[] Version,
     Page<SubtaskView> Subtasks,
     Page<CommentView> Comments,
-    Page<ChangeView> History);
+    Page<ChangeView> History,
+    bool CanContribute = false);
 
 public sealed record StatusOption(long Id, string Name, StatusCategory Category);
 

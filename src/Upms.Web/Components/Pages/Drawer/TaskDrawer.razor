@@ -73,12 +73,20 @@
                         <span id="drawer-title-error" class="error-text" role="alert">@_titleError</span>
                     </div>
                 }
-                else
+                else if (d.CanContribute)
                 {
                     <h2 id="drawer-heading" tabindex="-1" class="drawer-title">
                         <span class="sr-only">@d.Key: </span>
                         <button type="button" id="drawer-title-button" class="title-view" data-testid="drawer-title" title="Edit the title"
                                 @onclick="EditTitle">@d.Title</button>
+                    </h2>
+                }
+                else
+                {
+                    @* Viewers read the task but change nothing (Phase 2 FR-003). *@
+                    <h2 id="drawer-heading" tabindex="-1" class="drawer-title">
+                        <span class="sr-only">@d.Key: </span>
+                        <span class="title-view read-only" data-testid="drawer-title">@d.Title</span>
                     </h2>
                 }
 
@@ -116,7 +124,7 @@
                 <section class="drawer-section" aria-labelledby="description-title">
                     <div class="section-head">
                         <h3 id="description-title" class="section-title">Description</h3>
-                        @if (!_editingDescription)
+                        @if (!_editingDescription && d.CanContribute)
                         {
                             <button type="button" class="btn btn-ghost btn-sm" data-testid="edit-description" aria-label="Edit description"
                                     @onclick="EditDescription">Edit</button>
@@ -145,12 +153,12 @@
 
                 @if (d.Type == WorkItemType.Task)
                 {
-                    <SubtaskList @key="@($"subtasks-{d.Key}")" ProjectKey="@d.ProjectKey" Subtasks="d.Subtasks" Statuses="d.Statuses"
+                    <SubtaskList @key="@($"subtasks-{d.Key}")" ProjectKey="@d.ProjectKey" Subtasks="d.Subtasks" Statuses="d.Statuses" ReadOnly="!d.CanContribute"
                                  OnAdd="AddSubtaskAsync" OnMarkDone="MarkSubtaskDoneAsync" OnStatusChange="ChangeSubtaskStatusAsync"
                                  OnShowMore="ShowMoreSubtasksAsync" />
                 }
 
-                <CommentThread @key="@($"comments-{d.Key}")" WorkItemKey="@d.Key" Initial="d.Comments" OnChanged="ReloadHistoryAsync" />
+                <CommentThread @key="@($"comments-{d.Key}")" WorkItemKey="@d.Key" Initial="d.Comments" ReadOnly="!d.CanContribute" OnChanged="ReloadHistoryAsync" />
 
                 <details class="drawer-section history-section">
                     <summary class="section-title">History (@d.History.TotalCount)</summary>
@@ -161,7 +169,7 @@
             <aside class="drawer-side" aria-label="Details of @d.Key">
                 <div class="detail-row">
                     <label for="drawer-status">Status</label>
-                    <select id="drawer-status" class="select" disabled="@_busy" value="@(_pendingStatus ?? d.Status.Id)" @onchange="StatusChangedAsync">
+                    <select id="drawer-status" class="select" disabled="@(_busy || !d.CanContribute)" value="@(_pendingStatus ?? d.Status.Id)" @onchange="StatusChangedAsync">
                         @foreach (var status in d.Statuses)
                         {
                             <option value="@status.Id">@status.Name</option>
@@ -170,7 +178,7 @@
                 </div>
                 <div class="detail-row">
                     <label for="drawer-priority">Priority</label>
-                    <select id="drawer-priority" class="select" disabled="@_busy" value="@((_pendingPriority ?? d.Priority).ToString())" @onchange="PriorityChangedAsync">
+                    <select id="drawer-priority" class="select" disabled="@(_busy || !d.CanContribute)" value="@((_pendingPriority ?? d.Priority).ToString())" @onchange="PriorityChangedAsync">
                         @foreach (var priority in Enum.GetValues<Priority>())
                         {
                             <option value="@priority.ToString()">@priority</option>

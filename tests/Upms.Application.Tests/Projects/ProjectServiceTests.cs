@@ -5,10 +5,11 @@ using Upms.Application.Tests.Fixtures;
 using Upms.Application.Work;
 using Upms.Domain.Common;
 using Upms.Domain.Identity;
+using Upms.Domain.Projects;
 
 namespace Upms.Application.Tests.Projects;
 
-/// <summary>Creating, listing and editing projects (FR-011 to FR-014).</summary>
+/// <summary>Creating, listing and editing projects (FR-011 to FR-014; Phase 2 FR-002, FR-006, FR-007, FR-015).</summary>
 public sealed class ProjectServiceTests(SqlServerFixture fixture) : IntegrationTest(fixture)
 {
     private User _amina = null!;
@@ -42,6 +43,29 @@ public sealed class ProjectServiceTests(SqlServerFixture fixture) : IntegrationT
     }
 
     [Fact]
+    public async Task P2_US1_AS1_The_creator_becomes_the_only_member_as_Project_Admin()
+    {
+        await CreateAsync("Website Revamp", "WEB");
+
+        var team = (await CallAsync<IProjectMemberService, Result<TeamView>>(s => s.GetTeamAsync("WEB", Ct))).Value!;
+
+        var member = Assert.Single(team.Members);
+        Assert.Equal(_amina.Id, member.UserId);
+        Assert.Equal(ProjectRole.ProjectAdmin, member.Role);
+    }
+
+    [Fact]
+    public async Task P2_US1_AS4_Non_members_are_told_the_project_does_not_exist()
+    {
+        await CreateAsync("Website Revamp", "WEB");
+
+        ActAs(await Data.UserAsync("carla"));
+
+        Assert.Equal(ErrorKind.NotFound, (await CallAsync<IProjectService, Result<ProjectDetails>>(s => s.GetAsync("WEB", Ct))).Error!.Kind);
+        Assert.Empty((await CallAsync<IProjectService, Result<Page<ProjectSummary>>>(s => s.ListAsync(PageRequest.First, Ct))).Value!.Items);
+    }
+
+    [Fact]
     public async Task US1_AS3_A_key_is_suggested_and_avoids_keys_in_use()
     {
         Assert.Equal("WR", await CallAsync<IProjectService, string>(s => s.SuggestKeyAsync("Website Revamp", Ct)));
@@ -70,10 +94,12 @@ public sealed class ProjectServiceTests(SqlServerFixture fixture) : IntegrationT
     }
 
     [Fact]
-    public async Task The_list_shows_name_key_owner_and_open_tasks_sorted_by_name_and_paged()
+    public async Task P2_FR015_The_list_shows_only_the_callers_projects_with_their_role_and_open_tasks_sorted_and_paged()
     {
         var bilal = await Data.UserAsync("bilal");
         await CreateAsync("Website Revamp", "WEB");
+        await CreateAsync("Human Resources", "HR");   // bilal is not a member
+        await Data.MembersAsync("WEB", ProjectRole.Member, bilal);
         ActAs(bilal);
         await CreateAsync("Accounting Close", "ACC");
         await CreateAsync("Mobile App", "MOB");
@@ -89,17 +115,33 @@ public sealed class ProjectServiceTests(SqlServerFixture fixture) : IntegrationT
 
         Assert.Equal(3, first.TotalCount);
         Assert.Equal(["Accounting Close", "Mobile App"], first.Items.Select(p => p.Name));
+        Assert.All(first.Items, p => Assert.Equal(ProjectRole.ProjectAdmin, p.MyRole));
         var web = Assert.Single(second.Items);
-        Assert.Equal(("WEB", "Website Revamp", _amina.DisplayName, 2), (web.Key, web.Name, web.OwnerDisplayName, web.OpenItemCount));
+        Assert.Equal(("WEB", "Website Revamp", ProjectRole.Member, false, 2), (web.Key, web.Name, web.MyRole, web.AdministratorAccess, web.OpenItemCount));
     }
 
     [Fact]
-    public async Task Details_can_be_edited_by_the_owner_and_administrators_only()
+    public async Task P2_US1_AS8_Administrators_see_every_project_marked_where_they_are_not_members()
+    {
+        await CreateAsync("Website Revamp", "WEB");
+        ActAs(await Data.AdministratorAsync());
+        await CreateAsync("Admin Tools", "ADM");
+
+        var list = (await CallAsync<IProjectService, Result<Page<ProjectSummary>>>(s => s.ListAsync(PageRequest.First, Ct))).Value!;
+
+        Assert.Equal(["Admin Tools", "Website Revamp"], list.Items.Select(p => p.Name));
+        Assert.Equal((ProjectRole.ProjectAdmin, false), (list.Items[0].MyRole, list.Items[0].AdministratorAccess));
+        Assert.Equal(((ProjectRole?)null, true), (list.Items[1].MyRole, list.Items[1].AdministratorAccess));
+    }
+
+    [Fact]
+    public async Task Details_can_be_edited_by_Project_Admins_and_administrators_only()
     {
         await CreateAsync("Website Revamp", "WEB");
         var version = (await CallAsync<IProjectService, Result<ProjectDetails>>(s => s.GetAsync("WEB", Ct))).Value!.DetailsVersion;
 
         var bilal = await Data.UserAsync("bilal");
+        await Data.MembersAsync("WEB", ProjectRole.Member, bilal);
         ActAs(bilal);
         var forbidden = await CallAsync<IProjectService, Result<ProjectDetails>>(s =>
             s.UpdateDetailsAsync("WEB", "Hijacked", null, version, Ct));

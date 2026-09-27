@@ -81,14 +81,17 @@ the decisions below settle how each Phase 2 capability fits the existing modules
 - **Alternatives considered**: a full user list in a drop-down (2,000 names); free-typed user names
   (error-prone).
 
-### R6. Membership changes are audited through `IAuditLog`
+### R6. Membership changes are audited through an Identity contract
 
 - **Decision**: new `AuditEventType` values `MemberAdded`, `MemberRemoved` and `MemberRoleChanged`, written
   in the same transaction as the change, with the member as subject, the project key as target and the
-  roles in the details (FR-012).
-- **Rationale**: the constitution requires membership changes in the audit log; `IAuditLog` is already the
-  cross-module contract for security events.
-- **Alternatives considered**: a separate project activity table (duplicates the audit log).
+  roles in the details (FR-012). The Projects module writes them through a small contract of the Identity
+  module, `IMembershipAuditLog` with its own `MembershipChange` enum, which maps to `IAuditLog`.
+- **Rationale**: the constitution requires membership changes in the audit log. `IAuditLog` takes the
+  Identity module's `AuditEventType`, which the Projects module may not use (constitution V; the
+  architecture tests caught the first version), so the contract names only the three membership changes.
+- **Alternatives considered**: a separate project activity table (duplicates the audit log); moving
+  `AuditEventType` into a contract (would expose every security event type to every module).
 
 ## Assignees and dates
 
@@ -202,8 +205,9 @@ the decisions below settle how each Phase 2 capability fits the existing modules
 
 ### R15. Performance: seeded teams and extended load scenarios
 
-- **Decision**: `tools/Upms.Seed` gives every project its owner as Project Admin, 4–20 Members and 0–3
-  Viewers; about 70% of open tasks get an assignee from the team and about half of all tasks get dates.
+- **Decision**: `tools/Upms.Seed` gives every project its owner as Project Admin, 4–20 Members (40 for the
+  largest board) and 0–3 Viewers; about 70% of open tasks get an assignee from the team and about half of
+  all tasks get dates.
   The SC-002 suite adds list loads (sorted and filtered), timeline loads, "My tasks" loads, and saving an
   assignee, dates and a membership change, with each simulated user acting only in projects they belong
   to. Indexes are tuned until p95 ≤ 1 s holds (SC-002).

@@ -3,6 +3,7 @@ using Upms.Application.Projects;
 using Upms.Application.Tests.Fixtures;
 using Upms.Application.Work;
 using Upms.Domain.Identity;
+using Upms.Domain.Projects;
 
 namespace Upms.Application.Tests.Work;
 
@@ -27,6 +28,14 @@ public abstract class BoardTestBase(SqlServerFixture fixture) : IntegrationTest(
         var created = await CallAsync<IProjectService, Result<string>>(s => s.CreateAsync("Website Revamp", "WEB", null, Ct));
         Assert.True(created.IsSuccess, created.Error?.Message);
         Board = await BoardAsync();
+    }
+
+    /// <summary>A new user on WEB's team, since projects are members-only (Phase 2 FR-002).</summary>
+    protected async Task<User> MemberAsync(string userName, ProjectRole role = ProjectRole.Member)
+    {
+        var user = await Data.UserAsync(userName);
+        await Data.MembersAsync("WEB", role, user);
+        return user;
     }
 
     protected async Task<BoardView> BoardAsync(bool showAllDone = false) =>

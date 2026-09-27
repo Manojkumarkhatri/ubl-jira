@@ -38,7 +38,7 @@ public sealed class BoardColumnServiceTests(SqlServerFixture fixture) : DrawerTe
         Assert.Equal(Board.BoardVersion + 1, view.BoardVersion);
         Assert.True(view.Columns[2].IsEmpty);
 
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         Assert.Equal(["To Do", "In Progress", "In Review", "Done"], (await BoardAsync()).Columns.Select(c => c.Name));
     }
 
@@ -228,9 +228,9 @@ public sealed class BoardColumnServiceTests(SqlServerFixture fixture) : DrawerTe
     }
 
     [Fact]
-    public async Task US3_AS8_Only_the_owner_and_administrators_change_columns_but_everyone_keeps_working_on_tasks()
+    public async Task US3_AS8_Only_Project_Admins_and_administrators_change_columns_but_Members_keep_working_on_tasks()
     {
-        var bilal = await Data.UserAsync("bilal");
+        var bilal = await MemberAsync("bilal");
         ActAs(bilal);
 
         Assert.Equal(ErrorKind.Forbidden, (await CallAsync<IBoardColumnService, Result<BoardColumnsView>>(s => s.GetAsync("WEB", Ct))).Error!.Kind);

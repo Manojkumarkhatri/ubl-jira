@@ -22,8 +22,12 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
         // conflicts; details and board edits each carry their own version instead (research R16).
         builder.Property(p => p.DetailsVersion).IsConcurrencyToken();
         builder.Property(p => p.BoardVersion).IsConcurrencyToken();
+        builder.Property(p => p.MembersVersion).IsConcurrencyToken();
 
         builder.HasMany(p => p.Statuses).WithOne().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(p => p.Statuses).HasField("_statuses").UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasMany(p => p.Members).WithOne().HasForeignKey(m => m.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(p => p.Members).HasField("_members").UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

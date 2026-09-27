@@ -23,7 +23,7 @@
                         <span class="key">@subtask.Key</span> <span class="child-title">@subtask.Title</span>
                     </a>
                     <label class="sr-only" for="subtask-status-@subtask.Key">Status of @subtask.Key</label>
-                    <select id="subtask-status-@subtask.Key" class="select select-sm"
+                    <select id="subtask-status-@subtask.Key" class="select select-sm" disabled="@ReadOnly"
                             value="@(_pendingStatus.TryGetValue(subtask.Key, out var pending) ? pending : subtask.Status.Id)"
                             @onchange="e => ChangeStatusAsync(subtask, e)">
                         @foreach (var status in Statuses)
@@ -31,7 +31,7 @@
                             <option value="@status.Id">@status.Name</option>
                         }
                     </select>
-                    @if (subtask.Status.Category != StatusCategory.Done)
+                    @if (subtask.Status.Category != StatusCategory.Done && !ReadOnly)
                     {
                         <button type="button" class="btn btn-sm" data-testid="mark-done" aria-label="Mark done: @subtask.Key"
                                 @onclick="() => OnMarkDone.InvokeAsync(subtask)">Mark done</button>
@@ -46,14 +46,17 @@
             Show more sub-tasks (@(Subtasks.TotalCount - Subtasks.Items.Count) more)
         </button>
     }
-    <div class="add-child">
-        <label class="sr-only" for="add-subtask">New sub-task title</label>
-        <input id="add-subtask" class="input" type="text" placeholder="+ Add a sub-task" autocomplete="off" maxlength="255"
-               @bind="_title" @bind:event="oninput" @onkeydown="KeyDownAsync"
-               aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="add-subtask-error" />
-        <button type="button" class="btn btn-sm" @onclick="AddAsync">Add</button>
-    </div>
-    <span id="add-subtask-error" class="error-text" role="alert">@_error</span>
+    @if (!ReadOnly)
+    {
+        <div class="add-child">
+            <label class="sr-only" for="add-subtask">New sub-task title</label>
+            <input id="add-subtask" class="input" type="text" placeholder="+ Add a sub-task" autocomplete="off" maxlength="255"
+                   @bind="_title" @bind:event="oninput" @onkeydown="KeyDownAsync"
+                   aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="add-subtask-error" />
+            <button type="button" class="btn btn-sm" @onclick="AddAsync">Add</button>
+        </div>
+        <span id="add-subtask-error" class="error-text" role="alert">@_error</span>
+    }
 </section>
 
 @code {
@@ -70,6 +73,10 @@
 
     [Parameter, EditorRequired]
     public IReadOnlyList<StatusOption> Statuses { get; set; } = [];
+
+    /// <summary>True for Viewers: no new sub-tasks and no status changes (Phase 2 FR-003).</summary>
+    [Parameter]
+    public bool ReadOnly { get; set; }
 
     /// <summary>Adds a sub-task with the title; returns an error message, or null when it was added.</summary>
     [Parameter, EditorRequired]

@@ -12,12 +12,8 @@
 }
 else
 {
-    <div class="page-head">
-        <div>
-            <div class="crumbs"><a href="projects">Projects</a> / <a href="projects/@Key/board">@Key</a></div>
-            <h1>Deleted tasks</h1>
-        </div>
-    </div>
+    @* Only administrators reach this page, and they manage every project. *@
+    <ProjectHeader ProjectKey="@Key" Title="Deleted tasks" Current="ProjectPage.Deleted" CanManage="true" CanRestoreDeleted="true" />
 
     @if (_restored is not null)
     {

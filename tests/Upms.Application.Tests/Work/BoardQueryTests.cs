@@ -49,7 +49,7 @@ public sealed class BoardQueryTests(SqlServerFixture fixture) : BoardTestBase(fi
         await AddAsync(ToDo, "Two");
         var mine = await BoardAsync();
 
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         var theirs = await BoardAsync();
 
         Assert.Equal(mine.Columns.SelectMany(c => c.Cards.Select(x => x.Key)), theirs.Columns.SelectMany(c => c.Cards.Select(x => x.Key)));

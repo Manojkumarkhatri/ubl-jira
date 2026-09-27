@@ -102,6 +102,7 @@ src/
 │   └── Work/WorkItem.cs, WorkItemField.cs      # + AssigneeId, StartDate, DueDate, Assign, Schedule
 ├── Upms.Application/
 │   ├── Identity/Contracts/IUserDirectory.cs    # + SearchActiveAsync, UserDisplay.UserName
+│   ├── Identity/Contracts/IMembershipAuditLog.cs, Identity/MembershipAuditLog.cs   # new (research R6)
 │   ├── Projects/Contracts/IProjectAccess.cs    # ProjectAccessInfo + Role, CanContribute
 │   ├── Projects/Contracts/IProjectTeam.cs      # new contract for the Work module
 │   ├── Projects/ProjectAccess.cs               # membership rules

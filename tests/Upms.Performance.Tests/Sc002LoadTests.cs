@@ -4,21 +4,24 @@ using Upms.Application.Common.Results;
 using Upms.Application.Projects;
 using Upms.Application.Work;
 using Upms.Domain.Common;
+using Upms.Domain.Projects;
 using Upms.Domain.Work;
 
 namespace Upms.Performance.Tests;
 
 /// <summary>SC-002: with 300 concurrent users on 500,000 work items, the project list, a board of up to 500 visible
-/// cards, inline creation, a card move, opening the drawer and saving an edit each respond within 1 second at the
-/// 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix of actions with 1 to 3
-/// seconds of thinking time; every tenth user works on the largest board.</summary>
+/// cards, inline creation, a card move, opening the drawer, saving an edit and a membership change each respond
+/// within 1 second at the 95th percentile. Each simulated user signs in as a seeded user and repeats a realistic mix
+/// of actions with 1 to 3 seconds of thinking time in a project they belong to (<see cref="LoadDatabase.Subjects"/>):
+/// every tenth user works on the largest board, and every tenth (offset by five) is a Project Admin who also changes
+/// the team.</summary>
 [Trait("Category", "Performance")]
 public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDatabase>
 {
     private const double TargetMilliseconds = 1_000;
 
     private static readonly string[] Operations =
-        ["project list", "board load", "inline creation", "card move", "drawer open", "saving an edit"];
+        ["project list", "board load", "inline creation", "card move", "drawer open", "saving an edit", "membership change"];
 
     [Fact(Timeout = 60 * 60 * 1000)]
     public async Task SC002_Main_actions_respond_within_one_second_at_the_95th_percentile()
@@ -31,7 +34,7 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
         var stopAt = measureFrom + (long)(settings.Duration.TotalSeconds * Stopwatch.Frequency);
 
         await Task.WhenAll(Enumerable.Range(0, settings.Users)
-            .Select(i => new SimulatedUser(i, database, harness, recorder, measureFrom, stopAt).RunAsync(ct)));
+            .Select(i => new SimulatedUser(i, database.Subjects[i], database, harness, recorder, measureFrom, stopAt).RunAsync(ct)));
 
         var stats = recorder.Summaries();
         var report = LatencyRecorder.Report(stats);
@@ -51,23 +54,23 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
         }
     }
 
-    /// <summary>One person using the app: board, drawer, edits, moves and new tasks, with pauses in between.</summary>
-    private sealed class SimulatedUser(int index, LoadDatabase database, PerfHarness harness, LatencyRecorder recorder,
-        long measureFrom, long stopAt)
+    /// <summary>One person using the app: board, drawer, edits, moves and new tasks, with pauses in between; a Project
+    /// Admin also changes the team now and then.</summary>
+    private sealed class SimulatedUser(int index, Subject subject, LoadDatabase database, PerfHarness harness,
+        LatencyRecorder recorder, long measureFrom, long stopAt)
     {
         private static readonly Priority[] Priorities = Enum.GetValues<Priority>();
 
         private readonly Random _random = new(index * 7_919 + 17);
-        private readonly Guid _userId = database.UserIds[index % database.UserIds.Count];
-        private string _projectKey = "";
+        private readonly Guid _userId = subject.UserId;
+        private readonly string _projectKey = subject.ProjectKey;
         private BoardView? _board;
         private WorkItemDetails? _details;
+        private TeamView? _team;
+        private Guid? _guest;
 
         public async Task RunAsync(CancellationToken ct)
         {
-            _projectKey = index % 10 == 0
-                ? database.LargestProjectKey
-                : database.ProjectKeys[_random.Next(database.ProjectKeys.Count)];
             await Task.Delay(_random.Next(0, 3_000), ct); // people do not all click at the same moment
             while (Stopwatch.GetTimestamp() < stopAt)
             {
@@ -80,6 +83,7 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
                     recorder.Record("unexpected error", TimeSpan.Zero, Outcome.Failed);
                     _board = null;
                     _details = null;
+                    _team = null;
                 }
 
                 await Task.Delay(_random.Next(1_000, 3_000), ct);
@@ -142,10 +146,60 @@ public sealed class Sc002LoadTests(LoadDatabase database) : IClassFixture<LoadDa
                 return;
             }
 
+            if (subject.ChangesTeam && roll >= 95)
+            {
+                await ChangeTeamAsync(ct);
+                return;
+            }
+
             var toDo = _board.Columns.First(c => c.Category == StatusCategory.ToDo).Id;
             await MeasureAsync("inline creation", () =>
                 harness.CallAsync<IBoardService, Result<CardView>>(_userId, s => s.CreateInlineAsync(_projectKey, toDo, $"Load test task {_random.Next(100_000)}", ct)));
             await LoadBoardAsync(ct); // and after a new task
+        }
+
+        /// <summary>Adds someone as a Viewer, and the next time removes them again, so the contributors the other
+        /// simulated users act as stay in their teams.</summary>
+        private async Task ChangeTeamAsync(CancellationToken ct)
+        {
+            if (_team is null)
+            {
+                var opened = await harness.CallAsync<IProjectMemberService, Result<TeamView>>(_userId, s => s.GetTeamAsync(_projectKey, ct));
+                _team = opened.Value;
+                if (_team is null)
+                {
+                    return;
+                }
+            }
+
+            var version = _team.MembersVersion;
+            Result<TeamView> changed;
+            if (_guest is { } guest)
+            {
+                changed = await MeasureAsync("membership change", () =>
+                    harness.CallAsync<IProjectMemberService, Result<TeamView>>(_userId, s => s.RemoveAsync(_projectKey, guest, version, ct)));
+                if (changed.IsSuccess)
+                {
+                    _guest = null;
+                }
+            }
+            else
+            {
+                var person = database.UserIds[_random.Next(database.UserIds.Count)];
+                if (_team.Members.Any(m => m.UserId == person))
+                {
+                    return; // the admin would not pick someone who is already in the team
+                }
+
+                changed = await MeasureAsync("membership change", () =>
+                    harness.CallAsync<IProjectMemberService, Result<TeamView>>(_userId, s => s.AddAsync(_projectKey, person, ProjectRole.Viewer, version, ct)));
+                if (changed.IsSuccess)
+                {
+                    _guest = person;
+                }
+            }
+
+            _team = changed.Value ?? changed.Error?.Current as TeamView;
         }
 
         private async Task LoadBoardAsync(CancellationToken ct)

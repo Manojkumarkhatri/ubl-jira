@@ -23,7 +23,7 @@ public sealed class MoveCardTests(SqlServerFixture fixture) : BoardTestBase(fixt
 
         Assert.True(moved.IsSuccess, moved.Error?.Message);
         Assert.Equal(InProgress, moved.Value!.ColumnId);
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         Assert.Equal(["WEB-1"], await KeysInAsync(InProgress));
         var status = (await ChangesAsync("WEB-1")).Last();
         Assert.Equal((WorkItemField.Status, "To Do", "In Progress"), (status.Field, status.OldValue, status.NewValue));
@@ -39,7 +39,7 @@ public sealed class MoveCardTests(SqlServerFixture fixture) : BoardTestBase(fixt
         var moved = await MoveAsync(three, ToDo, new CardPlacement.Before(one.Key));
 
         Assert.True(moved.IsSuccess, moved.Error?.Message);
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         Assert.Equal([three.Key, one.Key, two.Key], await KeysInAsync(ToDo));
         var rank = (await ChangesAsync(three.Key)).Last();
         Assert.Equal((WorkItemField.Rank, "3", "1"), (rank.Field, rank.OldValue, rank.NewValue));
@@ -69,7 +69,7 @@ public sealed class MoveCardTests(SqlServerFixture fixture) : BoardTestBase(fixt
     public async Task US1_AS9_A_card_changed_by_someone_else_is_not_overwritten()
     {
         var card = await AddAsync(ToDo, "Design the home page");
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         await MoveAsync(card, InProgress, CardPlacement.AtEnd);
 
         ActAs(Owner);

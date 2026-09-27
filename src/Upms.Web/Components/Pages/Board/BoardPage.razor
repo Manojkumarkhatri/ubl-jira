@@ -18,12 +18,8 @@ else if (_board is null)
 }
 else
 {
-    <div class="page-head">
-        <div>
-            <div class="crumbs"><a href="projects">Projects</a> / @_board.ProjectKey</div>
-            <h1>@_board.ProjectName</h1>
-        </div>
-        <span class="spacer"></span>
+    <ProjectHeader ProjectKey="@_board.ProjectKey" Title="@_board.ProjectName" Current="ProjectPage.Board"
+                   CanManage="_board.CanManageColumns" CanRestoreDeleted="_board.CanRestoreDeleted">
         @if (_board.ShowingAllDone)
         {
             <a class="btn" href="projects/@Key/board">Show recently completed only</a>
@@ -32,15 +28,7 @@ else
         {
             <a class="btn" href="projects/@Key/board?done=all">Show all completed (@_board.HiddenDoneCount more)</a>
         }
-        @if (_board.CanRestoreDeleted)
-        {
-            <a class="btn" href="projects/@Key/deleted">Deleted tasks</a>
-        }
-        @if (_board.CanManageColumns)
-        {
-            <a class="btn" href="projects/@Key/settings">Project settings</a>
-        }
-    </div>
+    </ProjectHeader>
 
     @if (_conflict is not null)
     {
@@ -63,6 +51,7 @@ else
             @foreach (var column in _board.Columns)
             {
                 <BoardColumn @key="column.Id" Column="column" ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
+                             CanContribute="_board.CanContribute"
                              OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
                              OnDropBefore="DropBeforeAsync" OnDropAtEnd="DropAtEndAsync" OnMove="MoveFromMenuAsync"
                              OnCreate="CreateAsync" />
@@ -200,6 +189,15 @@ else
     private async Task<string?> CreateAsync(long columnId, string title)
     {
         var result = await Boards.CreateInlineAsync(Key, columnId, title, CancellationToken.None);
+        if (result.Error is { Kind: ErrorKind.NotFound or ErrorKind.Forbidden })
+        {
+            // The caller was removed from the project or made a Viewer meanwhile (Phase 2 FR-011): show what they may
+            // see now, which is "not found" for someone no longer on the team.
+            await LoadAsync();
+            StateHasChanged();
+            return result.Error.Message;
+        }
+
         if (!result.IsSuccess)
         {
             return result.Error!.FieldErrors is { } errors && errors.TryGetValue("Title", out var messages)

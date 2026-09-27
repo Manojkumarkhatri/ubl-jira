@@ -1,6 +1,6 @@
 @using Upms.Application.Work
 
-<article class="bcard @(IsDragging ? "dragging" : "") @(_dropHint ? "drop-hint" : "")" draggable="true"
+<article class="bcard @(IsDragging ? "dragging" : "") @(_dropHint ? "drop-hint" : "")" draggable="@(CanContribute ? "true" : "false")"
          data-drag-key="@Card.Key" data-testid="card-@Card.Key" aria-labelledby="@(TitleId)"
          @ondragstart="() => OnDragStart.InvokeAsync(Card)" @ondragend="() => OnDragEnd.InvokeAsync()"
          @ondragenter="() => _dropHint = true" @ondragleave="() => _dropHint = false"
@@ -14,7 +14,10 @@
             <span class="subtasks" data-testid="subtask-progress">@Card.SubtasksDone/@Card.SubtasksTotal<span class="sr-only"> sub-tasks done</span></span>
         }
         <span class="spacer"></span>
-        <MoveToMenu CardKey="@Card.Key" Columns="MoveTargets" OnMove="request => OnMove.InvokeAsync((Card, request))" />
+        @if (CanContribute)
+        {
+            <MoveToMenu CardKey="@Card.Key" Columns="MoveTargets" OnMove="request => OnMove.InvokeAsync((Card, request))" />
+        }
     </div>
 </article>
 
@@ -35,6 +38,10 @@
 
     [Parameter]
     public bool IsDragging { get; set; }
+
+    /// <summary>False for Viewers: the card can be opened but not dragged or moved (Phase 2 FR-003).</summary>
+    [Parameter]
+    public bool CanContribute { get; set; }
 
     [Parameter]
     public EventCallback<CardView> OnDragStart { get; set; }

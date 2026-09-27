@@ -47,6 +47,33 @@ public sealed class TaskDrawerTests : BunitTestBase
     }
 
     [Fact]
+    public void P2_US1_AS3_A_Viewer_reads_the_drawer_but_is_offered_no_changes()
+    {
+        var mine = new CommentView(12, CurrentUser.UserId!.Value, "Amina Khan", true, "My earlier note", DateTimeOffset.UtcNow, null, false, [7]);
+        _items.Details = FakeWorkItemService.Sample() with
+        {
+            CanContribute = false,
+            CanDelete = false,
+            Comments = new Upms.Application.Common.Page<CommentView>([mine], 1, 1, 50),
+        };
+
+        var cut = Open();
+
+        Assert.Equal("Design the home page", cut.Find("[data-testid=drawer-title]").TextContent.Trim());
+        Assert.Empty(cut.FindAll("#drawer-title-button"));
+        Assert.Empty(cut.FindAll("[data-testid=edit-description]"));
+        Assert.NotNull(cut.Find("#drawer-status").GetAttribute("disabled"));
+        Assert.NotNull(cut.Find("#drawer-priority").GetAttribute("disabled"));
+        Assert.Empty(cut.FindAll("#add-subtask"));
+        Assert.Empty(cut.FindAll("[data-testid=mark-done]"));
+        Assert.All(cut.FindAll("select[id^='subtask-status-']"), select => Assert.NotNull(select.GetAttribute("disabled")));
+        Assert.Empty(cut.FindAll("#new-comment"));
+        Assert.Empty(cut.FindAll(".comment-actions"));
+        Assert.Empty(cut.FindAll("[aria-label='Delete WEB-1']"));
+        Assert.Contains("My earlier note", cut.Find("[data-testid=comment]").TextContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_drawer_opens_as_a_modal_dialog_and_the_close_button_closes_it()
     {
         var cut = Open();

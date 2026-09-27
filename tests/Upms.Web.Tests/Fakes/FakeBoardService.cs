@@ -26,7 +26,7 @@ public sealed class FakeBoardService : IBoardService
                 Card("WEB-3", "Pick the colours", Priority.Low, InProgress),
             ]),
             new ColumnView(Done, "Done", StatusCategory.Done, null, 0, false, []),
-        ]);
+        ], CanContribute: true);
     }
 
     public BoardView Board { get; set; }

@@ -21,6 +21,8 @@ public interface IAppDbContext
 
     DbSet<ProjectStatus> ProjectStatuses { get; }
 
+    DbSet<ProjectMember> ProjectMembers { get; }
+
     DbSet<WorkItem> WorkItems { get; }
 
     DbSet<WorkItemChange> WorkItemChanges { get; }

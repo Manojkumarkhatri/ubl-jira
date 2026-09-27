@@ -3,12 +3,14 @@ using Microsoft.Extensions.Logging;
 using Upms.Application.Common;
 using Upms.Application.Common.Results;
 using Upms.Application.Projects.Contracts;
+using Upms.Domain.Projects;
 
 namespace Upms.Application.Projects;
 
-/// <summary>Phase 1 rules of the single authorization point (research R7, contracts/permissions.md):
-/// any active user may view and contribute; the owner and Administrators manage; only Administrators
-/// restore. Role and ownership are read from the database on every call.</summary>
+/// <summary>Phase 2 rules of the single authorization point (Phase 2 research R2, contracts/permissions.md): members
+/// view; Members and Project Admins contribute; Project Admins manage; administrators may do everything in every
+/// project; only administrators restore. Anyone else is told the project does not exist. The caller's status and
+/// role are read from the database on every call, so removals and role changes apply at once (FR-011).</summary>
 internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext caller, ILogger<ProjectAccess> logger) : IProjectAccess
 {
     public async Task<Result<ProjectAccessInfo>> RequireAsync(string projectKey, ProjectRight right, CancellationToken ct)
@@ -19,11 +21,8 @@ internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext cal
         }
 
         var key = (projectKey ?? "").Trim().ToUpperInvariant();
-        var project = await db.Projects.AsNoTracking()
-            .Where(p => p.Key == key)
-            .Select(p => new ProjectRef(p.Id, p.Key, p.OwnerId))
-            .SingleOrDefaultAsync(ct);
-        return project is null ? AppError.NotFound("project") : Evaluate(user, project, right);
+        var project = await WithRoleOf(db.Projects.Where(p => p.Key == key), user.UserId).SingleOrDefaultAsync(ct);
+        return Evaluate(user, project, right);
     }
 
     public async Task<Result<ProjectAccessInfo>> RequireAsync(long projectId, ProjectRight right, CancellationToken ct)
@@ -33,11 +32,8 @@ internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext cal
             return Denied(null, right, projectId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
-        var project = await db.Projects.AsNoTracking()
-            .Where(p => p.Id == projectId)
-            .Select(p => new ProjectRef(p.Id, p.Key, p.OwnerId))
-            .SingleOrDefaultAsync(ct);
-        return project is null ? AppError.NotFound("project") : Evaluate(user, project, right);
+        var project = await WithRoleOf(db.Projects.Where(p => p.Id == projectId), user.UserId).SingleOrDefaultAsync(ct);
+        return Evaluate(user, project, right);
     }
 
     public async Task<bool> CanDeleteWorkItemAsync(long projectId, Guid workItemCreatorId, CancellationToken ct)
@@ -47,23 +43,52 @@ internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext cal
             return false;
         }
 
-        if (user.IsAdministrator || user.UserId == workItemCreatorId)
+        if (user.IsAdministrator)
         {
             return true;
         }
 
-        return await db.Projects.AsNoTracking().AnyAsync(p => p.Id == projectId && p.OwnerId == user.UserId, ct);
+        var role = await RoleAsync(projectId, user.UserId, ct);
+        return role == ProjectRole.ProjectAdmin || (role == ProjectRole.Member && user.UserId == workItemCreatorId);
     }
 
-    private Result<ProjectAccessInfo> Evaluate(CallerStatus user, ProjectRef project, ProjectRight right)
+    /// <summary>The project with the caller's role in it, read in one query.</summary>
+    private IQueryable<ProjectRef> WithRoleOf(IQueryable<Project> projects, Guid userId) =>
+        projects.AsNoTracking().Select(p => new ProjectRef(p.Id, p.Key,
+            db.ProjectMembers.Where(m => m.ProjectId == p.Id && m.UserId == userId).Select(m => (ProjectRole?)m.Role).FirstOrDefault()));
+
+    private Task<ProjectRole?> RoleAsync(long projectId, Guid userId, CancellationToken ct) =>
+        db.ProjectMembers.AsNoTracking()
+            .Where(m => m.ProjectId == projectId && m.UserId == userId)
+            .Select(m => (ProjectRole?)m.Role)
+            .FirstOrDefaultAsync(ct);
+
+    private Result<ProjectAccessInfo> Evaluate(CallerStatus user, ProjectRef? project, ProjectRight right)
     {
-        var canManage = user.IsAdministrator || project.OwnerId == user.UserId;
-        var info = new ProjectAccessInfo(project.Id, project.Key, user.UserId, canManage, user.IsAdministrator);
+        if (project is null)
+        {
+            return AppError.NotFound("project");
+        }
+
+        if (project.Role is null && !user.IsAdministrator)
+        {
+            // Non-members learn nothing: the answer is the one for a project that does not exist (FR-002).
+            LogDenied(logger, user.UserId, right, project.Key);
+            return AppError.NotFound("project");
+        }
+
+        var canContribute = user.IsAdministrator || project.Role is ProjectRole.ProjectAdmin or ProjectRole.Member;
+        var canManage = user.IsAdministrator || project.Role == ProjectRole.ProjectAdmin;
+        var info = new ProjectAccessInfo(project.Id, project.Key, user.UserId, project.Role, canContribute, canManage,
+            user.IsAdministrator);
         return right switch
         {
-            ProjectRight.View or ProjectRight.Contribute or ProjectRight.DeleteOwnWorkItem => info,
+            ProjectRight.View => info,
+            ProjectRight.Contribute or ProjectRight.DeleteOwnWorkItem when canContribute => info,
+            ProjectRight.Contribute or ProjectRight.DeleteOwnWorkItem =>
+                Denied(user.UserId, right, project.Key, "Viewers can see this project but not change it."),
             ProjectRight.Manage when canManage => info,
-            ProjectRight.Manage => Denied(user.UserId, right, project.Key, "Only the project owner or an administrator can do that."),
+            ProjectRight.Manage => Denied(user.UserId, right, project.Key, "Only a Project Admin or an administrator can do that."),
             ProjectRight.Restore when user.IsAdministrator => info,
             ProjectRight.Restore => Denied(user.UserId, right, project.Key, "Only administrators can restore deleted tasks."),
             _ => Denied(user.UserId, right, project.Key),
@@ -80,5 +105,5 @@ internal sealed partial class ProjectAccess(IAppDbContext db, ICallerContext cal
     [LoggerMessage(EventId = 4030, Level = LogLevel.Warning, Message = "Access denied: user {UserId} asked for {Right} on project {Project}")]
     private static partial void LogDenied(ILogger logger, Guid? userId, ProjectRight right, string? project);
 
-    private sealed record ProjectRef(long Id, string Key, Guid OwnerId);
+    private sealed record ProjectRef(long Id, string Key, ProjectRole? Role);
 }

@@ -25,6 +25,14 @@ public interface IUserDirectory                                   // contract fo
 public sealed record UserDisplay(Guid Id, string DisplayName, bool IsActive, string UserName);   // UserName is new
 
 public enum AuditEventType { /* Phase 1 values */ MemberAdded, MemberRemoved, MemberRoleChanged }  // new values
+
+public interface IMembershipAuditLog                              // contract for the Projects module (research R6)
+{
+    // Writes MemberAdded, MemberRemoved or MemberRoleChanged in the caller's transaction:
+    // subject = the member, target = the project key, details = the roles.
+    Task WriteAsync(MembershipChange change, Guid memberId, string projectKey, object details, CancellationToken ct);
+}
+public enum MembershipChange { Added, Removed, RoleChanged }
 ```
 
 ## Projects module

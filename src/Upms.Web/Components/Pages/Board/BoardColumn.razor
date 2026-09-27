@@ -15,15 +15,23 @@
         {
             <li @key="card.Key">
                 <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
+                          CanContribute="CanContribute"
                           OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" />
             </li>
         }
     </ol>
-    <div class="col-drop-end @(DraggingKey is null ? "" : "active")" data-testid="column-drop-end"
-         @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDropAtEnd.InvokeAsync(Column)">
-        @(Column.Cards.Count == 0 ? "No cards yet" : DraggingKey is null ? "" : "Drop here to move to the end")
-    </div>
-    <InlineCreate ColumnName="@Column.Name" OnCreate="title => OnCreate(Column.Id, title)" />
+    @if (CanContribute)
+    {
+        <div class="col-drop-end @(DraggingKey is null ? "" : "active")" data-testid="column-drop-end"
+             @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDropAtEnd.InvokeAsync(Column)">
+            @(Column.Cards.Count == 0 ? "No cards yet" : DraggingKey is null ? "" : "Drop here to move to the end")
+        </div>
+        <InlineCreate ColumnName="@Column.Name" OnCreate="title => OnCreate(Column.Id, title)" />
+    }
+    else if (Column.Cards.Count == 0)
+    {
+        <p class="col-empty hint">No cards yet</p>
+    }
 </section>
 
 @code {
@@ -42,6 +50,10 @@
 
     [Parameter]
     public string? DraggingKey { get; set; }
+
+    /// <summary>False for Viewers: no new tasks, no dragging, no "Move to" (Phase 2 FR-003).</summary>
+    [Parameter]
+    public bool CanContribute { get; set; }
 
     [Parameter]
     public EventCallback<CardView> OnDragStart { get; set; }

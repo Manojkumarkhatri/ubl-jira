@@ -1,0 +1,358 @@
+@page "/projects/{Key}/members"
+@using Upms.Application.Projects
+@using Upms.Domain.Projects
+@inject IProjectMemberService Team
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Members · @Key · U-PMS</PageTitle>
+
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_team is null)
+{
+    <p aria-busy="true">Loading the team…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@_team.ProjectKey" Title="Members" Current="ProjectPage.Members" CanManage="_team.CanManage"
+                   CanRestoreDeleted="_team.CanRestoreDeleted" />
+
+    @if (_conflict is not null)
+    {
+        <div class="alert alert-warn" role="alert" data-testid="conflict">
+            @_conflict
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _conflict = null">Dismiss</button>
+        </div>
+    }
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">@_error</div>
+    }
+    @if (_saved is not null)
+    {
+        <p class="saved" data-testid="members-saved">@_saved</p>
+    }
+
+    @if (_team.CanManage)
+    {
+        <section class="card form-card add-member" aria-labelledby="add-member-heading">
+            <h2 id="add-member-heading">Add member</h2>
+            <div class="field">
+                <label for="member-search">Find a person</label>
+                <input id="member-search" type="search" class="input" autocomplete="off" maxlength="100"
+                       @bind="_term" @bind:event="oninput" @bind:after="SearchAsync" aria-describedby="member-search-hint" />
+                <span id="member-search-hint" class="hint">Type at least two letters of a name, user name or email address.</span>
+            </div>
+            @if (_people.Count > 0)
+            {
+                <fieldset class="people">
+                    <legend>Choose a person</legend>
+                    @foreach (var person in _people)
+                    {
+                        <label class="person" @key="person.UserId">
+                            <input type="radio" name="person" value="@person.UserId" checked="@(_chosen == person.UserId)"
+                                   @onchange="() => _chosen = person.UserId" />
+                            @person.DisplayName <span class="muted">@person.UserName</span>
+                        </label>
+                    }
+                </fieldset>
+            }
+            else if (_searched)
+            {
+                <p class="hint">No one found who is not already a member.</p>
+            }
+            <span class="sr-only" role="status">@_resultsText</span>
+            <div class="row">
+                <div class="field">
+                    <label for="member-role">Role</label>
+                    <select id="member-role" class="select" @bind="_newRole">
+                        @foreach (var role in Enum.GetValues<ProjectRole>())
+                        {
+                            <option value="@role">@role.DisplayName()</option>
+                        }
+                    </select>
+                </div>
+                <div class="field field-action">
+                    <button type="button" id="add-member" class="btn btn-primary" disabled="@(_chosen is null || _busy)" @onclick="AddAsync">Add member</button>
+                </div>
+            </div>
+        </section>
+    }
+
+    <div class="table-wrap">
+        <table class="tbl">
+            <caption class="sr-only">Members of @_team.ProjectName, Project Admins first</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col" class="hide-sm">User name</th>
+                    <th scope="col">Role</th>
+                    <th scope="col" class="hide-sm">Added</th>
+                    @if (_team.CanManage)
+                    {
+                        <th scope="col"><span class="sr-only">Actions</span></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var member in _team.Members)
+                {
+                    <tr data-testid="member-row" @key="member.UserId">
+                        <td>
+                            <strong>@member.DisplayName</strong>
+                            @if (member.IsMe)
+                            {
+                                @* An expression, so the leading space survives Razor's whitespace trimming. *@
+                                <span class="muted">@(" (you)")</span>
+                            }
+                            @if (!member.IsActive)
+                            {
+                                <span class="lozenge lozenge-off">Deactivated</span>
+                            }
+                        </td>
+                        <td class="hide-sm">@member.UserName</td>
+                        <td>
+                            @if (_team.CanManage)
+                            {
+                                <select id="@RoleId(member)" class="select select-sm" aria-label="Role of @member.DisplayName" disabled="@_busy"
+                                        value="@(_pendingRole.TryGetValue(member.UserId, out var pending) ? pending : member.Role)"
+                                        @onchange="e => ChangeRoleAsync(member, e)">
+                                    @foreach (var role in Enum.GetValues<ProjectRole>())
+                                    {
+                                        <option value="@role">@role.DisplayName()</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                @member.Role.DisplayName()
+                            }
+                        </td>
+                        <td class="hide-sm"><LocalTime Value="member.AddedAt" Format="d MMM yyyy" /></td>
+                        @if (_team.CanManage)
+                        {
+                            <td class="actions">
+                                @if (_confirmingRemove == member.UserId)
+                                {
+                                    <span class="confirm-text">Remove @member.DisplayName from the project? @(member.IsMe ? "You" : "They") will lose access at once.</span>
+                                    <button type="button" id="confirm-remove" class="btn btn-sm btn-danger" disabled="@_busy" @onclick="() => RemoveAsync(member)">Yes, remove</button>
+                                    <button type="button" class="btn btn-sm" @onclick="() => CancelRemove(member)">Cancel</button>
+                                }
+                                else
+                                {
+                                    <button type="button" id="@RemoveId(member)" class="btn btn-sm" aria-label="Remove @member.DisplayName"
+                                            @onclick="() => AskRemove(member)">Remove</button>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private const int MinSearchLength = 2;
+    private readonly Dictionary<Guid, ProjectRole> _pendingRole = [];
+    private TeamView? _team;
+    private string? _loadedKey;
+    private bool _notFound;
+    private bool _busy;
+    private string? _error;
+    private string? _conflict;
+    private string? _saved;
+    private string _term = "";
+    private int _searchRequest;
+    private bool _searched;
+    private string _resultsText = "";
+    private IReadOnlyList<PersonOption> _people = [];
+    private Guid? _chosen;
+    private ProjectRole _newRole = ProjectRole.Member;
+    private Guid? _confirmingRemove;
+    private string? _focusAfterRender;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    protected override Task OnParametersSetAsync() => _loadedKey == Key ? Task.CompletedTask : LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keyboard users keep their place: rows are re-rendered after every change.
+        if (_focusAfterRender is { } id)
+        {
+            _focusAfterRender = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private static string RoleId(MemberView member) => $"role-{member.UserId:N}";
+
+    private static string RemoveId(MemberView member) => $"remove-{member.UserId:N}";
+
+    private async Task LoadAsync()
+    {
+        _loadedKey = Key;
+        var result = await Team.GetTeamAsync(Key, CancellationToken.None);
+        _notFound = !result.IsSuccess;
+        _team = result.Value;
+    }
+
+    private async Task SearchAsync()
+    {
+        // Only the latest search counts: typing quickly starts several (as in the key suggestion of Phase 1).
+        var request = ++_searchRequest;
+        _chosen = null;
+        var term = _term.Trim();
+        if (term.Length < MinSearchLength)
+        {
+            _people = [];
+            _searched = false;
+            _resultsText = "";
+            return;
+        }
+
+        var result = await Team.FindPeopleAsync(Key, term, CancellationToken.None);
+        if (request != _searchRequest)
+        {
+            return;
+        }
+
+        _people = result.Value ?? [];
+        _searched = true;
+        _error = result.IsSuccess ? null : result.Error!.Message;
+        _resultsText = _people.Count switch
+        {
+            0 => "No one found.",
+            1 => "1 person found.",
+            var count => $"{count} people found.",
+        };
+    }
+
+    private async Task AddAsync()
+    {
+        if (_chosen is not { } userId || _team is null || _people.FirstOrDefault(p => p.UserId == userId) is not { } person)
+        {
+            return;
+        }
+
+        var role = _newRole;
+        _busy = true;
+        var result = await Team.AddAsync(Key, userId, role, _team.MembersVersion, CancellationToken.None);
+        _busy = false;
+        if (Handle(result))
+        {
+            Saved($"{person.DisplayName} added as {role.DisplayName()}.");
+            _term = "";
+            _people = [];
+            _chosen = null;
+            _searched = false;
+            _resultsText = "";
+            _focusAfterRender = "member-search";
+        }
+    }
+
+    private async Task ChangeRoleAsync(MemberView member, ChangeEventArgs e)
+    {
+        if (_team is null || !Enum.TryParse<ProjectRole>(e.Value?.ToString(), out var role) || role == member.Role)
+        {
+            return;
+        }
+
+        // Shown while saving; if the change is refused, removing it puts the saved role back in the list.
+        _pendingRole[member.UserId] = role;
+        StateHasChanged();
+        _busy = true;
+        var result = await Team.ChangeRoleAsync(Key, member.UserId, role, _team.MembersVersion, CancellationToken.None);
+        _busy = false;
+        _pendingRole.Remove(member.UserId);
+        if (Handle(result))
+        {
+            Saved($"{member.DisplayName} is now a {role.DisplayName()}.");
+            if (member.IsMe)
+            {
+                // Stepping down may take away the right to manage the team.
+                await LoadAsync();
+            }
+        }
+
+        _focusAfterRender = RoleId(member);
+    }
+
+    private void AskRemove(MemberView member)
+    {
+        _error = null;
+        _confirmingRemove = member.UserId;
+        _focusAfterRender = "confirm-remove";
+    }
+
+    private void CancelRemove(MemberView member)
+    {
+        _confirmingRemove = null;
+        _focusAfterRender = RemoveId(member);
+    }
+
+    private async Task RemoveAsync(MemberView member)
+    {
+        if (_team is null)
+        {
+            return;
+        }
+
+        _confirmingRemove = null;
+        _busy = true;
+        var result = await Team.RemoveAsync(Key, member.UserId, _team.MembersVersion, CancellationToken.None);
+        _busy = false;
+        if (Handle(result))
+        {
+            Saved($"{member.DisplayName} removed from the project.");
+            if (member.IsMe)
+            {
+                Navigation.NavigateTo("projects");
+                return;
+            }
+
+            _focusAfterRender = "member-search";
+        }
+    }
+
+    /// <summary>Shows the result: the new team, the latest team after a conflict, or the reason for a refusal.</summary>
+    private bool Handle(Result<TeamView> result)
+    {
+        _error = null;
+        _conflict = null;
+        _saved = null;
+        if (result.IsSuccess)
+        {
+            _team = result.Value!;
+            return true;
+        }
+
+        if (result.Error!.Kind == ErrorKind.Conflict && result.Error.Current is TeamView latest)
+        {
+            _team = latest;
+            _conflict = result.Error.Message;
+            return false;
+        }
+
+        _error = result.Error.Message;
+        return false;
+    }
+
+    private void Saved(string message)
+    {
+        _saved = message;
+        Announcer.Announce(message);
+    }
+}

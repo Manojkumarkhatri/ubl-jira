@@ -200,7 +200,7 @@ internal sealed class WorkItemService(
 
         if (!await access.CanDeleteWorkItemAsync(item.ProjectId, item.CreatedById, ct))
         {
-            return AppError.Forbidden("Only the task's creator, the project owner or an administrator can delete it.");
+            return AppError.Forbidden("Only the task's creator, a Project Admin or an administrator can delete it.");
         }
 
         return new DeletePreview(item.Key, item.Title, await db.WorkItems.CountAsync(w => w.ParentId == item.Id, ct));
@@ -222,7 +222,7 @@ internal sealed class WorkItemService(
 
         if (!await access.CanDeleteWorkItemAsync(item.ProjectId, item.CreatedById, ct))
         {
-            return AppError.Forbidden("Only the task's creator, the project owner or an administrator can delete it.");
+            return AppError.Forbidden("Only the task's creator, a Project Admin or an administrator can delete it.");
         }
 
         var subtasks = await db.WorkItems.Where(w => w.ParentId == item.Id).ToListAsync(ct);
@@ -344,7 +344,8 @@ internal sealed class WorkItemService(
             item.RowVersion,
             await reads.SubtasksAsync(item.Id, info.Statuses, PageRequest.First, ct),
             await reads.CommentsAsync(item.Id, allowed.UserId, PageRequest.First, ct),
-            await reads.HistoryAsync(item.Id, PageRequest.First, ct));
+            await reads.HistoryAsync(item.Id, PageRequest.First, ct),
+            allowed.CanContribute);
     }
 
     private async Task<AppError> ConflictAsync(WorkItem item, ProjectAccessInfo allowed, CancellationToken ct)

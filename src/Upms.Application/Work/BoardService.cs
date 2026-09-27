@@ -59,7 +59,7 @@ internal sealed class BoardService(
                 s.WipLimit is { } limit && columnCards.Count > limit, columnCards);
         }).ToList();
         return new BoardView(info.Key, info.Name, info.BoardVersion, allowed.Value.CanManage, showAllDone, hiddenDone, columns,
-            CanRestoreDeleted: allowed.Value.IsAdministrator);
+            CanRestoreDeleted: allowed.Value.IsAdministrator, CanContribute: allowed.Value.CanContribute);
     }
 
     public async Task<Result<CardView>> CreateInlineAsync(string projectKey, long columnId, string title, CancellationToken ct)

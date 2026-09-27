@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Upms.Application.Common;
 using Upms.Application.Projects.Contracts;
@@ -48,6 +49,33 @@ public sealed class TestData(ServiceHarness harness)
         db.Projects.Add(project);
         await db.SaveChangesAsync();
         return project;
+    }
+
+    /// <summary>Adds a person to a project's team with a role, bypassing the member service (Phase 2).</summary>
+    public async Task MemberAsync(long projectId, Guid userId, ProjectRole role = ProjectRole.Member)
+    {
+        await using var scope = harness.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+        var project = await db.Projects.Include(p => p.Members).SingleAsync(p => p.Id == projectId);
+        var added = project.AddMember(userId, role, project.OwnerId, harness.Time.GetUtcNow());
+        Assert.True(added.IsSuccess, added.Error?.Message);
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Adds people to a project's team by project key, bypassing the member service (Phase 2).</summary>
+    public async Task MembersAsync(string projectKey, ProjectRole role, params User[] users)
+    {
+        long projectId;
+        await using (var scope = harness.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+            projectId = await db.Projects.Where(p => p.Key == projectKey).Select(p => p.Id).SingleAsync();
+        }
+
+        foreach (var user in users)
+        {
+            await MemberAsync(projectId, user.Id, role);
+        }
     }
 
     /// <summary>A task with a chosen rank, bypassing the board service (for rank tests).</summary>

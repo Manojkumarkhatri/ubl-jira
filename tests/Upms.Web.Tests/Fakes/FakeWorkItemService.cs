@@ -43,7 +43,8 @@ public sealed class FakeWorkItemService : IWorkItemService
         [
             new ChangeView(T0, "Amina Khan", WorkItemField.Created, null, "To Do", null),
             new ChangeView(T0.AddMinutes(5), "Amina Khan", WorkItemField.Priority, "Medium", "High", null),
-        ], 2, 1, 50));
+        ], 2, 1, 50),
+        CanContribute: true);
 
     public Task<Result<WorkItemDetails>> GetAsync(string workItemKey, CancellationToken ct) =>
         Task.FromResult(workItemKey == Details.Key ? Result<WorkItemDetails>.Ok(Details) : Result<WorkItemDetails>.Fail(AppError.NotFound("task")));

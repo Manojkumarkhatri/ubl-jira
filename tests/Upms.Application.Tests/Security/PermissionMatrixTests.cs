@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Upms.Application.Common;
 using Upms.Application.Common.Results;
 using Upms.Application.Identity;
@@ -6,35 +7,48 @@ using Upms.Application.Tests.Fixtures;
 using Upms.Application.Work;
 using Upms.Domain.Common;
 using Upms.Domain.Identity;
+using Upms.Domain.Projects;
 
 namespace Upms.Application.Tests.Security;
 
 public enum Role
 {
     Anonymous,
-    User,
+    NonMember,
+    Viewer,
+    Member,
     Creator,
-    Owner,
+    ProjectAdmin,
     Admin,
 }
 
-/// <summary>Every cell of <c>specs/002-kanban-project-core/contracts/permissions.md</c>, exercised against the real
-/// services (SC-007). The rows are read from the document itself, so a row without operations here fails. The
-/// sign-in redirect (🔒) is the host's job and is tested in the web tests; here an anonymous caller is refused.</summary>
+/// <summary>Every cell of <c>specs/003-project-views-and-team/contracts/permissions.md</c> (the Phase 2 matrix, which
+/// supersedes Phase 1's), exercised against the real services (Phase 2 SC-003). The rows are read from the document
+/// itself, so a row without operations here fails. The sign-in redirect (🔒) is the host's job and is tested in the web
+/// tests; here an anonymous caller is refused.</summary>
 public sealed class PermissionMatrixTests(SqlServerFixture fixture) : IntegrationTest(fixture)
 {
     private const string NewPassword = "a brand new passphrase 77";
 
+    /// <summary>Rows whose operations arrive with Phase 2 User Story 2 (tasks.md T048); their cells are skipped until then.</summary>
+    private static readonly HashSet<string> PendingUntilUs2 = new(StringComparer.Ordinal)
+    {
+        "Assign tasks and set their dates (drawer or timeline)",
+        "See \"My tasks\" (own open assigned tasks in projects they can see)",
+    };
+
+    private const string PendingOperation = "(arrives with US2)";
+
     /// <summary>The operations that implement each row of the matrix.</summary>
     private static readonly Dictionary<string, (string Name, Operation Run)[]> Rows = new(StringComparer.Ordinal)
     {
-        ["See the project list, any board, any task drawer"] =
+        ["See the project, its board, list, timeline, task drawers and member list"] =
         [
-            ("list projects", (t, _) => t.Try<IProjectService, Page<ProjectSummary>>(s => s.ListAsync(PageRequest.First, Ct))),
             ("open a board", (t, _) => t.Try<IBoardService, BoardView>(s => s.GetAsync("WEB", false, Ct))),
             ("open a task drawer", (t, _) => t.Try<IWorkItemService, WorkItemDetails>(s => s.GetAsync("WEB-1", Ct))),
+            ("see the member list", (t, _) => t.Try<IProjectMemberService, TeamView>(s => s.GetTeamAsync("WEB", Ct))),
         ],
-        ["Create a project (becoming its owner)"] =
+        ["Create a project (becoming its first Project Admin)"] =
         [
             ("create a project", async (t, _) =>
             {
@@ -42,7 +56,7 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
                 if (error is null)
                 {
                     var created = (await t.CallAsync<IProjectService, Result<ProjectDetails>>(s => s.GetAsync("PAY", Ct))).ValueOrThrow();
-                    Assert.True(created.CanManage, "The creator becomes the owner.");
+                    Assert.True(created.CanManage, "The creator becomes the first Project Admin.");
                 }
 
                 return error;
@@ -61,7 +75,13 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
             ("retype a column", (t, w) => t.Columns(s => s.ChangeCategoryAsync("WEB", w.InProgress, StatusCategory.ToDo, w.BoardVersion, Ct))),
             ("delete a column", (t, w) => t.Columns(s => s.DeleteAsync("WEB", w.InProgress, null, w.BoardVersion, Ct))),
         ],
-        ["Create tasks (inline) and sub-tasks"] =
+        ["Add members, change their roles and remove them"] =
+        [
+            ("add a member", (t, w) => t.Try<IProjectMemberService, TeamView>(s => s.AddAsync("WEB", w.Newcomer.Id, ProjectRole.Member, w.MembersVersion, Ct))),
+            ("change a member's role", (t, w) => t.Try<IProjectMemberService, TeamView>(s => s.ChangeRoleAsync("WEB", w.Other.Id, ProjectRole.Viewer, w.MembersVersion, Ct))),
+            ("remove a member", (t, w) => t.Try<IProjectMemberService, TeamView>(s => s.RemoveAsync("WEB", w.Other.Id, w.MembersVersion, Ct))),
+        ],
+        ["Create tasks (on the board or the list) and sub-tasks"] =
         [
             ("create a task", (t, w) => t.Try<IBoardService, CardView>(s => s.CreateInlineAsync("WEB", w.ToDo, "New task", Ct))),
             ("create a sub-task", (t, _) => t.Try<IWorkItemService, WorkItemDetails>(s => s.AddSubtaskAsync("WEB-1", "New sub-task", Ct))),
@@ -121,8 +141,11 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         var data = new TheoryData<string, string, Role, string>();
         foreach (var (action, cells) in ReadMatrix())
         {
-            Assert.True(Rows.TryGetValue(action, out var operations), $"No test operations for the permissions.md row \"{action}\".");
-            foreach (var (name, _) in operations!)
+            var names = Rows.TryGetValue(action, out var operations)
+                ? operations.Select(o => o.Name).ToList()
+                : PendingUntilUs2.Contains(action) ? [PendingOperation] : null;
+            Assert.True(names is not null, $"No test operations for the permissions.md row \"{action}\".");
+            foreach (var name in names!)
             {
                 foreach (var role in Enum.GetValues<Role>())
                 {
@@ -136,8 +159,13 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
 
     [Theory]
     [MemberData(nameof(Cells))]
-    public async Task SC007_Every_cell_of_the_permission_matrix_is_enforced(string action, string operation, Role role, string cell)
+    public async Task P2_SC003_Every_cell_of_the_permission_matrix_is_enforced(string action, string operation, Role role, string cell)
     {
+        if (operation == PendingOperation)
+        {
+            Assert.Skip("The operations for this row arrive with Phase 2 User Story 2.");
+        }
+
         var world = await SetUpAsync();
         ActAs(world.Caller(role));
 
@@ -147,20 +175,25 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         {
             Assert.True(error is null, $"{role} should be allowed to {operation}, but got {error?.Kind}: {error?.Message}");
         }
+        else if (cell.StartsWith("🚫", StringComparison.Ordinal))
+        {
+            Assert.True(error?.Kind == ErrorKind.NotFound, $"{role} should be told the project does not exist when trying to {operation}, but got {error?.Kind.ToString() ?? "success"}.");
+        }
         else
         {
             Assert.True(error is not null, $"{role} should be refused to {operation}, but it succeeded.");
-            // Only the author may change a comment: others, even owners and Administrators, get CommentNotOwned.
-            var refusedAsNotOwner = role != Role.Anonymous && action == "Edit or delete a comment";
+            // Only the author may change a comment: other contributors, even Project Admins and Administrators, get
+            // CommentNotOwned; Viewers are refused before that, as they cannot contribute at all.
+            var refusedAsNotOwner = action == "Edit or delete a comment" && role is Role.Member or Role.ProjectAdmin or Role.Admin;
             Assert.Equal(refusedAsNotOwner ? ErrorCodes.CommentNotOwned : ErrorCodes.Forbidden, error.Code);
         }
     }
 
     [Theory]
-    [InlineData("list projects")]
     [InlineData("open a board")]
     [InlineData("create a task")]
     [InlineData("add a comment")]
+    [InlineData("see the member list")]
     [InlineData("change own display name and time zone")]
     public async Task Rule1_A_deactivated_user_is_refused_everything(string operation)
     {
@@ -184,13 +217,41 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         Assert.Equal(ErrorKind.NotFound, (await Try<ICommentService, CommentView>(s => s.EditAsync(999_999, "x", [1], Ct)))?.Kind);
     }
 
+    [Fact]
+    public async Task Rule4_The_last_active_Project_Admin_can_neither_leave_nor_step_down()
+    {
+        var world = await SetUpAsync();
+        ActAs(world.Owner);
+
+        Assert.Equal(ErrorCodes.LastProjectAdmin, (await Try<IProjectMemberService, TeamView>(s =>
+            s.RemoveAsync("WEB", world.Owner.Id, world.MembersVersion, Ct)))?.Code);
+        Assert.Equal(ErrorCodes.LastProjectAdmin, (await Try<IProjectMemberService, TeamView>(s =>
+            s.ChangeRoleAsync("WEB", world.Owner.Id, ProjectRole.Member, world.MembersVersion, Ct)))?.Code);
+    }
+
+    [Fact]
+    public async Task Rule6_A_removal_applies_to_the_persons_next_request()
+    {
+        var world = await SetUpAsync();
+        ActAs(world.Other);
+        Assert.Null(await Try<IBoardService, BoardView>(s => s.GetAsync("WEB", false, Ct)));
+
+        ActAs(world.Owner);
+        Assert.Null(await Try<IProjectMemberService, TeamView>(s => s.RemoveAsync("WEB", world.Other.Id, world.MembersVersion, Ct)));
+
+        ActAs(world.Other);
+        Assert.Equal(ErrorKind.NotFound, (await Try<IBoardService, BoardView>(s => s.GetAsync("WEB", false, Ct)))?.Kind);
+        Assert.Equal(ErrorKind.NotFound, (await Try<IWorkItemService, WorkItemDetails>(s => s.GetAsync("WEB-1", Ct)))?.Kind);
+    }
+
     private static IEnumerable<(string Action, string[] Cells)> ReadMatrix()
     {
         var lines = File.ReadAllLines(PermissionsDocument());
         var header = Array.FindIndex(lines, l => l.StartsWith("| Action |", StringComparison.Ordinal));
         Assert.True(header >= 0, "The permission table was not found in permissions.md.");
         var columns = Split(lines[header]);
-        Assert.Equal(["Action", "Anonymous", "User", "Creator", "Owner", "Admin"], columns.Select(c => c.Replace("*", "", StringComparison.Ordinal)));
+        Assert.Equal(["Action", "Anonymous", "Non-member", "Viewer", "Member", "Creator", "Project Admin", "Admin"],
+            columns.Select(c => c.Replace("*", "", StringComparison.Ordinal)));
         foreach (var line in lines.Skip(header + 2).TakeWhile(l => l.StartsWith('|')))
         {
             var cells = Split(line);
@@ -204,31 +265,38 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
-            var path = Path.Combine(dir.FullName, "specs", "002-kanban-project-core", "contracts", "permissions.md");
+            var path = Path.Combine(dir.FullName, "specs", "003-project-views-and-team", "contracts", "permissions.md");
             if (File.Exists(path))
             {
                 return path;
             }
         }
 
-        throw new FileNotFoundException("specs/002-kanban-project-core/contracts/permissions.md was not found above the test output.");
+        throw new FileNotFoundException("specs/003-project-views-and-team/contracts/permissions.md was not found above the test output.");
     }
 
-    /// <summary>Owner "owen" owns WEB; "cara" created WEB-1, WEB-2 and a comment on WEB-1; the Administrator "ada"
-    /// deleted WEB-3; "grace" is a second Administrator; "uma" is any other user; "dora" is deactivated.</summary>
+    /// <summary>Project Admin "owen" created WEB; Member "cara" created WEB-1, WEB-2 and a comment on WEB-1; "uma" is
+    /// another Member and "vera" a Viewer; "nora" is not a member; the Administrator "ada" (not a member) deleted
+    /// WEB-3; "grace" is a second Administrator; "dora" is a deactivated Member; "nick" can be added to the team.</summary>
     private async Task<World> SetUpAsync()
     {
         var owner = await Data.UserAsync("owen");
         var creator = await Data.UserAsync("cara");
         var other = await Data.UserAsync("uma");
+        var viewer = await Data.UserAsync("vera");
+        var outsider = await Data.UserAsync("nora");
+        var newcomer = await Data.UserAsync("nick");
         var admin = await Data.AdministratorAsync("ada");
         var secondAdmin = await Data.AdministratorAsync("grace");
         var deactivated = await Data.UserAsync("dora", isActive: false);
 
         ActAs(owner);
         (await CallAsync<IProjectService, Result<string>>(s => s.CreateAsync("Website Revamp", "WEB", null, Ct))).ValueOrThrow();
+        await Data.MembersAsync("WEB", ProjectRole.Member, creator, other, deactivated);
+        await Data.MembersAsync("WEB", ProjectRole.Viewer, viewer);
         var board = (await CallAsync<IBoardService, Result<BoardView>>(s => s.GetAsync("WEB", false, Ct))).ValueOrThrow();
         var (toDo, inProgress, done) = (board.Columns[0].Id, board.Columns[1].Id, board.Columns[2].Id);
+        var membersVersion = (await CallAsync<IProjectMemberService, Result<TeamView>>(s => s.GetTeamAsync("WEB", Ct))).ValueOrThrow().MembersVersion;
 
         ActAs(creator);
         foreach (var title in new[] { "Design the home page", "Write the copy", "Old idea" })
@@ -243,8 +311,8 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
         var task1 = (await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s => s.GetAsync("WEB-1", Ct))).ValueOrThrow();
         var task2 = (await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s => s.GetAsync("WEB-2", Ct))).ValueOrThrow();
         ActAs(null);
-        return new World(owner, creator, other, admin, secondAdmin, deactivated, board.BoardVersion, toDo, inProgress, done,
-            task1.Version, task2.Version, comment.Id, comment.Version);
+        return new World(owner, creator, other, viewer, outsider, newcomer, admin, secondAdmin, deactivated, board.BoardVersion,
+            membersVersion, toDo, inProgress, done, task1.Version, task2.Version, comment.Id, comment.Version);
     }
 
     private async Task<AppError?> Try<TService, TValue>(Func<TService, Task<Result<TValue>>> call)
@@ -258,14 +326,17 @@ public sealed class PermissionMatrixTests(SqlServerFixture fixture) : Integratio
     private Task<AppError?> Edit(WorkItemEdit edit, byte[] version) =>
         Try<IWorkItemService, WorkItemDetails>(s => s.UpdateAsync("WEB-1", edit, version, Ct));
 
-    private sealed record World(User Owner, User Creator, User Other, User Admin, User SecondAdmin, User Deactivated, int BoardVersion,
-        long ToDo, long InProgress, long Done, byte[] Task1Version, byte[] Task2Version, long CommentId, byte[] CommentVersion)
+    private sealed record World(User Owner, User Creator, User Other, User Viewer, User Outsider, User Newcomer, User Admin,
+        User SecondAdmin, User Deactivated, int BoardVersion, int MembersVersion, long ToDo, long InProgress, long Done,
+        byte[] Task1Version, byte[] Task2Version, long CommentId, byte[] CommentVersion)
     {
         public User? Caller(Role role) => role switch
         {
-            Role.User => Other,
+            Role.NonMember => Outsider,
+            Role.Viewer => Viewer,
+            Role.Member => Other,
             Role.Creator => Creator,
-            Role.Owner => Owner,
+            Role.ProjectAdmin => Owner,
             Role.Admin => Admin,
             _ => null,
         };

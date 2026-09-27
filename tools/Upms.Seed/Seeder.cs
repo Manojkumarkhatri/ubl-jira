@@ -12,13 +12,19 @@ using Upms.Infrastructure.Persistence;
 
 namespace Upms.Seed;
 
-/// <summary>Fills an empty database with realistic volumes (tasks.md T105): users and projects through the domain
-/// and EF Core; work items, their history and comments with bulk inserts. About 80% of work items are tasks and
-/// 20% sub-tasks; about 25% of tasks are to do, 15% in progress and 60% done (3% of those in the last 14 days),
-/// and 1% are deleted. Every generated change has a matching history row.</summary>
+/// <summary>Fills an empty database with realistic volumes (tasks.md T105): users, projects and their teams through
+/// the domain and EF Core; work items, their history and comments with bulk inserts. Every project has its owner as
+/// Project Admin, 4 to 20 Members and 0 to 3 Viewers (Phase 2 research R15), and only its contributors create,
+/// change and comment on its work. About 80% of work items are tasks and 20% sub-tasks; about 25% of tasks are to
+/// do, 15% in progress and 60% done (3% of those in the last 14 days), and 1% are deleted. Every generated change
+/// has a matching history row.</summary>
 public sealed class Seeder(string connectionString, Action<string> log)
 {
     private const int BatchRows = 20_000;
+
+    /// <summary>Members of the largest project: enough for every tenth simulated user of the SC-002 run to work on it
+    /// as a different person.</summary>
+    private const int LargestProjectMembers = 40;
 
     public async Task<SeedSummary> RunAsync(SeedOptions options, CancellationToken ct)
     {
@@ -38,7 +44,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
 
         var users = await SeedUsersAsync(options, random, now, ct);
         var projects = await SeedProjectsAsync(options, users, random, now, ct);
-        var work = new WorkWriter(connectionString, users, random, now);
+        var work = new WorkWriter(connectionString, random, now);
         await work.InitializeAsync(ct);
         foreach (var project in projects)
         {
@@ -109,14 +115,18 @@ public sealed class Seeder(string connectionString, Action<string> log)
         tasks.AddRange(weights.Select(w => Math.Max(1, (tasksTotal - largest) * w / weightSum)));
 
         var created = new List<(Project Project, int Tasks)>();
+        var memberships = 0;
         await using (var db = AppDbContext.Create(connectionString))
         {
             for (var i = 0; i < options.Projects; i++)
             {
                 var key = i == 0 ? "BIG" : $"P{i:0000}";
                 var name = i == 0 ? "Largest Board" : SampleText.ProjectName(i);
+                var createdAt = now.AddDays(-random.Next(60, 500));
                 var project = Project.Create(name, key, i % 3 == 0 ? $"Seeded project {key}." : null,
-                    users[random.Next(users.Count)], now.AddDays(-random.Next(60, 500))).Value!;
+                    users[random.Next(users.Count)], createdAt).Value!;
+                AddTeam(project, users, random, i == 0 ? LargestProjectMembers : random.Next(4, 21), random.Next(0, 4), createdAt);
+                memberships += project.Members.Count;
                 if (i % 5 == 0)
                 {
                     project.AddColumn("In Review", StatusCategory.InProgress, 2, now);
@@ -133,10 +143,33 @@ public sealed class Seeder(string connectionString, Action<string> log)
             await db.SaveChangesAsync(ct);
         }
 
-        log($"{created.Count:N0} projects");
+        log($"{created.Count:N0} projects with {memberships:N0} memberships");
         return created.ConvertAll(c => new SeededProject(c.Project.Id, c.Project.Key, c.Tasks,
             (int)Math.Round(c.Tasks * subtaskRatio),
-            c.Project.Statuses.Select(s => new SeededStatus(s.Id, s.Name, s.Category)).ToList()));
+            c.Project.Statuses.Select(s => new SeededStatus(s.Id, s.Name, s.Category)).ToList(),
+            c.Project.Members.Where(m => m.Role != ProjectRole.Viewer).Select(m => m.UserId).ToList()));
+    }
+
+    /// <summary>Adds Members, then Viewers, chosen at random from everyone but the owner (already Project Admin).</summary>
+    private static void AddTeam(Project project, List<Guid> users, Random random, int members, int viewers, DateTimeOffset at)
+    {
+        var taken = new HashSet<Guid> { project.OwnerId };
+        var size = Math.Min(members + viewers, users.Count - 1);
+        for (var n = 0; n < size; n++)
+        {
+            Guid userId;
+            do
+            {
+                userId = users[random.Next(users.Count)];
+            }
+            while (!taken.Add(userId));
+
+            var role = n < members ? ProjectRole.Member : ProjectRole.Viewer;
+            if (project.AddMember(userId, role, project.OwnerId, at.AddMinutes(n + 1)).Error is { } error)
+            {
+                throw new InvalidOperationException(error.Message);
+            }
+        }
     }
 
     private async Task FinishAsync(CancellationToken ct)
@@ -166,14 +199,17 @@ public sealed class Seeder(string connectionString, Action<string> log)
 
     private sealed record SeededStatus(long Id, string Name, StatusCategory Category);
 
-    private sealed record SeededProject(long Id, string Key, int Tasks, int Subtasks, List<SeededStatus> Statuses);
+    /// <param name="Contributors">The Project Admin and Members, who create, change and comment on the work.</param>
+    private sealed record SeededProject(long Id, string Key, int Tasks, int Subtasks, List<SeededStatus> Statuses,
+        List<Guid> Contributors);
 
     /// <summary>Generates one project's work at a time into tables that are bulk-copied in batches.</summary>
-    private sealed class WorkWriter(string connectionString, List<Guid> users, Random random, DateTimeOffset now)
+    private sealed class WorkWriter(string connectionString, Random random, DateTimeOffset now)
     {
         private readonly DataTable _items = ItemsTable();
         private readonly DataTable _changes = ChangesTable();
         private readonly DataTable _comments = CommentsTable();
+        private List<Guid> _contributors = [];
         private long _nextItemId;
         private long _nextCommentId;
 
@@ -195,6 +231,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
 
         public void AddProject(SeededProject project)
         {
+            _contributors = project.Contributors;
             var toDo = project.Statuses.First(s => s.Category == StatusCategory.ToDo);
             var inProgress = project.Statuses.Where(s => s.Category == StatusCategory.InProgress).ToList();
             var done = project.Statuses.First(s => s.Category == StatusCategory.Done);
@@ -262,7 +299,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
             SeededStatus status, string rank, DateTimeOffset createdAt, DateTimeOffset? resolvedAt, bool deleted,
             SeededStatus toDo, SeededStatus inProgress)
         {
-            var creator = RandomUser();
+            var creator = RandomContributor();
             var priority = RandomPriority();
             var title = SampleText.Title(random);
             AddChange(id, createdAt, WorkItemField.Created, null, toDo.Name, null, creator);
@@ -285,7 +322,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
             }
 
             DateTimeOffset? deletedAt = deleted ? Later(at, null) : null;
-            Guid? deletedBy = deleted ? RandomUser() : null;
+            Guid? deletedBy = deleted ? RandomContributor() : null;
             if (deletedAt is { } when)
             {
                 at = when;
@@ -305,7 +342,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
             for (var c = random.Next(1, 4); c > 0; c--)
             {
                 var id = _nextCommentId++;
-                var author = RandomUser();
+                var author = RandomContributor();
                 var at = Later(from, to > from ? to : null);
                 var body = SampleText.Comment(random);
                 _comments.Rows.Add(id, workItemId, author, body, at, DBNull.Value, false, DBNull.Value);
@@ -317,7 +354,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
         private void AddChange(long workItemId, DateTimeOffset at, WorkItemField field, string? oldValue, string? newValue,
             string? note, Guid? actor = null)
         {
-            _changes.Rows.Add(workItemId, Seeder.NewGuid(random), actor ?? RandomUser(), at, field.ToString(),
+            _changes.Rows.Add(workItemId, Seeder.NewGuid(random), actor ?? RandomContributor(), at, field.ToString(),
                 (object?)oldValue ?? DBNull.Value, (object?)newValue ?? DBNull.Value, (object?)note ?? DBNull.Value);
             Changes++;
         }
@@ -330,7 +367,7 @@ public sealed class Seeder(string connectionString, Action<string> log)
             return span <= 1 ? end : from.AddMinutes(random.NextDouble() * span);
         }
 
-        private Guid RandomUser() => users[random.Next(users.Count)];
+        private Guid RandomContributor() => _contributors[random.Next(_contributors.Count)];
 
         private Priority RandomPriority() => random.Next(100) switch
         {

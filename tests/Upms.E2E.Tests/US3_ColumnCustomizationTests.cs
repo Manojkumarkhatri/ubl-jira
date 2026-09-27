@@ -95,7 +95,8 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await Assertions.Expect(Column(page, 2).Locator(".card-title")).ToHaveTextAsync(["Check the settlement file", "Sign off the forecast"]);
         await Assertions.Expect(page.Locator("[data-testid^='card-TRS-']")).ToHaveCountAsync(6);
 
-        // US3_AS8: someone who is not the owner cannot change the columns, but still works on tasks.
+        // US3_AS8: a Member who is not a Project Admin cannot change the columns, but still works on tasks.
+        await App.AddMemberAsync("TRS", "sana");
         var sana = await SignInAsync("sana", sanaPassword);
         await GotoAsync(sana, "/projects/TRS/board");
         await Assertions.Expect(sana.GetByRole(AriaRole.Link, new() { Name = "Project settings" })).ToHaveCountAsync(0);

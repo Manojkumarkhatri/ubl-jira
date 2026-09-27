@@ -3,7 +3,7 @@ using Upms.Domain.Common;
 
 namespace Upms.Application.Projects;
 
-/// <summary>A board's columns (FR-034 to FR-039): the project owner and Administrators only. Every change
+/// <summary>A board's columns (FR-034 to FR-039): Project Admins and Administrators only. Every change
 /// carries the board version it was based on; a stale one returns <c>Conflict</c> with the current columns
 /// (FR-041).</summary>
 public interface IBoardColumnService

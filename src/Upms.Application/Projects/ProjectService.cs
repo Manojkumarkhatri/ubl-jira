@@ -9,7 +9,7 @@ using Upms.Domain.Projects;
 
 namespace Upms.Application.Projects;
 
-/// <summary>Projects (FR-011 to FR-015).</summary>
+/// <summary>Projects (FR-011 to FR-015; Phase 2 FR-002, FR-007, FR-015).</summary>
 internal sealed class ProjectService(
     IAppDbContext db,
     ICallerContext caller,
@@ -20,17 +20,28 @@ internal sealed class ProjectService(
 {
     public async Task<Result<Page<ProjectSummary>>> ListAsync(PageRequest page, CancellationToken ct)
     {
-        if (await caller.GetAsync(ct) is not { IsActive: true })
+        if (await caller.GetAsync(ct) is not { IsActive: true } user)
         {
             return AppError.Forbidden();
         }
 
         page = page.Normalized();
-        var total = await db.Projects.CountAsync(ct);
-        var projects = await db.Projects.AsNoTracking()
+        // Members see their projects; administrators see every project (Phase 2 FR-002, FR-006).
+        var visible = user.IsAdministrator
+            ? db.Projects.AsNoTracking()
+            : db.Projects.AsNoTracking().Where(p => db.ProjectMembers.Any(m => m.ProjectId == p.Id && m.UserId == user.UserId));
+        var total = await visible.CountAsync(ct);
+        var projects = await visible
             .OrderBy(p => p.NormalizedName)
             .Skip(page.Skip).Take(page.PageSize)
-            .Select(p => new { p.Id, p.Key, p.Name, p.OwnerId })
+            .Select(p => new
+            {
+                p.Id,
+                p.Key,
+                p.Name,
+                Role = db.ProjectMembers.Where(m => m.ProjectId == p.Id && m.UserId == user.UserId)
+                    .Select(m => (ProjectRole?)m.Role).FirstOrDefault(),
+            })
             .ToListAsync(ct);
         var projectIds = projects.ConvertAll(p => p.Id);
 
@@ -40,12 +51,12 @@ internal sealed class ProjectService(
             .Select(s => new { s.Id, s.ProjectId })
             .ToListAsync(ct);
         var counts = await workItemCounts.CountByStatusAsync(openStatuses.ConvertAll(s => s.Id), ct);
-        var owners = await users.GetAsync(projects.Select(p => p.OwnerId).Distinct().ToList(), ct);
 
         var items = projects.ConvertAll(p => new ProjectSummary(
             p.Key,
             p.Name,
-            owners.TryGetValue(p.OwnerId, out var owner) ? owner.DisplayName : "Unknown user",
+            p.Role,
+            p.Role is null,
             openStatuses.Where(s => s.ProjectId == p.Id).Sum(s => counts.GetValueOrDefault(s.Id))));
         return new Page<ProjectSummary>(items, total, page.Page, page.PageSize);
     }

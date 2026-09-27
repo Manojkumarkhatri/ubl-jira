@@ -118,6 +118,15 @@ main:focus { outline: none; }
 .saved { color: var(--success); font-weight: 600; }
 .row { display: flex; gap: 12px; }
 .row > * { flex: 1; min-width: 0; }
+.field-action { justify-content: flex-end; flex: 0 0 auto; }
+
+/* Members: people found while adding someone (Phase 2 FR-008). */
+.people { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 0 0 14px; }
+.people legend { font-size: 12px; font-weight: 600; color: var(--text-2); padding: 0 4px; }
+.person { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+@media (max-width: 480px) {
+  .add-member .row { flex-direction: column; gap: 0; }
+}
 
 /* ---------- Alerts, cards, tables ---------- */
 .alert { border-radius: var(--radius); padding: 10px 14px; margin: 0 0 14px; border: 1px solid transparent; }
@@ -151,6 +160,11 @@ main#main { padding: 20px 24px 40px; }
 .crumbs { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .crumbs a { color: var(--muted); text-decoration: none; }
 .crumbs a:hover { text-decoration: underline; }
+/* The project's pages (ProjectHeader): tab-like links; the current one is underlined and named by aria-current. */
+.project-nav { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -6px 0 16px; border-bottom: 1px solid var(--border); }
+.project-nav a { padding: 6px 0 8px; color: var(--text-2); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.project-nav a:hover { color: var(--text); border-bottom-color: var(--border-strong); }
+.project-nav a[aria-current="page"] { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .toolbar .search { max-width: 360px; }
 .pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 14px 0; }

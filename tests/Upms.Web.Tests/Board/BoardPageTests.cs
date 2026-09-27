@@ -41,6 +41,20 @@ public sealed class BoardPageTests : BunitTestBase
     }
 
     [Fact]
+    public void P2_US1_AS3_Viewers_get_a_read_only_board()
+    {
+        _board.Board = _board.Board with { CanContribute = false };
+
+        var cut = RenderBoard();
+
+        Assert.Empty(cut.FindAll("input.inline-input"));
+        Assert.Empty(cut.FindAll("[data-testid=column-drop-end]"));
+        Assert.Empty(cut.FindAll(".move-btn"));
+        Assert.All(cut.FindAll("article.bcard"), card => Assert.Equal("false", card.GetAttribute("draggable")));
+        Assert.Equal("projects/WEB/board?task=WEB-1", cut.Find("#card-WEB-1-title").GetAttribute("href"));
+    }
+
+    [Fact]
     public void US1_AS7_Dropping_a_card_on_another_moves_it_before_that_card()
     {
         var cut = RenderBoard();

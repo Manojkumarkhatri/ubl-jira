@@ -98,7 +98,7 @@ public sealed class WorkItemServiceTests(SqlServerFixture fixture) : DrawerTestB
     {
         await AddAsync(ToDo, "Design the home page");
         var loaded = await RequireDetailsAsync("WEB-1");
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         await EditAsync("WEB-1", new WorkItemEdit.Description("Bilal's version"), loaded.Version);
 
         ActAs(Owner);

@@ -15,12 +15,7 @@ else if (_details is null)
 }
 else
 {
-    <div class="page-head">
-        <div>
-            <div class="crumbs"><a href="projects">Projects</a> / <a href="projects/@Key/board">@_details.Key</a></div>
-            <h1>Project settings</h1>
-        </div>
-    </div>
+    <ProjectHeader ProjectKey="@_details.Key" Title="Project settings" Current="ProjectPage.Settings" CanManage="_details.CanManage" />
 
     <section class="card form-card" aria-labelledby="details-heading">
         <h2 id="details-heading">Details</h2>
@@ -78,7 +73,7 @@ else
     protected override async Task OnParametersSetAsync()
     {
         var result = await Projects.GetAsync(Key, CancellationToken.None);
-        // Settings are for the owner and Administrators; everyone else is told it does not exist (US3_AS8).
+        // Settings are for Project Admins and Administrators; everyone else is told they do not exist (US3_AS8).
         if (!result.IsSuccess || !result.Value!.CanManage)
         {
             _notFound = true;

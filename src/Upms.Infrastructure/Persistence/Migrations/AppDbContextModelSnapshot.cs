@@ -326,6 +326,10 @@ namespace Upms.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(10)");
 
+                    b.Property<int>("MembersVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -356,6 +360,46 @@ namespace Upms.Infrastructure.Persistence.Migrations
                     b.HasIndex("OwnerId");
 
                     b.ToTable("Projects", (string)null);
+                });
+
+            modelBuilder.Entity("Upms.Domain.Projects.ProjectMember", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("AddedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ProjectId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(12)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AddedById");
+
+                    b.HasIndex("UserId");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("UserId"), new[] { "Role" });
+
+                    b.HasIndex("ProjectId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("ProjectMembers", (string)null);
                 });
 
             modelBuilder.Entity("Upms.Domain.Projects.ProjectStatus", b =>
@@ -656,6 +700,26 @@ namespace Upms.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Upms.Domain.Projects.ProjectMember", b =>
+                {
+                    b.HasOne("Upms.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("AddedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Upms.Domain.Projects.Project", null)
+                        .WithMany("Members")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Upms.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Upms.Domain.Projects.ProjectStatus", b =>
                 {
                     b.HasOne("Upms.Domain.Projects.Project", null)
@@ -728,6 +792,8 @@ namespace Upms.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Upms.Domain.Projects.Project", b =>
                 {
+                    b.Navigation("Members");
+
                     b.Navigation("Statuses");
                 });
 

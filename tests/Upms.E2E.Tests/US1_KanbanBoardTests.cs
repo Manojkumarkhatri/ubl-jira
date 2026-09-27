@@ -99,7 +99,8 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         await Assertions.Expect(Titles(page, 1)).ToHaveTextAsync(["Design the home page"]);
         await Assertions.Expect(Titles(page, 2)).ToHaveTextAsync(["Set up hosting", "Pick the colours"]);
 
-        // Another signed-in user sees the same board.
+        // Another member of the project sees the same board.
+        await App.AddMemberAsync("WEB", "bilal");
         var bilal = await SignInAsync("bilal", bilalPassword);
         await GotoAsync(bilal, "/projects/WEB/board");
         await Assertions.Expect(Titles(bilal, 0)).ToHaveTextAsync(["Plan the launch", "Write the copy"]);

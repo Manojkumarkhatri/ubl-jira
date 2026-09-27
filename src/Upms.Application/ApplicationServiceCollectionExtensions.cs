@@ -29,12 +29,14 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IUserAdminService, UserAdminService>();
         services.AddScoped<IOrganizationSettingsReader, OrganizationSettingsReader>();
         services.AddScoped<IUserDirectory, UserDirectory>();
+        services.AddScoped<IMembershipAuditLog, MembershipAuditLog>();
 
         // Projects module
         services.AddScoped<IProjectAccess, ProjectAccess>();
         services.AddScoped<IProjectWorkflow, ProjectWorkflow>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IBoardColumnService, BoardColumnService>();
+        services.AddScoped<IProjectMemberService, ProjectMemberService>();
 
         // Work module
         services.AddScoped<IWorkItemCounts, WorkItemCounts>();

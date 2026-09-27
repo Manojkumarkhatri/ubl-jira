@@ -9,7 +9,8 @@ portfolio dashboards, collaboration, search, and user administration.
 **Status**: Phase 1 (core Kanban project) is built: sign-in and accounts, projects, the Kanban board,
 the task details drawer and column customization, with automated tests for every acceptance scenario.
 Before the pilot, the manual screen-reader pass and the restore drill still need a person; see
-[Before the pilot](#before-the-pilot). The project follows
+[Before the pilot](#before-the-pilot). Phase 2 (project views and team) is specified and planned
+([specs/003-project-views-and-team](specs/003-project-views-and-team/spec.md)) and being built. The project follows
 [Spec Kit](https://github.com/github/spec-kit) spec-driven development: every feature is specified,
 clarified, planned, and broken into tasks before any code is written.
 
@@ -25,7 +26,7 @@ Testcontainers, Playwright. One deployable modular monolith; see the
 | Phase | Scope | Spec |
 |-------|-------|------|
 | **1. Core Kanban project** | Sign-in from Day 1; project creation (name, key, description); Kanban board (To Do, In Progress, Done) with inline "What needs to be done?"; task details drawer (title, description, priority, sub-tasks, comments, history); customizable columns | [specs/002-kanban-project-core](specs/002-kanban-project-core/spec.md) |
-| 2. Views and project team | Board, List and Timeline views of the same project; project members and task assignees | to be specified |
+| **2. Views and project team** | Members-only projects with Project Admin, Member and Viewer roles; task assignees, start and due dates, "My tasks"; List and Timeline views beside the board | [specs/003-project-views-and-team](specs/003-project-views-and-team/spec.md) |
 | 3. Enterprise and portfolio | Portfolio rollups, cross-project dashboards, Scrum and PMO stage-gate templates | to be specified |
 
 The earlier MVP spec, [specs/001-issue-tracker-mvp](specs/001-issue-tracker-mvp/spec.md), is kept as
@@ -47,6 +48,16 @@ the product vision and requirement backlog for Phases 2 and 3.
 | [Security review](docs/security/phase1-asvs-review.md) · [Screen-reader review](docs/accessibility/phase1-screen-reader-review.md) | OWASP ASVS Level 2 review; accessibility checks |
 | [Pilot plan](docs/pilot/phase1-pilot-plan.md) | How the 2-week pilot measures SC-001, SC-003 and SC-011 |
 | [Design prototype](design/prototype/index.html) | Clickable prototype with demo data: open the file in any browser |
+
+## Phase 2 documents
+
+| Document | Purpose |
+|----------|---------|
+| [Spec](specs/003-project-views-and-team/spec.md) | What Phase 2 does and why: 4 stories, 43 requirements, the decisions of 2026-09-27 |
+| [Plan](specs/003-project-views-and-team/plan.md) · [Research](specs/003-project-views-and-team/research.md) · [Data model](specs/003-project-views-and-team/data-model.md) | Design: additive changes to Phase 1 |
+| [Contracts](specs/003-project-views-and-team/contracts/) | Application services, the Phase 2 permission matrix, UI routes |
+| [Tasks](specs/003-project-views-and-team/tasks.md) | 70 test-first tasks |
+| [Quickstart](specs/003-project-views-and-team/quickstart.md) | How to upgrade from Phase 1 and validate Phase 2 |
 
 ## Design prototype
 

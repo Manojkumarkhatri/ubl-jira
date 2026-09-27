@@ -148,7 +148,8 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await Assertions.Expect(Drawer(page).GetByTestId("drawer-warning")).ToContainTextAsync("2 sub-tasks are still open: MOB-3, MOB-4");
         await Assertions.Expect(Column(page, 2).GetByTestId("card-MOB-1")).ToBeVisibleAsync();
 
-        // FR-023: another person opens the task from its link.
+        // FR-023: another member opens the task from its link.
+        await App.AddMemberAsync("MOB", "daniyal");
         var daniyal = await SignInAsync("daniyal", daniyalPassword);
         await GotoAsync(daniyal, "/projects/MOB/board?task=MOB-1");
         await Assertions.Expect(Drawer(daniyal).GetByTestId("drawer-title")).ToHaveTextAsync("Design the sign-in screen");
@@ -165,6 +166,7 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         var karim = await SignInAsync("karim", karimPassword);
         await CreateProjectAsync(karim, "Branch Network", "BRN");
         await AddTaskAsync(karim, "Survey the branches");
+        await App.AddMemberAsync("BRN", "laila");
         var laila = await SignInAsync("laila", lailaPassword);
         await GotoAsync(laila, "/projects/BRN/board?task=BRN-1");
         await Assertions.Expect(Drawer(laila).GetByTestId("drawer-title")).ToBeVisibleAsync();

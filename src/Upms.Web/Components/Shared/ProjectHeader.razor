@@ -1,0 +1,48 @@
+@* The header of every project page (Phase 2 contracts/ui-routes.md, "Project header"): the breadcrumb, the page
+   heading, page-specific actions, and the project's pages, with the current one marked for assistive technology. *@
+<div class="page-head">
+    <div>
+        <div class="crumbs"><a href="projects">Projects</a> / @if (Current == ProjectPage.Board) {@ProjectKey} else {<a href="projects/@ProjectKey/board">@ProjectKey</a>}</div>
+        <h1>@Title</h1>
+    </div>
+    <span class="spacer"></span>
+    @ChildContent
+</div>
+<nav class="project-nav" aria-label="Project">
+    <a href="projects/@ProjectKey/board" aria-current="@CurrentFor(ProjectPage.Board)">Board</a>
+    <a href="projects/@ProjectKey/members" aria-current="@CurrentFor(ProjectPage.Members)">Members</a>
+    @if (CanManage)
+    {
+        <a href="projects/@ProjectKey/settings" aria-current="@CurrentFor(ProjectPage.Settings)">Project settings</a>
+    }
+    @if (CanRestoreDeleted)
+    {
+        <a href="projects/@ProjectKey/deleted" aria-current="@CurrentFor(ProjectPage.Deleted)">Deleted tasks</a>
+    }
+</nav>
+
+@code {
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    /// <summary>The page heading, for example the project name on the board.</summary>
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = "";
+
+    [Parameter]
+    public ProjectPage Current { get; set; }
+
+    /// <summary>Project Admins and administrators see "Project settings".</summary>
+    [Parameter]
+    public bool CanManage { get; set; }
+
+    /// <summary>Administrators see "Deleted tasks".</summary>
+    [Parameter]
+    public bool CanRestoreDeleted { get; set; }
+
+    /// <summary>Page-specific actions, shown at the end of the heading row.</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private string? CurrentFor(ProjectPage page) => page == Current ? "page" : null;
+}

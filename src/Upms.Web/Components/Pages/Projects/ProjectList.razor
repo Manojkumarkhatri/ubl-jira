@@ -1,5 +1,6 @@
 @page "/projects"
 @using Upms.Application.Projects
+@using Upms.Domain.Projects
 @inject IProjectService Projects
 
 <PageTitle>Projects · U-PMS</PageTitle>
@@ -16,7 +17,7 @@
 }
 else if (_page.TotalCount == 0)
 {
-    <EmptyState Title="No projects yet" Text="Create the first project to get a Kanban board for your team.">
+    <EmptyState Title="No projects yet" Text="Create a project to get a Kanban board for your team. Projects you are added to appear here too.">
         <button type="button" class="btn btn-primary" @onclick="() => _create.Open()">Create project</button>
     </EmptyState>
 }
@@ -24,12 +25,12 @@ else
 {
     <div class="table-wrap">
         <table class="tbl">
-            <caption class="sr-only">Projects, sorted by name</caption>
+            <caption class="sr-only">Your projects, sorted by name</caption>
             <thead>
                 <tr>
                     <th scope="col">Name</th>
                     <th scope="col">Key</th>
-                    <th scope="col" class="hide-sm">Owner</th>
+                    <th scope="col" class="hide-sm">Your role</th>
                     <th scope="col">Open tasks</th>
                 </tr>
             </thead>
@@ -39,7 +40,7 @@ else
                     <tr>
                         <td><a href="projects/@project.Key/board"><strong>@project.Name</strong></a></td>
                         <td><span class="key">@project.Key</span></td>
-                        <td class="hide-sm">@project.OwnerDisplayName</td>
+                        <td class="hide-sm">@(project.MyRole is { } role ? role.DisplayName() : "Administrator access")</td>
                         <td>@project.OpenItemCount</td>
                     </tr>
                 }

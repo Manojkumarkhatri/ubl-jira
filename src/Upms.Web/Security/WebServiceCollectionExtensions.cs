@@ -101,6 +101,7 @@ public static class WebServiceCollectionExtensions
         services.AddOperationScoped<IOrganizationSettingsReader>();
         services.AddOperationScoped<Upms.Application.Projects.IProjectService>();
         services.AddOperationScoped<Upms.Application.Projects.IBoardColumnService>();
+        services.AddOperationScoped<Upms.Application.Projects.IProjectMemberService>();
         services.AddOperationScoped<Upms.Application.Work.IBoardService>();
         services.AddOperationScoped<Upms.Application.Work.IWorkItemService>();
         services.AddOperationScoped<Upms.Application.Work.ICommentService>();

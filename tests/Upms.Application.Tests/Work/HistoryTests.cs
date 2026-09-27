@@ -19,7 +19,7 @@ public sealed class HistoryTests(SqlServerFixture fixture) : DrawerTestBase(fixt
         Harness.Time.Advance(TimeSpan.FromMinutes(1));
         await EditAsync(card.Key, new WorkItemEdit.Priority(Priority.Highest));
         Harness.Time.Advance(TimeSpan.FromMinutes(1));
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         await EditAsync(card.Key, new WorkItemEdit.Status(InProgress));
         Harness.Time.Advance(TimeSpan.FromMinutes(1));
         await AddSubtaskAsync(card.Key, "Wireframes");

@@ -13,6 +13,8 @@ public sealed partial class Project
     public const string LastDoneColumnCode = "LastDoneColumn";
     public const string ColumnNotEmptyCode = "ColumnNotEmpty";
     public const string DestinationRequiredCode = "DestinationRequired";
+    public const string DuplicateMemberCode = "DuplicateMember";
+    public const string LastProjectAdminCode = "LastProjectAdmin";
 
     /// <summary>A board holds at most this many columns (FR-034).</summary>
     public const int MaxColumns = 10;
@@ -23,6 +25,7 @@ public sealed partial class Project
     public const int DescriptionMaxLength = 2000;
 
     private readonly List<ProjectStatus> _statuses = [];
+    private readonly List<ProjectMember> _members = [];
 
     private Project()
     {
@@ -51,7 +54,7 @@ public sealed partial class Project
 
     public string? Description { get; private set; }
 
-    /// <summary>The creator (FR-011); becomes the first Project Admin in Phase 2.</summary>
+    /// <summary>The creator (FR-011), who becomes the first Project Admin; since Phase 2 it grants no rights itself.</summary>
     public Guid OwnerId { get; private set; }
 
     /// <summary>The next work item number; incremented atomically when a work item is created.</summary>
@@ -67,12 +70,19 @@ public sealed partial class Project
     /// <summary>Incremented when the name or description changes; edits carry the version they saw.</summary>
     public int DetailsVersion { get; private set; } = 1;
 
+    /// <summary>Incremented on every membership change; team commands carry the version they saw (Phase 2 FR-013).</summary>
+    public int MembersVersion { get; private set; } = 1;
+
     /// <summary>The board columns in position order.</summary>
     public IReadOnlyList<ProjectStatus> Statuses => _statuses.OrderBy(s => s.Position).ToList();
 
+    /// <summary>The team (Phase 2 FR-001); loaded only by the operations that need it.</summary>
+    public IReadOnlyList<ProjectMember> Members => _members;
+
     public static string NormalizeName(string name) => name.Trim().ToUpperInvariant();
 
-    /// <summary>A new project owned by its creator, with the default Kanban columns (FR-011, FR-016).</summary>
+    /// <summary>A new project with the default Kanban columns and its creator as the first Project Admin (FR-011,
+    /// FR-016, Phase 2 FR-007).</summary>
     public static DomainResult<Project> Create(string name, string key, string? description, Guid ownerId, DateTimeOffset now)
     {
         var normalizedKey = (key ?? "").Trim().ToUpperInvariant();
@@ -96,6 +106,7 @@ public sealed partial class Project
         project._statuses.Add(new ProjectStatus("To Do", StatusCategory.ToDo, 0));
         project._statuses.Add(new ProjectStatus("In Progress", StatusCategory.InProgress, 1));
         project._statuses.Add(new ProjectStatus("Done", StatusCategory.Done, 2));
+        project._members.Add(new ProjectMember(ownerId, ProjectRole.ProjectAdmin, ownerId, now));
         return project;
     }
 
@@ -116,6 +127,81 @@ public sealed partial class Project
     }
 
     public static bool IsValidKey(string key) => KeyPattern().IsMatch(key);
+
+    // ----- Team (Phase 2 FR-008 to FR-013). Every change increments MembersVersion. -----
+
+    /// <summary>Adds a person with a role; the caller checks that their account is active.</summary>
+    public DomainResult<ProjectMember> AddMember(Guid userId, ProjectRole role, Guid addedById, DateTimeOffset now)
+    {
+        if (_members.FirstOrDefault(m => m.UserId == userId) is { } existing)
+        {
+            return DomainError.Rule(DuplicateMemberCode,
+                $"This person is already a member of the project, as {existing.Role.DisplayName()}.");
+        }
+
+        var member = new ProjectMember(userId, role, addedById, now);
+        _members.Add(member);
+        TeamChanged(now);
+        return member;
+    }
+
+    /// <param name="activeUserIds">The members whose accounts are active (the Identity module knows).</param>
+    public DomainError? ChangeMemberRole(ProjectMember member, ProjectRole role, IReadOnlySet<Guid> activeUserIds, DateTimeOffset now)
+    {
+        EnsureOwnMember(member);
+        if (member.Role == role)
+        {
+            return null;
+        }
+
+        if (WouldLeaveNoActiveProjectAdmin(member, activeUserIds))
+        {
+            return LastProjectAdmin();
+        }
+
+        member.ChangeRole(role);
+        TeamChanged(now);
+        return null;
+    }
+
+    /// <param name="activeUserIds">The members whose accounts are active (the Identity module knows).</param>
+    public DomainError? RemoveMember(ProjectMember member, IReadOnlySet<Guid> activeUserIds, DateTimeOffset now)
+    {
+        EnsureOwnMember(member);
+        if (WouldLeaveNoActiveProjectAdmin(member, activeUserIds))
+        {
+            return LastProjectAdmin();
+        }
+
+        _members.Remove(member);
+        TeamChanged(now);
+        return null;
+    }
+
+    // Only a change to an active Project Admin can lower their number; with none left, administrators can still repair
+    // the project by changing inactive ones and appointing someone.
+    private bool WouldLeaveNoActiveProjectAdmin(ProjectMember member, IReadOnlySet<Guid> activeUserIds) =>
+        member.Role == ProjectRole.ProjectAdmin
+        && activeUserIds.Contains(member.UserId)
+        && !_members.Exists(m => m != member && m.Role == ProjectRole.ProjectAdmin && activeUserIds.Contains(m.UserId));
+
+    private static DomainError LastProjectAdmin() =>
+        DomainError.Rule(LastProjectAdminCode,
+            "This is the project's last active Project Admin. Make someone else a Project Admin first.");
+
+    private void EnsureOwnMember(ProjectMember member)
+    {
+        if (!_members.Contains(member))
+        {
+            throw new InvalidOperationException("The member does not belong to this project.");
+        }
+    }
+
+    private void TeamChanged(DateTimeOffset now)
+    {
+        MembersVersion++;
+        UpdatedAt = now;
+    }
 
     // ----- Board columns (FR-034 to FR-039). Every change increments BoardVersion (FR-041). -----
 

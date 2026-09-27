@@ -4,10 +4,13 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.MsSql;
+using Upms.Application.Common;
 using Upms.Application.Identity;
 using Upms.Domain.Identity;
+using Upms.Domain.Projects;
 using Upms.E2E.Tests.Fixtures;
 
 [assembly: AssemblyFixture(typeof(AppFixture))]
@@ -69,6 +72,22 @@ public sealed class AppFixture : IAsyncLifetime
         return result.Succeeded
             ? password
             : throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
+    }
+
+    /// <summary>Adds an existing user to a project's team directly (Phase 2: projects are members-only).</summary>
+    public async Task AddMemberAsync(string projectKey, string userName, ProjectRole role = ProjectRole.Member)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+        var userId = await db.Users.Where(u => u.UserName == userName).Select(u => u.Id).SingleAsync();
+        var project = await db.Projects.Include(p => p.Members).SingleAsync(p => p.Key == projectKey);
+        var added = project.AddMember(userId, role, project.OwnerId, DateTimeOffset.UtcNow);
+        if (!added.IsSuccess)
+        {
+            throw new InvalidOperationException(added.Error!.Message);
+        }
+
+        await db.SaveChangesAsync();
     }
 
     public async ValueTask DisposeAsync()

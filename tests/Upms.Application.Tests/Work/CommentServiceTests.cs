@@ -27,7 +27,7 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
     {
         await CommentAsync("First");
         Harness.Time.Advance(TimeSpan.FromMinutes(5));
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         await CommentAsync("Second");
 
         var comments = (await ListAsync()).Items;
@@ -116,7 +116,7 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
     [Fact]
     public async Task Authors_names_stay_after_they_are_deactivated()
     {
-        var bilal = await Data.UserAsync("bilal");
+        var bilal = await MemberAsync("bilal");
         ActAs(bilal);
         await CommentAsync("Before I left");
         await QueryAsync(async db =>

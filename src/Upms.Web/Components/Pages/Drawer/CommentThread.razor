@@ -3,17 +3,20 @@
 
 <section class="drawer-section" aria-labelledby="comments-title">
     <h3 id="comments-title" class="section-title">Comments <span class="hint">(@_total)</span></h3>
-    <div class="comment-new">
-        <label for="new-comment" class="sr-only">Add a comment</label>
-        <textarea id="new-comment" class="textarea comment-box" placeholder="Add a comment…" maxlength="32000"
-                  @bind="_newBody" @bind:event="oninput"
-                  aria-invalid="@(_newError is null ? "false" : "true")" aria-describedby="new-comment-error"></textarea>
-        <span id="new-comment-error" class="error-text" role="alert">@_newError</span>
-        <div class="form-actions">
-            <button type="button" class="btn btn-primary btn-sm" data-testid="post-comment" disabled="@_busy" @onclick="PostAsync">Comment</button>
-            <span class="saved" role="status">@_status</span>
+    @if (!ReadOnly)
+    {
+        <div class="comment-new">
+            <label for="new-comment" class="sr-only">Add a comment</label>
+            <textarea id="new-comment" class="textarea comment-box" placeholder="Add a comment…" maxlength="32000"
+                      @bind="_newBody" @bind:event="oninput"
+                      aria-invalid="@(_newError is null ? "false" : "true")" aria-describedby="new-comment-error"></textarea>
+            <span id="new-comment-error" class="error-text" role="alert">@_newError</span>
+            <div class="form-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-testid="post-comment" disabled="@_busy" @onclick="PostAsync">Comment</button>
+                <span class="saved" role="status">@_status</span>
+            </div>
         </div>
-    </div>
+    }
     @if (_items.Count == 0)
     {
         <p class="hint">No comments yet.</p>
@@ -56,7 +59,7 @@
                                 <button type="button" class="btn btn-sm" @onclick="() => _confirmDeleteId = null">Keep it</button>
                             </div>
                         }
-                        else if (comment.IsMine)
+                        else if (comment.IsMine && !ReadOnly)
                         {
                             <div class="comment-actions">
                                 <button type="button" class="btn btn-ghost btn-sm" aria-describedby="comment-@comment.Id-meta" @onclick="() => StartEdit(comment)">Edit</button>
@@ -105,6 +108,10 @@
     /// <summary>Raised after a comment is added, edited or deleted (the task's history changed).</summary>
     [Parameter]
     public EventCallback OnChanged { get; set; }
+
+    /// <summary>True for Viewers: comments are shown, but none can be added, edited or deleted (Phase 2 FR-003).</summary>
+    [Parameter]
+    public bool ReadOnly { get; set; }
 
     protected override void OnParametersSet()
     {

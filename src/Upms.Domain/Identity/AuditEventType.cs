@@ -15,4 +15,13 @@ public enum AuditEventType
 
     /// <summary>The Administrator role was given or removed; details hold the old and new roles.</summary>
     RoleChanged,
+
+    /// <summary>A person joined a project's team (Phase 2 FR-012); the target is the project key.</summary>
+    MemberAdded,
+
+    /// <summary>A person left a project's team.</summary>
+    MemberRemoved,
+
+    /// <summary>A member's project role changed; details hold the old and new roles.</summary>
+    MemberRoleChanged,
 }

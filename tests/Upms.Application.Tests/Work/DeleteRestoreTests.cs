@@ -14,7 +14,7 @@ public sealed class DeleteRestoreTests(SqlServerFixture fixture) : DrawerTestBas
     [Fact]
     public async Task US2_AS11_The_creator_deletes_a_task_with_its_sub_tasks_after_a_preview()
     {
-        var bilal = await Data.UserAsync("bilal");
+        var bilal = await MemberAsync("bilal");
         ActAs(bilal);
         var card = await AddAsync(ToDo, "Bilal's task");
         await AddSubtaskAsync(card.Key, "One");
@@ -33,12 +33,12 @@ public sealed class DeleteRestoreTests(SqlServerFixture fixture) : DrawerTestBas
     }
 
     [Fact]
-    public async Task US2_AS11_The_owner_and_administrators_may_delete_but_other_users_may_not()
+    public async Task US2_AS11_Project_Admins_and_administrators_may_delete_but_other_members_may_not()
     {
         var card = await AddAsync(ToDo, "Amina's task");
         var second = await AddAsync(ToDo, "Another");
 
-        ActAs(await Data.UserAsync("bilal"));
+        ActAs(await MemberAsync("bilal"));
         Assert.Equal(ErrorKind.Forbidden, (await DeleteAsync(card.Key)).Error!.Kind);
         Assert.False((await RequireDetailsAsync(card.Key)).CanDelete);
 
