@@ -1,10 +1,10 @@
-# UBL Jira
+# U-PMS (UBL Project Management System)
 
-A Jira-like issue and project tracker for a single organization: projects, issues (epics, stories,
+U-PMS is a Jira-like issue and project tracker for a single organization: projects, issues (epics, stories,
 tasks, bugs, sub-tasks), a drag-and-drop board, comments with mentions, attachments, notifications,
 sprints, search, and access administration.
 
-**Status**: planning complete, implementation not started. The project follows
+**Status**: planning complete; a clickable design prototype is available; implementation not started. The project follows
 [Spec Kit](https://github.com/github/spec-kit) spec-driven development: every feature is specified,
 clarified, planned, and broken into tasks before any code is written.
 
@@ -27,6 +27,15 @@ Testcontainers, Playwright. One deployable modular monolith; see the
 | [Contracts](specs/001-issue-tracker-mvp/contracts/) | Application services, permissions, endpoints, routes, emails |
 | [Tasks](specs/001-issue-tracker-mvp/tasks.md) | 178 test-first tasks, ordered by user story |
 | [Quickstart](specs/001-issue-tracker-mvp/quickstart.md) | How to run and validate the app once built |
+| [Design prototype](design/prototype/index.html) | Clickable prototype of the main features with demo data: open the file in any browser |
+
+## Design prototype
+
+`design/prototype/index.html` is a single self-contained page (no install, no server). Open it in
+Edge, Chrome or Firefox to click through project creation, the Summary page, Timeline, Backlog and
+sprints, the board, the issue list, and the issue detail panel. It runs on demo data stored in your
+browser; use the avatar menu to switch demo users or reset the data. There is no sign-in yet: users,
+login and permissions are a later module.
 
 ## Working with Spec Kit
 

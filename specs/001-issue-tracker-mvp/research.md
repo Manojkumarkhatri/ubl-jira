@@ -40,8 +40,8 @@ entry records the decision, why it was chosen, and what else was considered. Pac
 
 ## R4. Solution structure and module boundaries
 
-- **Decision**: One deployable app built from four source projects: `UblJira.Domain`,
-  `UblJira.Application`, `UblJira.Infrastructure`, `UblJira.Web`. Inside each project, code is
+- **Decision**: One deployable app built from four source projects: `Upms.Domain`,
+  `Upms.Application`, `Upms.Infrastructure`, `Upms.Web`. Inside each project, code is
   foldered by module: **Identity** (accounts, audit, settings), **Projects** (projects, membership),
   **Issues** (issues, labels, history, attachments), **Collaboration** (comments, watches,
   notifications, email), **Planning** (board, backlog, sprints), and **Search** (search, saved
@@ -57,7 +57,7 @@ entry records the decision, why it was chosen, and what else was considered. Pac
 ## R5. Data access
 
 - **Decision**: EF Core 10 with the SQL Server provider, a single `AppDbContext`, per-module
-  `IEntityTypeConfiguration` classes, and migrations in `UblJira.Infrastructure`. Application services
+  `IEntityTypeConfiguration` classes, and migrations in `Upms.Infrastructure`. Application services
   use the context directly through module-scoped query and command code: no generic repositories, no
   mediator library, no object-mapping library.
 - **Rationale**: The least code for a single database; EF Core supports everything required
@@ -298,17 +298,17 @@ entry records the decision, why it was chosen, and what else was considered. Pac
 ## R24. Testing strategy
 
 - **Decision**:
-  - `UblJira.Domain.Tests` (xUnit v3): workflow, hierarchy, keys, ranks, sprint rules, permission
+  - `Upms.Domain.Tests` (xUnit v3): workflow, hierarchy, keys, ranks, sprint rules, permission
     matrix logic. Written first (red-green-refactor).
-  - `UblJira.Application.Tests` (xUnit + Testcontainers SQL Server with full-text + Respawn):
+  - `Upms.Application.Tests` (xUnit + Testcontainers SQL Server with full-text + Respawn):
     every application service against a real database, including concurrency, history, soft delete,
     full-text search, and the permission matrix (SC-005, SC-006).
-  - `UblJira.Web.Tests` (bUnit): component behavior (inline edit, conflict banner, move menu, idle
+  - `Upms.Web.Tests` (bUnit): component behavior (inline edit, conflict banner, move menu, idle
     warning).
-  - `UblJira.E2E.Tests` (Playwright + axe): one end-to-end journey per user story, plus
+  - `Upms.E2E.Tests` (Playwright + axe): one end-to-end journey per user story, plus
     accessibility scans (SC-008). The ClamAV scan test runs against a ClamAV container.
-  - `UblJira.Architecture.Tests` (ArchUnitNET): module boundaries and private setters.
-  - `UblJira.Performance.Tests` (opt-in category): seeded 500,000-issue database, 300 concurrent
+  - `Upms.Architecture.Tests` (ArchUnitNET): module boundaries and private setters.
+  - `Upms.Performance.Tests` (opt-in category): seeded 500,000-issue database, 300 concurrent
     simulated users calling application services; asserts p95 ≤ 1 s (SC-002).
   - Test names embed the acceptance scenario they prove (`US1_AS3_…`), giving traceability from the
     spec to tests.
@@ -351,7 +351,7 @@ entry records the decision, why it was chosen, and what else was considered. Pac
 - **Decision**: Read-side queries project straight into DTOs with `AsNoTracking`. Indexes support
   every list and filter (see [data-model.md](./data-model.md)). Lists are paginated at 50 (FR-026,
   FR-046). Board columns render with Blazor `Virtualize`, and the continuous-flow Done column is
-  limited to 14 days (FR-029). A seed tool (`tools/UblJira.Seed`) generates realistic volumes for the
+  limited to 14 days (FR-029). A seed tool (`tools/Upms.Seed`) generates realistic volumes for the
   performance tests.
 - **Rationale**: SC-002 at the stated scale.
 - **Alternatives considered**: a distributed cache (unneeded at this scale; would need justification

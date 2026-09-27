@@ -1,0 +1,1954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>U-PMS Prototype</title>
+<meta name="description" content="Clickable design prototype of U-PMS: projects, issues, backlog, sprints, board and timeline, with demo data.">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f1f3f5;
+  --surface-3: #e8ebef;
+  --border: #dde1e6;
+  --border-strong: #c4cad2;
+  --text: #16181d;
+  --text-2: #454b55;
+  --muted: #646b76;
+  --link: #1c5cab;
+  --accent: #256abf;
+  --accent-hover: #1c5cab;
+  --accent-soft: #e6effa;
+  --on-accent: #ffffff;
+  --focus: #256abf;
+  --danger: #c0392b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 4px 16px rgba(16,24,40,.08);
+  --shadow-lg: 0 8px 32px rgba(16,24,40,.18);
+  --st-todo-bg: #eceef1;   --st-todo-fg: #3d4450;
+  --st-prog-bg: #dbe8fb;   --st-prog-fg: #1c4f95;
+  --st-rev-bg:  #ebe7fb;   --st-rev-fg:  #4a3aa7;
+  --st-done-bg: #dcf1dc;   --st-done-fg: #006300;
+  --type-epic: #6e4fd0; --type-story: #1a8a52; --type-task: #256abf; --type-bug: #d03b3b; --type-subtask: #3d8fd6;
+  --pri-highest: #d03b3b; --pri-high: #e0632f; --pri-medium: #b77900; --pri-low: #256abf; --pri-lowest: #646b76;
+  --series-1: #2a78d6;
+  --track: #e8ebef;
+  --epic-1: #2a78d6; --epic-2: #eb6834; --epic-3: #1baf7a; --epic-4: #eda100;
+  --epic-5: #e87ba4; --epic-6: #008300; --epic-7: #4a3aa7; --epic-8: #e34948; --epic-other: #8a9099;
+  --today: #d03b3b;
+  --radius: 8px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f1113; --surface: #1a1c1f; --surface-2: #212428; --surface-3: #2a2e33;
+    --border: #30343a; --border-strong: #454a52;
+    --text: #f1f2f4; --text-2: #c5c9cf; --muted: #9ba1aa;
+    --link: #86b6ef; --accent: #2f6fc2; --accent-hover: #3a7dd3; --accent-soft: #1b2c44; --on-accent: #ffffff; --focus: #6da7ec;
+    --danger: #e66767;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.35); --shadow-lg: 0 8px 32px rgba(0,0,0,.6);
+    --st-todo-bg: #2c3036; --st-todo-fg: #d4d8dd;
+    --st-prog-bg: #1d3558; --st-prog-fg: #b7d3f6;
+    --st-rev-bg:  #2f2a55; --st-rev-fg:  #cfc8f7;
+    --st-done-bg: #1c3a1f; --st-done-fg: #8fd18f;
+    --type-epic: #9085e9; --type-story: #2fae6b; --type-task: #3987e5; --type-bug: #e66767; --type-subtask: #5598e7;
+    --pri-highest: #e66767; --pri-high: #ec835a; --pri-medium: #e0a820; --pri-low: #5598e7; --pri-lowest: #9ba1aa;
+    --series-1: #3987e5; --track: #2a2e33;
+    --epic-1: #3987e5; --epic-2: #d95926; --epic-3: #199e70; --epic-4: #c98500;
+    --epic-5: #d55181; --epic-6: #008300; --epic-7: #9085e9; --epic-8: #e66767; --epic-other: #6b717a;
+    --today: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1113; --surface: #1a1c1f; --surface-2: #212428; --surface-3: #2a2e33;
+  --border: #30343a; --border-strong: #454a52;
+  --text: #f1f2f4; --text-2: #c5c9cf; --muted: #9ba1aa;
+  --link: #86b6ef; --accent: #2f6fc2; --accent-hover: #3a7dd3; --accent-soft: #1b2c44; --on-accent: #ffffff; --focus: #6da7ec;
+  --danger: #e66767;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.35); --shadow-lg: 0 8px 32px rgba(0,0,0,.6);
+  --st-todo-bg: #2c3036; --st-todo-fg: #d4d8dd;
+  --st-prog-bg: #1d3558; --st-prog-fg: #b7d3f6;
+  --st-rev-bg:  #2f2a55; --st-rev-fg:  #cfc8f7;
+  --st-done-bg: #1c3a1f; --st-done-fg: #8fd18f;
+  --type-epic: #9085e9; --type-story: #2fae6b; --type-task: #3987e5; --type-bug: #e66767; --type-subtask: #5598e7;
+  --pri-highest: #e66767; --pri-high: #ec835a; --pri-medium: #e0a820; --pri-low: #5598e7; --pri-lowest: #9ba1aa;
+  --series-1: #3987e5; --track: #2a2e33;
+  --epic-1: #3987e5; --epic-2: #d95926; --epic-3: #199e70; --epic-4: #c98500;
+  --epic-5: #d55181; --epic-6: #008300; --epic-7: #9085e9; --epic-8: #e66767; --epic-other: #6b717a;
+  --today: #e66767;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--link); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip { position: absolute; left: -999px; top: 8px; z-index: 100; background: var(--surface); padding: 8px 12px; border-radius: 6px; }
+.skip:focus { left: 8px; }
+svg { display: block; }
+
+/* ---------- Top bar ---------- */
+.topbar { position: sticky; top: 0; z-index: 30; height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  background: var(--surface); border-bottom: 1px solid var(--border); }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; text-decoration: none; color: var(--text); white-space: nowrap; }
+.brand-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-size: 12px; font-weight: 800; letter-spacing: .02em; }
+.brand small { font-weight: 500; color: var(--muted); font-size: 12px; }
+.pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--link); white-space: nowrap; }
+.top-nav { display: flex; gap: 2px; }
+.top-nav a { padding: 6px 10px; border-radius: 6px; text-decoration: none; color: var(--text-2); font-weight: 500; }
+.top-nav a:hover, .top-nav a[aria-current="page"] { background: var(--surface-2); color: var(--text); }
+.top-search { flex: 1; max-width: 360px; margin-left: auto; position: relative; }
+.top-search input { width: 100%; height: 34px; padding: 0 10px 0 32px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); }
+.top-search svg { position: absolute; left: 9px; top: 9px; width: 16px; height: 16px; color: var(--muted); }
+.top-actions { display: flex; align-items: center; gap: 6px; }
+.icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border: 0; background: transparent; border-radius: 6px; cursor: pointer; color: var(--text-2); position: relative; }
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn svg { width: 18px; height: 18px; }
+.badge-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); border: 2px solid var(--surface); }
+
+/* ---------- Buttons & inputs ---------- */
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 600; white-space: nowrap; color: var(--text); text-decoration: none; }
+.btn:hover { background: var(--surface-2); }
+.btn svg { width: 16px; height: 16px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-ghost { border-color: transparent; background: transparent; }
+.btn-ghost:hover { background: var(--surface-2); }
+.btn-sm { height: 28px; padding: 0 9px; font-size: 13px; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.btn-danger { color: var(--danger); }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.field > label, .field-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.input, .select, .textarea { width: 100%; min-height: 34px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
+.textarea { min-height: 96px; resize: vertical; }
+.input:hover, .select:hover, .textarea:hover { border-color: var(--muted); }
+.hint { font-size: 12px; color: var(--muted); }
+.error-text { font-size: 12px; color: var(--danger); font-weight: 600; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; min-width: 0; }
+.checkbox { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 500; }
+
+/* ---------- Layout ---------- */
+.app { display: flex; min-height: calc(100vh - 56px); }
+.sidebar { width: 232px; flex: none; background: var(--surface); border-right: 1px solid var(--border); padding: 14px 10px; position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto; }
+.sidebar[hidden] { display: none; }
+.proj-head { display: flex; align-items: center; gap: 10px; padding: 6px 8px 14px; }
+.proj-tile { width: 32px; height: 32px; border-radius: 7px; display: grid; place-items: center; font-weight: 800; font-size: 11px; color: #fff; flex: none; }
+.proj-head strong { display: block; line-height: 1.2; }
+.proj-head > div > span { font-size: 12px; color: var(--muted); }
+.side-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 10px 10px 6px; }
+.side-nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; color: var(--text-2); text-decoration: none; font-weight: 500; }
+.side-nav a svg { width: 18px; height: 18px; flex: none; }
+.side-nav a:hover { background: var(--surface-2); color: var(--text); }
+.side-nav a[aria-current="page"] { background: var(--accent-soft); color: var(--link); font-weight: 600; }
+.side-foot { margin-top: 18px; padding: 10px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+main { flex: 1; min-width: 0; padding: 20px 24px 40px; }
+main:focus { outline: none; }
+.page-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.crumbs { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.crumbs a { color: var(--muted); text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+h1 { font-size: 22px; margin: 0; line-height: 1.25; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+h3 { font-size: 14px; margin: 0; }
+.spacer { flex: 1; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+.search-input { position: relative; }
+.search-input input { height: 32px; padding: 0 10px 0 30px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); width: 200px; }
+.search-input svg { position: absolute; left: 8px; top: 8px; width: 16px; height: 16px; color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; margin-bottom: 18px; border-radius: var(--radius); background: var(--accent-soft); color: var(--text); border: 1px solid transparent; }
+.banner svg { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--link); }
+.empty { text-align: center; padding: 36px 16px; color: var(--muted); }
+.empty strong { display: block; color: var(--text); font-size: 15px; margin-bottom: 4px; }
+
+/* ---------- Small pieces ---------- */
+.type-ic { width: 16px; height: 16px; flex: none; }
+.pri-ic { width: 16px; height: 16px; flex: none; }
+.lozenge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+.st-todo { background: var(--st-todo-bg); color: var(--st-todo-fg); }
+.st-inprogress { background: var(--st-prog-bg); color: var(--st-prog-fg); }
+.st-review { background: var(--st-rev-bg); color: var(--st-rev-fg); }
+.st-done { background: var(--st-done-bg); color: var(--st-done-fg); }
+select.lozenge { border: 0; cursor: pointer; padding-right: 4px; }
+.avatar { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; flex: none; }
+.avatar.lg { width: 32px; height: 32px; font-size: 12px; }
+.avatar.empty-av { background: var(--surface-3); color: var(--muted); border: 1px dashed var(--border-strong); }
+.points { min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--surface-3); color: var(--text-2); font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; }
+.epic-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 180px; height: 20px; padding: 0 7px 0 5px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); font-size: 11px; font-weight: 600; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.epic-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.key { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.key-link { color: var(--muted); text-decoration: none; }
+.key-link:hover { color: var(--link); text-decoration: underline; }
+.label-tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--surface-3); color: var(--text-2); margin: 0 4px 4px 0; }
+.more-btn { width: 26px; height: 26px; border-radius: 5px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; color: var(--muted); flex: none; }
+.more-btn:hover { background: var(--surface-3); color: var(--text); }
+.more-btn svg { width: 16px; height: 16px; }
+
+/* ---------- Tables ---------- */
+.table-wrap { overflow-x: auto; }
+table.grid { width: 100%; border-collapse: collapse; background: var(--surface); }
+table.grid th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.grid th button { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+table.grid td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.grid tr.clickable { cursor: pointer; }
+table.grid tr.clickable:hover td { background: var(--surface-2); }
+.cell-flex { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary-link { color: var(--text); text-decoration: none; font-weight: 500; }
+.summary-link:hover { color: var(--link); text-decoration: underline; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ---------- Summary ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { padding: 14px 16px; }
+.stat .v { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.stat .l { color: var(--text-2); font-size: 13px; margin-top: 4px; }
+.stat .s { color: var(--muted); font-size: 12px; }
+.sum-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.sum-card { padding: 16px; }
+.sum-card .sub { color: var(--muted); font-size: 12px; margin: -8px 0 12px; }
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: 10px; }
+.bar-row .name { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13px; min-width: 0; }
+.bar-track { height: 14px; position: relative; }
+.bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar-hit { position: absolute; inset: -6px 0; cursor: default; }
+.bar-row .val { text-align: right; font-size: 13px; color: var(--text); }
+.bar-row .val span { color: var(--muted); }
+.meter { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.meter > div { height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
+.epic-prog { display: grid; grid-template-columns: minmax(0,1fr) 120px 42px; gap: 10px; align-items: center; padding: 6px 0; }
+.activity { list-style: none; padding: 0; margin: 0; }
+.activity li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.activity li:last-child { border-bottom: 0; }
+.activity .when { color: var(--muted); font-size: 12px; }
+
+/* ---------- Projects ---------- */
+.proj-name { display: flex; align-items: center; gap: 10px; }
+.proj-name .proj-tile { width: 28px; height: 28px; font-size: 10px; }
+.tmpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.tmpl { text-align: left; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+.tmpl:hover { border-color: var(--border-strong); }
+.tmpl[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.tmpl strong { display: block; margin: 8px 0 4px; }
+.tmpl span { color: var(--text-2); font-size: 13px; }
+.tmpl-art { height: 44px; border-radius: 6px; background: var(--surface-2); display: flex; gap: 4px; padding: 7px; }
+.tmpl-art i { flex: 1; border-radius: 3px; background: var(--surface-3); }
+.tmpl-art i:nth-child(2) { background: var(--st-prog-bg); }
+.tmpl-art i:nth-child(4) { background: var(--st-done-bg); }
+
+/* ---------- Backlog ---------- */
+.bl-section { margin-bottom: 14px; }
+.bl-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; flex-wrap: wrap; }
+.bl-head .collapse { border: 0; background: none; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 700; padding: 2px 4px; border-radius: 4px; color: var(--text); }
+.bl-head .collapse svg { width: 16px; height: 16px; transition: transform .15s; }
+.bl-head .collapse[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.bl-meta { color: var(--muted); font-size: 12px; }
+.bl-goal { color: var(--text-2); font-size: 12px; padding: 0 12px 8px 36px; margin-top: -6px; }
+.sp-counts { display: flex; gap: 4px; }
+.sp-counts span { min-width: 24px; height: 20px; padding: 0 6px; border-radius: 10px; font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; }
+.bl-list { list-style: none; margin: 0; padding: 0 8px 8px; min-height: 44px; }
+.bl-list.drop-target { background: var(--accent-soft); border-radius: 6px; }
+.bl-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 4px; cursor: grab; }
+.bl-row:hover { border-color: var(--border-strong); }
+.bl-row.dragging { opacity: .4; }
+.bl-row .sum { flex: 1; min-width: 0; }
+.bl-row .sum button { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; color: var(--text); font-weight: 500; max-width: 100%; }
+.bl-row .sum button:hover { color: var(--link); text-decoration: underline; }
+.grip { color: var(--muted); width: 14px; height: 14px; flex: none; }
+.drop-line { height: 3px; background: var(--accent); border-radius: 2px; margin: 2px 0 4px; list-style: none; }
+.inline-create { display: flex; gap: 8px; padding: 4px 8px 10px; }
+.inline-create .select { width: 110px; flex: none; }
+.bl-empty { padding: 12px; text-align: center; color: var(--muted); font-size: 13px; border: 1px dashed var(--border-strong); border-radius: 6px; margin: 0 0 4px; }
+
+/* ---------- Board ---------- */
+.board-wrap { overflow-x: auto; padding-bottom: 8px; }
+.board { display: grid; grid-template-columns: repeat(4, minmax(250px, 1fr)); gap: 12px; min-width: 1040px; align-items: start; }
+.col { background: var(--surface-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 320px; }
+.col-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; font-size: 12px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.col-head .count { background: var(--surface-3); color: var(--text-2); border-radius: 10px; padding: 1px 8px; font-size: 11px; }
+.col-body { flex: 1; padding: 4px 8px 8px; min-height: 120px; border-radius: 0 0 var(--radius) var(--radius); }
+.col-body.drop-target { background: var(--accent-soft); }
+.bcard { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 10px 8px; margin-bottom: 8px; box-shadow: 0 1px 1px rgba(16,24,40,.04); cursor: grab; }
+.bcard:hover { border-color: var(--border-strong); }
+.bcard.dragging { opacity: .4; }
+.bcard .t { border: 0; background: none; padding: 0; text-align: left; font-weight: 500; cursor: pointer; color: var(--text); width: 100%; margin-bottom: 8px; }
+.bcard .t:hover { color: var(--link); }
+.bcard .foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.bcard-epic { margin-bottom: 2px; }
+.col-add { margin: 0 8px 8px; }
+.sprint-info { display: flex; gap: 6px; align-items: center; color: var(--text-2); font-size: 13px; white-space: nowrap; }
+.sprint-info svg { width: 16px; height: 16px; }
+.av-filter { display: flex; align-items: center; }
+.av-filter button { border: 2px solid var(--surface); border-radius: 50%; padding: 0; background: none; cursor: pointer; margin-left: -6px; }
+.av-filter button:first-child { margin-left: 0; }
+.av-filter button[aria-pressed="true"] { border-color: var(--accent); z-index: 1; }
+
+/* ---------- Timeline ---------- */
+.tl { display: grid; grid-template-columns: 360px 1fr; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.tl-left { border-right: 1px solid var(--border); min-width: 0; }
+.tl-right { overflow-x: auto; position: relative; }
+.tl-head-left { height: 56px; display: flex; align-items: flex-end; padding: 0 12px 8px; font-size: 12px; font-weight: 700; color: var(--muted); border-bottom: 1px solid var(--border); }
+.tl-row { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--border); min-width: 0; }
+.tl-row.child { padding-left: 34px; background: var(--surface-2); }
+.tl-row.sprint-row, .tl-lane.sprint-row { height: 30px; background: var(--surface-2); }
+.tl-row .exp { width: 20px; height: 20px; border: 0; background: none; cursor: pointer; display: grid; place-items: center; border-radius: 4px; color: var(--muted); flex: none; }
+.tl-row .exp:hover { background: var(--surface-3); }
+.tl-row .exp svg { width: 14px; height: 14px; transition: transform .15s; }
+.tl-row .exp[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.tl-row .nm { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; color: var(--text); font-weight: 500; }
+.tl-row .nm:hover { color: var(--link); }
+.tl-row .pct { width: 40px; text-align: right; font-size: 11px; color: var(--muted); flex: none; }
+.tl-canvas { position: relative; }
+.tl-scale { height: 56px; border-bottom: 1px solid var(--border); position: relative; }
+.tl-scale .m { position: absolute; top: 0; height: 28px; border-left: 1px solid var(--border); padding: 6px 8px; font-size: 12px; font-weight: 700; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+.tl-scale .d { position: absolute; top: 28px; height: 28px; border-left: 1px solid var(--border); padding: 6px 4px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tl-lane { height: 40px; border-bottom: 1px solid var(--border); position: relative; }
+.tl-lane.child { background: var(--surface-2); }
+.tl-grid-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); opacity: .6; pointer-events: none; }
+.tl-weekend { position: absolute; top: 0; bottom: 0; background: var(--surface-2); pointer-events: none; }
+.tl-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--today); z-index: 3; pointer-events: none; }
+.tl-today-label { position: absolute; bottom: 4px; transform: translateX(-50%); z-index: 4; font-size: 10px; font-weight: 700; color: #fff; background: var(--today); border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+.tl-bar { position: absolute; top: 9px; height: 22px; border-radius: 5px; cursor: grab; touch-action: none; z-index: 2; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.tl-bar:focus-visible { outline-offset: 3px; }
+.tl-bar.child { top: 13px; height: 14px; opacity: .8; }
+.tl-bar.derived { background: transparent !important; border: 2px dashed var(--border-strong); box-shadow: none; cursor: default; }
+.tl-bar .h { position: absolute; top: 0; bottom: 0; width: 9px; cursor: ew-resize; }
+.tl-bar .h.l { left: 0; } .tl-bar .h.r { right: 0; }
+.tl-bar.dragging { cursor: grabbing; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.tl-sprint { position: absolute; top: 5px; height: 20px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--border-strong); font-size: 11px; font-weight: 600; color: var(--text-2); padding: 1px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-sprint.active { background: var(--st-prog-bg); color: var(--st-prog-fg); border-color: transparent; }
+.tl-sprint.completed { background: var(--st-done-bg); color: var(--st-done-fg); border-color: transparent; }
+.tl-sched { position: absolute; top: 8px; height: 24px; font-size: 12px; }
+.tl-create { padding: 8px 10px; display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
+.tl-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 0 10px; height: 30px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--text-2); }
+.seg button + button { border-left: 1px solid var(--border-strong); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--link); }
+
+/* ---------- Panel (issue detail) ---------- */
+.overlay { position: fixed; inset: 0; background: rgba(9,12,16,.4); z-index: 40; }
+.panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(880px, 100vw); background: var(--surface); z-index: 41; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+.panel.enter { animation: slide .18s ease-out; }
+@keyframes slide { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .panel, .modal { animation: none !important; } }
+.panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.panel-body { flex: 1; overflow-y: auto; display: grid; grid-template-columns: minmax(0,1fr) 280px; }
+.panel-main { padding: 18px 22px 30px; min-width: 0; }
+.panel-side { padding: 18px 18px 30px; border-left: 1px solid var(--border); background: var(--surface); }
+.sum-edit { width: 100%; font-size: 20px; font-weight: 700; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; margin: 0 0 10px -7px; background: transparent; }
+.sum-edit:hover { border-color: var(--border); }
+.sum-edit:focus { border-color: var(--accent); background: var(--surface); }
+.detail-row { display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 8px; align-items: center; margin-bottom: 10px; font-size: 13px; }
+.detail-row > span:first-child { color: var(--muted); font-weight: 600; font-size: 12px; }
+.detail-row .select, .detail-row .input { min-height: 30px; padding: 4px 8px; font-size: 13px; }
+.section-title { font-size: 13px; font-weight: 700; margin: 22px 0 8px; display: flex; align-items: center; gap: 8px; }
+.child-list { list-style: none; padding: 0; margin: 0 0 8px; border: 1px solid var(--border); border-radius: 6px; }
+.child-list li { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+.child-list li:last-child { border-bottom: 0; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 22px 0 12px; }
+.tabs button { border: 0; background: none; padding: 8px 10px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--link); border-bottom-color: var(--accent); }
+.comment { display: flex; gap: 10px; margin-bottom: 14px; }
+.comment .who { font-weight: 600; font-size: 13px; }
+.comment .who span { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.comment p { margin: 4px 0 0; white-space: pre-wrap; }
+.hist { font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border); color: var(--text-2); }
+.hist b { color: var(--text); }
+.desc-view { white-space: pre-wrap; padding: 8px 10px; border-radius: 6px; border: 1px solid transparent; cursor: text; min-height: 40px; color: var(--text); }
+.desc-view:hover { background: var(--surface-2); }
+.desc-view.placeholder { color: var(--muted); }
+
+/* ---------- Modal ---------- */
+.modal-back { position: fixed; inset: 0; background: rgba(9,12,16,.45); z-index: 50; display: grid; place-items: start center; padding: 6vh 16px 16px; overflow-y: auto; }
+.modal { width: min(560px, 100%); background: var(--surface); border-radius: 10px; box-shadow: var(--shadow-lg); animation: pop .15s ease-out; }
+.modal.wide { width: min(680px, 100%); }
+.modal.narrow { width: min(400px, 100%); }
+@keyframes pop { from { transform: translateY(8px); opacity: .5; } to { transform: none; opacity: 1; } }
+.modal-head { display: flex; align-items: center; padding: 16px 20px 6px; }
+.modal-head h2 { margin: 0; font-size: 18px; }
+.modal-body { padding: 10px 20px 4px; }
+.modal-foot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 12px 20px 16px; }
+.menu-list { list-style: none; margin: 0; padding: 0 0 8px; }
+.menu-list button { width: 100%; text-align: left; border: 0; background: none; padding: 9px 12px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+.menu-list button:hover, .menu-list button:focus-visible { background: var(--surface-2); }
+.menu-list .sep { height: 1px; background: var(--border); margin: 6px 0; }
+.user-menu { position: fixed; top: 52px; right: 12px; width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); z-index: 45; padding: 8px; }
+.user-menu h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 10px 4px; }
+
+/* ---------- Toast & tooltip ---------- */
+#toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.toast { background: #1f2329; color: #fff; padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow-lg); display: flex; gap: 12px; align-items: center; pointer-events: auto; max-width: min(520px, calc(100vw - 32px)); }
+.toast a, .toast button { color: #9ec5f4; background: none; border: 0; font-weight: 700; cursor: pointer; padding: 0; }
+#tooltip { position: fixed; z-index: 70; pointer-events: none; background: #1f2329; color: #fff; padding: 6px 9px; border-radius: 6px; font-size: 12px; opacity: 0; transition: opacity .08s; max-width: 260px; }
+#tooltip.show { opacity: 1; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1100px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .sum-grid { grid-template-columns: 1fr; }
+  .panel-body { grid-template-columns: 1fr; }
+  .panel-side { border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (max-width: 860px) {
+  .app { flex-direction: column; }
+  .sidebar { position: static; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px; overflow-x: auto; }
+  .proj-head { padding: 0 8px 0 0; flex: none; }
+  .proj-head strong { white-space: nowrap; font-size: 13px; }
+  .proj-head > div > span, .side-label, .side-foot { display: none; }
+  .side-nav { display: flex; gap: 2px; }
+  .side-nav a { white-space: nowrap; padding: 6px 8px; }
+  main { padding: 16px; }
+  .top-nav, .brand small { display: none; }
+  .tl { grid-template-columns: 170px 1fr; }
+  .tl-row .pct, .tl-row .key { display: none; }
+  .tmpl-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .topbar { gap: 6px; padding: 0 10px; }
+  .top-search { max-width: none; }
+  .pill { display: none; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .row { flex-direction: column; gap: 0; }
+  .search-input input { width: 150px; }
+  .bar-row { grid-template-columns: 84px 1fr 56px; }
+  .hide-sm, .bl-row .lozenge { display: none !important; }
+  .btn-label { display: none; }
+}
+@media (forced-colors: active) { .bar-fill, .meter > div, .tl-bar { forced-color-adjust: none; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="topbar" id="topbar"></header>
+<div class="app">
+  <nav class="sidebar" id="sidebar" aria-label="Project navigation" hidden></nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div id="panel-root"></div>
+<div id="modal-root"></div>
+<div id="menu-root"></div>
+<div id="toasts" aria-live="polite"></div>
+<div id="tooltip" role="tooltip"></div>
+<div id="sr-live" class="sr-only" aria-live="assertive"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =========================================================
+   Helpers
+   ========================================================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const toISO = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseISO = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const TODAY = toISO(new Date());
+const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return toISO(d); };
+const diffDays = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 86400000);
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDate = iso => {
+  if (!iso) return '—';
+  const d = parseISO(iso);
+  const sameYear = d.getFullYear() === parseISO(TODAY).getFullYear();
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${sameYear ? '' : ' ' + d.getFullYear()}`;
+};
+const stamp = (dayOffset = 0, hour = 10) => { const d = parseISO(addDays(TODAY, dayOffset)); d.setHours(hour, 15, 0, 0); return d.toISOString(); };
+const nowStamp = () => new Date().toISOString();
+const relTime = ts => {
+  const s = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  const d = Math.floor(s / 86400);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
+};
+const withinDays = (ts, days) => ts && (Date.now() - new Date(ts).getTime()) <= days * 86400000;
+let idSeq = Date.now();
+const uid = () => (idSeq++).toString(36);
+
+/* =========================================================
+   Static vocab
+   ========================================================= */
+const STATUSES = [
+  { id: 'todo', name: 'To Do' }, { id: 'inprogress', name: 'In Progress' },
+  { id: 'review', name: 'In Review' }, { id: 'done', name: 'Done' }];
+const STATUS_NAME = Object.fromEntries(STATUSES.map(s => [s.id, s.name]));
+const TYPES = [
+  { id: 'epic', name: 'Epic' }, { id: 'story', name: 'Story' }, { id: 'task', name: 'Task' },
+  { id: 'bug', name: 'Bug' }, { id: 'subtask', name: 'Sub-task' }];
+const TYPE_NAME = Object.fromEntries(TYPES.map(t => [t.id, t.name]));
+const PRIORITIES = [
+  { id: 'highest', name: 'Highest' }, { id: 'high', name: 'High' }, { id: 'medium', name: 'Medium' },
+  { id: 'low', name: 'Low' }, { id: 'lowest', name: 'Lowest' }];
+const PRIORITY_NAME = Object.fromEntries(PRIORITIES.map(p => [p.id, p.name]));
+const AV_COLORS = ['#256abf', '#b5471b', '#0f7a55', '#8a5a00', '#b03a6a', '#4a3aa7', '#3d5a80'];
+const PROJ_COLORS = ['#256abf', '#0f7a55', '#b5471b', '#4a3aa7', '#b03a6a', '#8a5a00'];
+
+/* =========================================================
+   Icons
+   ========================================================= */
+const TYPE_SVG = {
+  epic: '<rect width="16" height="16" rx="3" fill="var(--type-epic)"/><path d="M9.3 2.6 4.4 9.1h3.2l-.9 4.3 4.9-6.6H8.4z" fill="#fff"/>',
+  story: '<rect width="16" height="16" rx="3" fill="var(--type-story)"/><path d="M5 3.4h6v9.2L8 10.5l-3 2.1z" fill="#fff"/>',
+  task: '<rect width="16" height="16" rx="3" fill="var(--type-task)"/><path d="m4.4 8.3 2.4 2.4 4.8-5.2" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  bug: '<rect width="16" height="16" rx="3" fill="var(--type-bug)"/><circle cx="8" cy="8" r="3.3" fill="#fff"/>',
+  subtask: '<rect width="16" height="16" rx="3" fill="var(--type-subtask)"/><rect x="3.4" y="3.4" width="5.2" height="5.2" rx="1" fill="none" stroke="#fff" stroke-width="1.5"/><rect x="7.4" y="7.4" width="5.2" height="5.2" rx="1" fill="#fff"/>'
+};
+const typeIcon = t => `<svg class="type-ic" viewBox="0 0 16 16" role="img" aria-label="${TYPE_NAME[t]}"><title>${TYPE_NAME[t]}</title>${TYPE_SVG[t]}</svg>`;
+const PRI_PATH = {
+  highest: 'M3 8.5l5-4 5 4M3 12.5l5-4 5 4', high: 'M3 10.5l5-5 5 5', medium: 'M3 6h10M3 10h10',
+  low: 'M3 5.5l5 5 5-5', lowest: 'M3 3.5l5 4 5-4M3 7.5l5 4 5-4'
+};
+const priIcon = p => `<svg class="pri-ic" viewBox="0 0 16 16" role="img" aria-label="Priority: ${PRIORITY_NAME[p]}"><title>Priority: ${PRIORITY_NAME[p]}</title><path d="${PRI_PATH[p]}" stroke="var(--pri-${p})" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const UI_PATH = {
+  search: '<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  bell: '<path d="M4 11V7a4 4 0 0 1 8 0v4l1 1.5H3z"/><path d="M6.5 14a1.5 1.5 0 0 0 3 0"/>',
+  chevron: '<path d="m4 6 4 4 4-4"/>',
+  more: '<circle cx="3.5" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="12.5" cy="8" r="1" fill="currentColor"/>',
+  grip: '<circle cx="6" cy="4" r="1" fill="currentColor"/><circle cx="10" cy="4" r="1" fill="currentColor"/><circle cx="6" cy="8" r="1" fill="currentColor"/><circle cx="10" cy="8" r="1" fill="currentColor"/><circle cx="6" cy="12" r="1" fill="currentColor"/><circle cx="10" cy="12" r="1" fill="currentColor"/>',
+  close: '<path d="m4 4 8 8M12 4l-8 8"/>',
+  summary: '<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
+  timeline: '<path d="M2 4h7M5 8h8M3 12h6"/>',
+  backlog: '<path d="M2 4h12M2 8h12M2 12h12"/>',
+  board: '<rect x="2" y="2" width="3.3" height="12" rx="1"/><rect x="6.35" y="2" width="3.3" height="8" rx="1"/><rect x="10.7" y="2" width="3.3" height="10" rx="1"/>',
+  issues: '<path d="M5 4h9M5 8h9M5 12h9"/><circle cx="2.5" cy="4" r=".8" fill="currentColor"/><circle cx="2.5" cy="8" r=".8" fill="currentColor"/><circle cx="2.5" cy="12" r=".8" fill="currentColor"/>',
+  settings: '<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>',
+  sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>',
+  moon: '<path d="M13 9.5A5.5 5.5 0 1 1 6.5 3a4.5 4.5 0 0 0 6.5 6.5z"/>',
+  info: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.8v.2"/>',
+  trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
+  arrowUp: '<path d="M8 13V3M4 7l4-4 4 4"/>',
+  arrowDown: '<path d="M8 3v10M4 9l4 4 4-4"/>',
+  folder: '<path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z"/>',
+  calendar: '<rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5 1.8v2.4M11 1.8v2.4"/>',
+  move: '<path d="M8 2v12M2 8h12M5.5 4.5 8 2l2.5 2.5M5.5 11.5 8 14l2.5-2.5M4.5 5.5 2 8l2.5 2.5M11.5 5.5 14 8l-2.5 2.5"/>'
+};
+const icon = (n, label) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"'}>${UI_PATH[n]}</svg>`;
+
+/* =========================================================
+   Demo data (dates relative to today so the demo stays fresh)
+   ========================================================= */
+function seed() {
+  const users = [
+    { id: 'u1', name: 'Ayesha Khan', role: 'Product Owner' },
+    { id: 'u2', name: 'Bilal Ahmed', role: 'Tech Lead' },
+    { id: 'u3', name: 'Sara Malik', role: 'Developer' },
+    { id: 'u4', name: 'Usman Tariq', role: 'Developer' },
+    { id: 'u5', name: 'Fatima Noor', role: 'QA Engineer' },
+    { id: 'u6', name: 'Hamza Ali', role: 'Designer' }];
+  const S = { version: 1, users, currentUserId: 'u1', projects: [], issues: [], sprints: [], comments: [], activity: [] };
+  const T = n => addDays(TODAY, n);
+
+  const pU = { id: 'p1', key: 'UPMS', name: 'U-PMS Build', type: 'scrum', leadId: 'u2', color: 0, nextNumber: 1, createdAt: stamp(-40),
+    description: 'Building U-PMS, our own project management system. This project tracks the build itself, module by module.' };
+  const pC = { id: 'p2', key: 'CP', name: 'Customer Portal', type: 'kanban', leadId: 'u6', color: 1, nextNumber: 1, createdAt: stamp(-30),
+    description: 'Self-service portal improvements, run as continuous flow on a Kanban board.' };
+  S.projects.push(pU, pC);
+
+  S.sprints.push(
+    { id: 's1', projectId: 'p1', seq: 1, name: 'UPMS Sprint 1', goal: 'Create and list projects', state: 'completed', startDate: T(-26), endDate: T(-13) },
+    { id: 's2', projectId: 'p1', seq: 2, name: 'UPMS Sprint 2', goal: 'Define tasks end to end: create, edit, sub-tasks', state: 'active', startDate: T(-12), endDate: T(1) },
+    { id: 's3', projectId: 'p1', seq: 3, name: 'UPMS Sprint 3', goal: 'Backlog and sprint planning', state: 'planned', startDate: T(2), endDate: T(15) },
+    { id: 's4', projectId: 'p1', seq: 4, name: 'UPMS Sprint 4', goal: 'Board with drag-and-drop', state: 'planned', startDate: T(16), endDate: T(29) });
+
+  let rank = 1000;
+  const mk = (p, o) => {
+    const n = p.nextNumber++;
+    const is = Object.assign({
+      id: `${p.key}-${n}`.toLowerCase(), projectId: p.id, number: n, key: `${p.key}-${n}`, type: 'story', summary: '', description: '',
+      status: 'todo', priority: 'medium', assigneeId: null, reporterId: 'u1', parentId: null, sprintId: null, points: null,
+      labels: [], startDate: null, dueDate: null, rank: rank += 10, createdAt: stamp(-20), updatedAt: stamp(-2), resolvedAt: null
+    }, o);
+    if (is.status === 'done' && !is.resolvedAt) is.resolvedAt = is.updatedAt;
+    S.issues.push(is);
+    return is;
+  };
+  // Epics for the U-PMS build: the timeline doubles as the delivery plan
+  const e = [
+    mk(pU, { type: 'epic', summary: 'Project creation & settings', status: 'done', startDate: T(-26), dueDate: T(-6), assigneeId: 'u2', createdAt: stamp(-38), updatedAt: stamp(-6), description: 'Create projects from Scrum or Kanban templates, generate keys, manage details and members.' }),
+    mk(pU, { type: 'epic', summary: 'Issues & tasks', status: 'inprogress', startDate: T(-19), dueDate: T(8), assigneeId: 'u3', createdAt: stamp(-38), description: 'Epics, stories, tasks, bugs and sub-tasks with keys like UPMS-42, fields, and history.' }),
+    mk(pU, { type: 'epic', summary: 'Backlog & sprints', status: 'inprogress', startDate: T(-5), dueDate: T(22), assigneeId: 'u4', createdAt: stamp(-38), description: 'Ranked backlog, sprint planning, start and complete sprints, story points.' }),
+    mk(pU, { type: 'epic', summary: 'Board', startDate: T(2), dueDate: T(29), assigneeId: 'u3', createdAt: stamp(-37), description: 'Columns per status, drag-and-drop, quick filters.' }),
+    mk(pU, { type: 'epic', summary: 'Timeline', startDate: T(16), dueDate: T(50), assigneeId: 'u6', createdAt: stamp(-37), description: 'Epics as bars across weeks and months; drag to reschedule.' }),
+    mk(pU, { type: 'epic', summary: 'Comments & notifications', startDate: T(30), dueDate: T(64), assigneeId: 'u4', createdAt: stamp(-36), description: 'Comments, @mentions, watchers, in-app and email notifications, attachments.' }),
+    mk(pU, { type: 'epic', summary: 'Search & filters', startDate: T(44), dueDate: T(78), assigneeId: 'u2', createdAt: stamp(-36), description: 'Search across projects, filters, saved filters, My Work.' }),
+    mk(pU, { type: 'epic', summary: 'Users, login & permissions', startDate: T(65), dueDate: T(106), assigneeId: 'u2', priority: 'high', createdAt: stamp(-36), description: 'Sign-in page, user accounts, roles (Project Admin, Member, Viewer), audit log. Planned after the core modules.' })];
+  // Sprint 1 (completed)
+  mk(pU, { summary: 'Create a project with name, key and template', parentId: e[0].id, sprintId: 's1', status: 'done', assigneeId: 'u2', points: 5, resolvedAt: stamp(-15), updatedAt: stamp(-15) });
+  mk(pU, { type: 'task', summary: 'Generate the project key from its name', parentId: e[0].id, sprintId: 's1', status: 'done', assigneeId: 'u3', points: 2, resolvedAt: stamp(-17), updatedAt: stamp(-17) });
+  mk(pU, { summary: 'Project list with search', parentId: e[0].id, sprintId: 's1', status: 'done', assigneeId: 'u4', points: 3, resolvedAt: stamp(-14), updatedAt: stamp(-14) });
+  mk(pU, { type: 'bug', summary: 'Duplicate project keys were accepted', parentId: e[0].id, sprintId: 's1', status: 'done', assigneeId: 'u5', points: 1, priority: 'high', resolvedAt: stamp(-13), updatedAt: stamp(-13) });
+  // Sprint 2 (active)
+  mk(pU, { summary: 'Create issues: epic, story, task and bug', parentId: e[1].id, sprintId: 's2', status: 'done', assigneeId: 'u3', points: 5, resolvedAt: stamp(-4), updatedAt: stamp(-4), labels: ['core'] });
+  const panel = mk(pU, { summary: 'Issue detail panel with editable fields', parentId: e[1].id, sprintId: 's2', status: 'review', assigneeId: 'u3', points: 8, updatedAt: stamp(0, 9), labels: ['core', 'ui'],
+    description: 'Open any issue in a side panel.\n\nAcceptance criteria:\n- Summary, status, assignee, priority, points and dates are editable in place\n- Every change is recorded in History\n- Esc closes the panel' });
+  mk(pU, { type: 'task', summary: 'Issue keys like UPMS-42 that are never reused', parentId: e[1].id, sprintId: 's2', status: 'done', assigneeId: 'u4', points: 3, resolvedAt: stamp(-6), updatedAt: stamp(-6) });
+  const subStory = mk(pU, { summary: 'Sub-tasks under stories and tasks', parentId: e[1].id, sprintId: 's2', status: 'inprogress', assigneeId: 'u4', points: 5, updatedAt: stamp(-1) });
+  mk(pU, { type: 'bug', summary: 'Summary longer than 255 characters breaks the form', parentId: e[1].id, sprintId: 's2', status: 'todo', priority: 'high', assigneeId: 'u5', points: 2, dueDate: T(1), updatedAt: stamp(-1) });
+  mk(pU, { type: 'task', summary: 'Project settings page: details and members', parentId: e[0].id, sprintId: 's2', status: 'inprogress', assigneeId: 'u2', points: 3, updatedAt: stamp(-1) });
+  mk(pU, { type: 'task', summary: 'Write acceptance criteria for the backlog stories', parentId: e[2].id, sprintId: 's2', status: 'todo', assigneeId: 'u1', points: 1, dueDate: T(1), updatedAt: stamp(-2) });
+  // Sprint 3 (planned)
+  mk(pU, { summary: 'Backlog with drag-and-drop ranking', parentId: e[2].id, sprintId: 's3', assigneeId: 'u3', points: 8 });
+  mk(pU, { summary: 'Create, start and complete sprints', parentId: e[2].id, sprintId: 's3', assigneeId: 'u4', points: 8 });
+  mk(pU, { summary: 'Story points and sprint totals', parentId: e[2].id, sprintId: 's3', assigneeId: 'u2', points: 3 });
+  mk(pU, { type: 'task', summary: 'Review the timeline design with the team', parentId: e[4].id, sprintId: 's3', assigneeId: 'u1', points: 2, priority: 'high', dueDate: T(5) });
+  // Sprint 4 (planned)
+  mk(pU, { summary: 'Board with a column per status', parentId: e[3].id, sprintId: 's4', assigneeId: 'u3', points: 8 });
+  mk(pU, { summary: 'Drag cards between columns', parentId: e[3].id, sprintId: 's4', assigneeId: 'u4', points: 5 });
+  // Backlog
+  mk(pU, { summary: 'Quick filters on the board', parentId: e[3].id, points: 3 });
+  mk(pU, { summary: 'Timeline: epics as bars across weeks and months', parentId: e[4].id, points: 8, assigneeId: 'u6' });
+  mk(pU, { summary: 'Timeline: drag bars to change dates', parentId: e[4].id, points: 5 });
+  mk(pU, { summary: 'Comments with @mentions', parentId: e[5].id, points: 5 });
+  mk(pU, { summary: 'Email for assignments and mentions', parentId: e[5].id, points: 3 });
+  mk(pU, { type: 'task', summary: 'Attachments with malware scanning', parentId: e[5].id, points: 5, labels: ['security'] });
+  mk(pU, { summary: 'Search across projects', parentId: e[6].id, points: 8 });
+  mk(pU, { summary: 'Saved filters', parentId: e[6].id, points: 3, priority: 'low' });
+  mk(pU, { summary: 'Sign-in page and user accounts', parentId: e[7].id, points: 5, labels: ['security'] });
+  mk(pU, { summary: 'Roles: Project Admin, Member, Viewer', parentId: e[7].id, points: 5, labels: ['security'] });
+  // Sub-tasks
+  mk(pU, { type: 'subtask', summary: 'Status dropdown in the panel', parentId: panel.id, sprintId: 's2', status: 'done', assigneeId: 'u3', resolvedAt: stamp(-3), updatedAt: stamp(-3) });
+  mk(pU, { type: 'subtask', summary: 'Inline editing of the summary', parentId: panel.id, sprintId: 's2', status: 'review', assigneeId: 'u3' });
+  mk(pU, { type: 'subtask', summary: 'Add sub-task form', parentId: subStory.id, sprintId: 's2', status: 'inprogress', assigneeId: 'u4' });
+
+  // Customer Portal (Kanban)
+  const c1 = mk(pC, { type: 'epic', summary: 'Account self-service', status: 'inprogress', startDate: T(-20), dueDate: T(25), assigneeId: 'u6' });
+  const c2 = mk(pC, { type: 'epic', summary: 'Payments history', startDate: T(5), dueDate: T(45), assigneeId: 'u4' });
+  mk(pC, { summary: 'Update contact details', parentId: c1.id, status: 'inprogress', assigneeId: 'u6', points: 3 });
+  mk(pC, { type: 'bug', summary: 'Session timeout message is unclear', parentId: c1.id, status: 'todo', priority: 'high', assigneeId: 'u5', points: 1 });
+  mk(pC, { summary: 'Download statements as PDF', parentId: c2.id, status: 'review', assigneeId: 'u4', points: 5 });
+  mk(pC, { type: 'task', summary: 'Accessibility review of the forms', parentId: c1.id, status: 'todo', assigneeId: 'u6', points: 2 });
+  mk(pC, { summary: 'Change password flow', parentId: c1.id, status: 'done', assigneeId: 'u3', points: 3, resolvedAt: stamp(-3), updatedAt: stamp(-3) });
+  mk(pC, { summary: 'Payment history list with filters', parentId: c2.id, status: 'todo', assigneeId: 'u1', points: 5 });
+  mk(pC, { type: 'bug', summary: 'Dates shown in the wrong time zone', status: 'done', priority: 'highest', assigneeId: 'u5', points: 2, resolvedAt: stamp(-20), updatedAt: stamp(-20) });
+  mk(pC, { type: 'task', summary: 'Design review with stakeholders', status: 'inprogress', assigneeId: 'u1', points: 1, dueDate: T(3) });
+
+  S.comments.push(
+    { id: uid(), issueId: panel.id, authorId: 'u2', body: 'Let\'s keep the panel on the right so the board stays visible behind it.', createdAt: stamp(-3, 11) },
+    { id: uid(), issueId: panel.id, authorId: 'u3', body: 'Status and assignee are done. Inline summary editing is in review now.', createdAt: stamp(0, 9) });
+  const act = (issue, actorId, text, ts) => S.activity.push({ id: uid(), issueId: issue.id, actorId, text, at: ts });
+  act(panel, 'u3', 'changed <b>Status</b> from In Progress to In Review', stamp(0, 9));
+  act(subStory, 'u4', 'changed <b>Status</b> from To Do to In Progress', stamp(-1, 15));
+  act(e[1], 'u3', 'changed <b>Status</b> from To Do to In Progress', stamp(-12, 10));
+  act(e[0], 'u2', 'changed <b>Status</b> from In Progress to Done', stamp(-6, 16));
+  S.activity.sort((a, b) => b.at.localeCompare(a.at));
+  return S;
+}
+
+/* =========================================================
+   State & persistence (localStorage is a convenience only)
+   ========================================================= */
+const STORE_KEY = 'upms-prototype-v1';
+const THEME_KEY = 'upms-prototype-theme';
+let S = load();
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) { const s = JSON.parse(raw); if (s && s.version === 1 && Array.isArray(s.issues)) return s; }
+  } catch (e) { /* storage unavailable */ }
+  return seed();
+}
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+try { const t = localStorage.getItem(THEME_KEY); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* ignore */ }
+
+const UI = {
+  projectsQ: '', bannerHidden: false,
+  board: { q: '', mine: false, epic: '', assignees: [] },
+  backlog: { q: '', mine: false, epic: '', collapsed: {} },
+  issues: { q: '', type: '', status: '', assignee: '', priority: '', sort: 'updatedAt', dir: -1 },
+  timeline: { zoom: 'months', expanded: {}, q: '' },
+  panelTab: 'comments', editingDesc: false
+};
+
+/* =========================================================
+   Lookups
+   ========================================================= */
+const user = id => S.users.find(u => u.id === id);
+const me = () => user(S.currentUserId);
+const project = id => S.projects.find(p => p.id === id);
+const projectByKey = k => S.projects.find(p => p.key === k);
+const issueById = id => S.issues.find(i => i.id === id);
+const issueByKey = k => S.issues.find(i => i.key.toLowerCase() === String(k).toLowerCase());
+const issuesOf = pid => S.issues.filter(i => i.projectId === pid);
+const childrenOf = id => S.issues.filter(i => i.parentId === id).sort((a, b) => a.rank - b.rank);
+const sprintsOf = pid => S.sprints.filter(s => s.projectId === pid).sort((a, b) => a.seq - b.seq);
+const activeSprint = pid => S.sprints.find(s => s.projectId === pid && s.state === 'active');
+const sprint = id => S.sprints.find(s => s.id === id);
+const epicsOf = pid => issuesOf(pid).filter(i => i.type === 'epic').sort((a, b) => a.number - b.number);
+const epicOf = is => { if (!is.parentId) return null; const p = issueById(is.parentId); if (!p) return null; return p.type === 'epic' ? p : epicOf(p); };
+const epicColor = epic => {
+  if (!epic) return 'var(--epic-other)';
+  const idx = epicsOf(epic.projectId).findIndex(e => e.id === epic.id);
+  return idx >= 0 && idx < 8 ? `var(--epic-${idx + 1})` : 'var(--epic-other)';
+};
+const initials = n => n.split(' ').map(x => x[0]).join('').slice(0, 2).toUpperCase();
+const avColor = id => AV_COLORS[(S.users.findIndex(u => u.id === id) + AV_COLORS.length) % AV_COLORS.length];
+const avatar = (id, lg) => {
+  const u = user(id);
+  if (!u) return `<span class="avatar empty-av${lg ? ' lg' : ''}" role="img" aria-label="Unassigned" title="Unassigned">?</span>`;
+  return `<span class="avatar${lg ? ' lg' : ''}" style="background:${avColor(id)}" role="img" aria-label="${esc(u.name)}" title="${esc(u.name)}">${initials(u.name)}</span>`;
+};
+const projTile = p => `<span class="proj-tile" style="background:${PROJ_COLORS[p.color % PROJ_COLORS.length]}" aria-hidden="true">${esc(p.key.slice(0, 2))}</span>`;
+const lozenge = st => `<span class="lozenge st-${st}">${STATUS_NAME[st]}</span>`;
+const epicChip = epic => epic ? `<span class="epic-chip" title="Epic: ${esc(epic.summary)}"><span class="epic-dot" style="background:${epicColor(epic)}"></span>${esc(epic.summary)}</span>` : '';
+const nextRank = pid => Math.max(0, ...issuesOf(pid).map(i => i.rank)) + 10;
+const epicProgress = epic => {
+  const kids = childrenOf(epic.id).filter(k => k.type !== 'subtask');
+  if (!kids.length) return { done: epic.status === 'done' ? 1 : 0, total: 1, pct: epic.status === 'done' ? 100 : 0, count: 0 };
+  const done = kids.filter(k => k.status === 'done').length;
+  return { done, total: kids.length, pct: Math.round(done / kids.length * 100), count: kids.length };
+};
+
+/* =========================================================
+   Mutations (every change is logged to History)
+   ========================================================= */
+const FIELD_LABEL = { summary: 'Summary', description: 'Description', status: 'Status', priority: 'Priority', assigneeId: 'Assignee',
+  type: 'Type', points: 'Story points', sprintId: 'Sprint', parentId: 'Parent', startDate: 'Start date', dueDate: 'Due date', labels: 'Labels' };
+function showValue(field, v) {
+  if (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length)) return 'None';
+  switch (field) {
+    case 'status': return STATUS_NAME[v];
+    case 'priority': return PRIORITY_NAME[v];
+    case 'type': return TYPE_NAME[v];
+    case 'assigneeId': return user(v)?.name || 'None';
+    case 'sprintId': return sprint(v)?.name || 'None';
+    case 'parentId': { const p = issueById(v); return p ? p.key : 'None'; }
+    case 'startDate': case 'dueDate': return fmtDate(v);
+    case 'labels': return v.join(', ');
+    default: return String(v);
+  }
+}
+function log(issue, text) { S.activity.unshift({ id: uid(), issueId: issue.id, actorId: S.currentUserId, text, at: nowStamp() }); }
+function updateIssue(issue, patch, opts = {}) {
+  let changed = false;
+  for (const [f, v] of Object.entries(patch)) {
+    const old = issue[f];
+    if (JSON.stringify(old) === JSON.stringify(v)) continue;
+    changed = true;
+    issue[f] = v;
+    if (f === 'rank') continue;
+    if (f === 'description') log(issue, 'updated the <b>Description</b>');
+    else log(issue, `changed <b>${FIELD_LABEL[f] || f}</b> from ${esc(showValue(f, old))} to ${esc(showValue(f, v))}`);
+    if (f === 'status') issue.resolvedAt = v === 'done' ? nowStamp() : null;
+    if (f === 'sprintId') childrenOf(issue.id).filter(c => c.type === 'subtask').forEach(c => { c.sprintId = v; });
+  }
+  if (changed) { issue.updatedAt = nowStamp(); save(); if (!opts.silent) render(); }
+  return changed;
+}
+function createIssue(pid, data) {
+  const p = project(pid);
+  const n = p.nextNumber++;
+  const is = {
+    id: uid(), projectId: pid, number: n, key: `${p.key}-${n}`, type: data.type || 'task', summary: data.summary.trim(),
+    description: data.description || '', status: 'todo', priority: data.priority || 'medium', assigneeId: data.assigneeId || null,
+    reporterId: S.currentUserId, parentId: data.parentId || null, sprintId: data.sprintId || null,
+    points: data.points === '' || data.points == null ? null : Number(data.points), labels: data.labels || [],
+    startDate: data.startDate || null, dueDate: data.dueDate || null, rank: nextRank(pid),
+    createdAt: nowStamp(), updatedAt: nowStamp(), resolvedAt: null
+  };
+  if (is.type === 'subtask' && is.parentId) is.sprintId = issueById(is.parentId)?.sprintId || null;
+  S.issues.push(is);
+  log(is, 'created the issue');
+  save();
+  return is;
+}
+function deleteIssue(is) {
+  const ids = new Set([is.id]);
+  childrenOf(is.id).forEach(c => { if (c.type === 'subtask') ids.add(c.id); else c.parentId = null; });
+  S.issues = S.issues.filter(i => !ids.has(i.id));
+  S.comments = S.comments.filter(c => !ids.has(c.issueId));
+  save();
+}
+function rankBetween(prev, next) {
+  if (prev == null && next == null) return 1000;
+  if (prev == null) return next - 10;
+  if (next == null) return prev + 10;
+  return (prev + next) / 2;
+}
+
+/* =========================================================
+   Routing
+   ========================================================= */
+function route() {
+  const h = decodeURIComponent(location.hash.slice(1)) || '/projects';
+  const [path, query] = h.split('?');
+  const parts = path.split('/').filter(Boolean);
+  return { parts, q: new URLSearchParams(query || '') };
+}
+function go(hash) {
+  const target = hash.startsWith('#') ? hash : `#${hash}`;
+  if (location.hash === target || decodeURIComponent(location.hash) === decodeURIComponent(target)) render();
+  else location.hash = target;
+}
+function currentBase() { return location.hash.slice(1).split('?')[0] || '/projects'; }
+function openIssue(key) { const q = new URLSearchParams(location.hash.split('?')[1] || ''); q.set('issue', key); UI.editingDesc = false; go(`${currentBase()}?${q}`); }
+function closeIssue() { const q = new URLSearchParams(location.hash.split('?')[1] || ''); q.delete('issue'); const s = q.toString(); go(currentBase() + (s ? `?${s}` : '')); }
+function currentProject() { const r = route(); return r.parts[0] === 'p' ? projectByKey(r.parts[1]) : null; }
+
+/* =========================================================
+   Rendering
+   ========================================================= */
+function render() {
+  const active = document.activeElement;
+  const focusId = active && active.id;
+  const sel = focusId && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
+  const scrolls = $$('[data-keep-scroll]').map(el => [el.dataset.keepScroll, el.scrollLeft, el.scrollTop]);
+  const r = route();
+  renderTopbar(r);
+  renderSidebar(r);
+  $('#main').innerHTML = renderMain(r);
+  renderPanel(r.q.get('issue'));
+  scrolls.forEach(([k, l, t]) => { const el = $(`[data-keep-scroll="${k}"]`); if (el) { el.scrollLeft = l; el.scrollTop = t; } });
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    if (el) { el.focus({ preventScroll: true }); if (sel && typeof el.setSelectionRange === 'function') { try { el.setSelectionRange(sel[0], sel[1]); } catch (e) { /* ignore */ } } }
+  }
+  afterRender(r);
+}
+
+function renderTopbar(r) {
+  const onProjects = r.parts[0] === 'projects';
+  const theme = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  $('#topbar').innerHTML = `
+    <a class="brand" href="#/projects" aria-label="U-PMS home"><span class="brand-mark" aria-hidden="true">U</span>U-PMS <small>UBL Project Management System</small></a>
+    <span class="pill" title="Clickable design prototype with demo data">Prototype</span>
+    <nav class="top-nav" aria-label="Main">
+      <a href="#/projects" ${onProjects ? 'aria-current="page"' : ''}>Projects</a>
+      <a href="#/search" ${r.parts[0] === 'search' ? 'aria-current="page"' : ''}>Search</a>
+    </nav>
+    <form class="top-search" role="search" data-submit="global-search">
+      ${icon('search')}
+      <label class="sr-only" for="global-q">Search issues or jump to a key</label>
+      <input id="global-q" name="q" placeholder="Search or type a key, e.g. UPMS-14" autocomplete="off">
+    </form>
+    <div class="top-actions">
+      <button class="btn btn-primary" data-action="create-issue">${icon('plus')}<span class="btn-label">Create</span></button>
+      <button class="icon-btn hide-sm" data-action="toggle-theme" aria-label="Switch to ${theme === 'dark' ? 'light' : 'dark'} theme">${icon(theme === 'dark' ? 'sun' : 'moon')}</button>
+      <button class="icon-btn hide-sm" data-action="notifications" aria-label="Notifications">${icon('bell')}<span class="badge-dot"></span></button>
+      <button class="icon-btn" data-action="user-menu" aria-haspopup="true" aria-label="Signed in as ${esc(me().name)}. Switch demo user">${avatar(S.currentUserId)}</button>
+    </div>`;
+}
+
+function renderSidebar(r) {
+  const nav = $('#sidebar');
+  const p = currentProject();
+  if (!p) { nav.hidden = true; nav.innerHTML = ''; return; }
+  nav.hidden = false;
+  const view = r.parts[2] || 'summary';
+  const items = [
+    ['summary', 'Summary', 'summary'], ['timeline', 'Timeline', 'timeline'],
+    ...(p.type === 'scrum' ? [['backlog', 'Backlog', 'backlog']] : []),
+    ['board', p.type === 'scrum' ? 'Sprint board' : 'Kanban board', 'board'], ['issues', 'Issues', 'issues'], ['settings', 'Project settings', 'settings']];
+  nav.innerHTML = `
+    <div class="proj-head">${projTile(p)}<div><strong>${esc(p.name)}</strong><span>${p.type === 'scrum' ? 'Scrum' : 'Kanban'} project</span></div></div>
+    <div class="side-label">Planning</div>
+    <div class="side-nav">${items.map(([id, label, ic]) => `<a href="#/p/${p.key}/${id}" ${view === id ? 'aria-current="page"' : ''}>${icon(ic)}${label}</a>`).join('')}</div>
+    <div class="side-foot">Reports, dashboards and automation come in later modules.</div>`;
+}
+
+function renderMain(r) {
+  const [a, b, c] = r.parts;
+  if (a === 'search') return viewSearch(r.q.get('q') || '');
+  if (a === 'p') {
+    const p = projectByKey(b);
+    if (!p) return `<div class="empty"><strong>Project not found</strong><a href="#/projects">Back to projects</a></div>`;
+    switch (c || 'summary') {
+      case 'timeline': return viewTimeline(p);
+      case 'backlog': return p.type === 'scrum' ? viewBacklog(p) : viewBoard(p);
+      case 'board': return viewBoard(p);
+      case 'issues': return viewIssues(p);
+      case 'settings': return viewSettings(p);
+      default: return viewSummary(p);
+    }
+  }
+  return viewProjects();
+}
+
+function pageHead(p, title, actions = '') {
+  return `<div class="page-head"><div><div class="crumbs"><a href="#/projects">Projects</a> / <a href="#/p/${p.key}/summary">${esc(p.name)}</a></div><h1>${title}</h1></div><div class="spacer"></div>${actions}</div>`;
+}
+
+/* ---------- Projects ---------- */
+function viewProjects() {
+  const q = UI.projectsQ.toLowerCase();
+  const list = S.projects.filter(p => !q || p.name.toLowerCase().includes(q) || p.key.toLowerCase().includes(q));
+  const rows = list.map(p => {
+    const all = issuesOf(p.id).filter(i => i.type !== 'epic' && i.type !== 'subtask');
+    const done = all.filter(i => i.status === 'done').length;
+    const pct = all.length ? Math.round(done / all.length * 100) : 0;
+    return `<tr class="clickable" data-action="open-project" data-key="${p.key}">
+      <td><div class="proj-name">${projTile(p)}<a class="summary-link" href="#/p/${p.key}/summary">${esc(p.name)}</a></div></td>
+      <td>${esc(p.key)}</td>
+      <td>${p.type === 'scrum' ? 'Scrum' : 'Kanban'}</td>
+      <td class="hide-sm"><div class="cell-flex">${avatar(p.leadId)}<span class="truncate">${esc(user(p.leadId)?.name)}</span></div></td>
+      <td class="tabular">${all.length - done} open</td>
+      <td class="hide-sm" style="min-width:140px"><div class="cell-flex"><div class="meter" style="flex:1" data-tip="${done} of ${all.length} issues done"><div style="width:${pct}%"></div></div><span class="tabular" style="width:36px;text-align:right">${pct}%</span></div></td>
+    </tr>`;
+  }).join('');
+  return `
+    ${UI.bannerHidden ? '' : `<div class="banner" role="note">${icon('info')}<div><strong>Clickable design prototype.</strong> Everything here runs in your browser with demo data: create projects and issues, plan sprints, drag cards and timeline bars. Sign-in, permissions and real storage come in later modules. Use the avatar menu to switch demo users or reset the data.</div><button class="more-btn" data-action="hide-banner" aria-label="Dismiss">${icon('close')}</button></div>`}
+    <div class="page-head"><div><h1>Projects</h1></div><div class="spacer"></div>
+      <div class="search-input">${icon('search')}<label class="sr-only" for="proj-q">Search projects</label><input id="proj-q" data-input="projects-q" value="${esc(UI.projectsQ)}" placeholder="Search projects"></div>
+      <button class="btn btn-primary" data-action="create-project">${icon('plus')}Create project</button></div>
+    <div class="card table-wrap">
+      <table class="grid"><thead><tr><th>Name</th><th>Key</th><th>Type</th><th class="hide-sm">Lead</th><th>Issues</th><th class="hide-sm">Progress</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="6"><div class="empty"><strong>No projects match "${esc(UI.projectsQ)}"</strong>Try another name or key.</div></td></tr>`}</tbody></table>
+    </div>`;
+}
+
+/* ---------- Summary ---------- */
+function barList(rows, total, label) {
+  const max = Math.max(1, ...rows.map(r => r.value));
+  return `<div class="bars" role="list" aria-label="${esc(label)}">${rows.map(r => {
+    const pct = total ? Math.round(r.value / total * 100) : 0;
+    return `<div class="bar-row" role="listitem">
+      <span class="name">${r.icon || ''}<span class="truncate">${esc(r.name)}</span></span>
+      <span class="bar-track">${r.value ? `<span class="bar-fill" style="width:${r.value / max * 100}%"></span>` : ''}<span class="bar-hit" data-tip="${esc(r.name)}: ${r.value} (${pct}%)"></span></span>
+      <span class="val tabular">${r.value} <span>· ${pct}%</span></span></div>`;
+  }).join('')}</div>`;
+}
+function viewSummary(p) {
+  const all = issuesOf(p.id);
+  const work = all.filter(i => i.type !== 'epic');
+  const done7 = work.filter(i => i.resolvedAt && withinDays(i.resolvedAt, 7)).length;
+  const upd7 = work.filter(i => withinDays(i.updatedAt, 7)).length;
+  const cre7 = work.filter(i => withinDays(i.createdAt, 7)).length;
+  const due7 = work.filter(i => i.dueDate && i.status !== 'done' && diffDays(TODAY, i.dueDate) >= 0 && diffDays(TODAY, i.dueDate) <= 7).length;
+  const statusRows = STATUSES.map(s => ({ name: s.name, value: work.filter(i => i.status === s.id).length }));
+  const priRows = PRIORITIES.map(x => ({ name: x.name, value: work.filter(i => i.priority === x.id).length, icon: priIcon(x.id) }));
+  const typeRows = TYPES.filter(t => t.id !== 'epic').map(t => ({ name: t.name, value: work.filter(i => i.type === t.id).length, icon: typeIcon(t.id) }));
+  const acts = S.activity.filter(a => { const i = issueById(a.issueId); return i && i.projectId === p.id; }).slice(0, 8);
+  const sp = activeSprint(p.id);
+  return `
+    ${pageHead(p, 'Summary', `<button class="btn" data-action="create-issue">${icon('plus')}Create issue</button>`)}
+    <p style="margin:-6px 0 16px;color:var(--text-2)">${esc(p.description || '')}</p>
+    <div class="stat-grid">
+      <div class="card stat"><div class="v">${done7}</div><div class="l">completed</div><div class="s">in the last 7 days</div></div>
+      <div class="card stat"><div class="v">${upd7}</div><div class="l">updated</div><div class="s">in the last 7 days</div></div>
+      <div class="card stat"><div class="v">${cre7}</div><div class="l">created</div><div class="s">in the last 7 days</div></div>
+      <div class="card stat"><div class="v">${due7}</div><div class="l">due soon</div><div class="s">in the next 7 days</div></div>
+    </div>
+    <div class="sum-grid">
+      <section class="card sum-card"><h2>Status overview</h2><div class="sub">${work.length} work items${sp ? ` · active sprint: ${esc(sp.name)}` : ''}</div>${barList(statusRows, work.length, 'Work items by status')}</section>
+      <section class="card sum-card"><h2>Priority breakdown</h2><div class="sub">How urgent the work is</div>${barList(priRows, work.length, 'Work items by priority')}</section>
+      <section class="card sum-card"><h2>Epic progress</h2><div class="sub">Done child issues per epic</div>
+        ${epicsOf(p.id).map(ep => { const pr = epicProgress(ep); return `<div class="epic-prog"><span class="cell-flex"><span class="epic-dot" style="background:${epicColor(ep)}"></span><button class="btn-ghost summary-link truncate" style="border:0;background:none;padding:0;cursor:pointer;text-align:left" data-action="open-issue" data-key="${ep.key}">${esc(ep.summary)}</button></span><div class="meter" data-tip="${pr.done} of ${pr.total} done"><div style="width:${pr.pct}%"></div></div><span class="tabular" style="text-align:right;font-size:12px;color:var(--text-2)">${pr.pct}%</span></div>`; }).join('') || '<div class="empty">No epics yet</div>'}
+      </section>
+      <section class="card sum-card"><h2>Types of work</h2><div class="sub">Breakdown by issue type</div>${barList(typeRows, work.length, 'Work items by type')}</section>
+      <section class="card sum-card" style="grid-column:1/-1"><h2>Recent activity</h2>
+        <ul class="activity">${acts.map(a => { const i = issueById(a.issueId); return `<li>${avatar(a.actorId)}<div><div><b>${esc(user(a.actorId)?.name)}</b> ${a.text} on <a href="#" data-action="open-issue" data-key="${i.key}">${esc(i.key)}</a> ${esc(i.summary)}</div><div class="when">${relTime(a.at)}</div></div></li>`; }).join('') || '<li>No activity yet</li>'}</ul>
+      </section>
+    </div>`;
+}
+
+/* ---------- Backlog ---------- */
+function blFilter(list) {
+  const f = UI.backlog;
+  return list.filter(i => (!f.mine || i.assigneeId === S.currentUserId) && (!f.epic || epicOf(i)?.id === f.epic)
+    && (!f.q || (i.summary + ' ' + i.key).toLowerCase().includes(f.q.toLowerCase())));
+}
+function blRow(i, containerId) {
+  const ep = epicOf(i);
+  return `<li class="bl-row" draggable="true" data-dnd="bl" data-key="${i.key}" data-container="${containerId}">
+    <svg class="grip" viewBox="0 0 16 16" aria-hidden="true">${UI_PATH.grip}</svg>
+    ${typeIcon(i.type)}<span class="key hide-sm">${i.key}</span>
+    <span class="sum"><button class="truncate" data-action="open-issue" data-key="${i.key}">${esc(i.summary)}</button></span>
+    <span class="hide-sm">${epicChip(ep)}</span>
+    ${lozenge(i.status)}
+    <span class="points" title="Story points">${i.points ?? '–'}</span>
+    ${priIcon(i.priority)}${avatar(i.assigneeId)}
+    <button class="more-btn" data-action="move-menu" data-key="${i.key}" data-context="backlog" aria-label="Move ${i.key}">${icon('more')}</button>
+  </li>`;
+}
+function viewBacklog(p) {
+  const f = UI.backlog;
+  const items = issuesOf(p.id).filter(i => i.type !== 'epic' && i.type !== 'subtask').sort((a, b) => a.rank - b.rank);
+  const sprints = sprintsOf(p.id).filter(s => s.state !== 'completed').sort((a, b) => (a.state === 'active' ? -1 : 0) - (b.state === 'active' ? -1 : 0) || a.seq - b.seq);
+  const hasActive = !!activeSprint(p.id);
+  const sections = sprints.map(s => {
+    const list = items.filter(i => i.sprintId === s.id);
+    const shown = blFilter(list);
+    const pts = st => list.filter(i => st.includes(i.status)).reduce((n, i) => n + (i.points || 0), 0);
+    const collapsed = f.collapsed[s.id];
+    const days = diffDays(TODAY, s.endDate);
+    return `<section class="card bl-section" aria-label="${esc(s.name)}">
+      <div class="bl-head">
+        <button class="collapse" data-action="toggle-section" data-id="${s.id}" aria-expanded="${!collapsed}">${icon('chevron')}${esc(s.name)}</button>
+        <span class="bl-meta">${fmtDate(s.startDate)} – ${fmtDate(s.endDate)} · ${list.length} issues${s.state === 'active' ? ` · ${days >= 0 ? `${days} day${days === 1 ? '' : 's'} left` : 'overdue'}` : ''}</span>
+        ${s.state === 'active' ? '<span class="lozenge st-inprogress">Active</span>' : ''}
+        <span class="spacer"></span>
+        <span class="sp-counts" aria-label="Story points: to do, in progress, done">
+          <span class="st-todo" data-tip="To Do: ${pts(['todo'])} points">${pts(['todo'])}</span>
+          <span class="st-inprogress" data-tip="In Progress / In Review: ${pts(['inprogress', 'review'])} points">${pts(['inprogress', 'review'])}</span>
+          <span class="st-done" data-tip="Done: ${pts(['done'])} points">${pts(['done'])}</span></span>
+        ${s.state === 'active'
+          ? `<button class="btn btn-sm" data-action="complete-sprint" data-id="${s.id}">Complete sprint</button>`
+          : `<button class="btn btn-sm ${hasActive ? '' : 'btn-primary'}" data-action="start-sprint" data-id="${s.id}" ${hasActive ? 'disabled title="Complete the active sprint first"' : ''}>Start sprint</button>`}
+      </div>
+      ${s.goal && !collapsed ? `<div class="bl-goal">Goal: ${esc(s.goal)}</div>` : ''}
+      ${collapsed ? '' : `<ul class="bl-list" data-drop="bl" data-container="${s.id}">${shown.map(i => blRow(i, s.id)).join('') || `<li class="bl-empty">${list.length ? 'No issues match the filters' : 'Drag issues here from the backlog to plan this sprint'}</li>`}</ul>`}
+    </section>`;
+  }).join('');
+  const backlogItems = items.filter(i => !i.sprintId && i.status !== 'done');
+  const shownB = blFilter(backlogItems);
+  const collapsedB = f.collapsed.backlog;
+  const epics = epicsOf(p.id);
+  return `
+    ${pageHead(p, 'Backlog', `<button class="btn" data-action="create-sprint">${icon('plus')}Create sprint</button>`)}
+    <div class="toolbar">
+      <div class="search-input">${icon('search')}<label class="sr-only" for="bl-q">Search backlog</label><input id="bl-q" data-input="backlog-q" value="${esc(f.q)}" placeholder="Search backlog"></div>
+      <label class="sr-only" for="bl-epic">Filter by epic</label>
+      <select id="bl-epic" class="select" style="width:auto" data-change="backlog-epic"><option value="">All epics</option>${epics.map(e => `<option value="${e.id}" ${f.epic === e.id ? 'selected' : ''}>${esc(e.summary)}</option>`).join('')}</select>
+      <label class="checkbox"><input type="checkbox" data-change="backlog-mine" ${f.mine ? 'checked' : ''}>Only my issues</label>
+      <span class="spacer"></span><span class="hint hide-sm">Drag rows to rank and plan, or use the ⋯ menu</span>
+    </div>
+    ${sections}
+    <section class="card bl-section" aria-label="Backlog">
+      <div class="bl-head">
+        <button class="collapse" data-action="toggle-section" data-id="backlog" aria-expanded="${!collapsedB}">${icon('chevron')}Backlog</button>
+        <span class="bl-meta">${backlogItems.length} issues · ${backlogItems.reduce((n, i) => n + (i.points || 0), 0)} points</span>
+      </div>
+      ${collapsedB ? '' : `<ul class="bl-list" data-drop="bl" data-container="backlog">${shownB.map(i => blRow(i, 'backlog')).join('') || `<li class="bl-empty">${backlogItems.length ? 'No issues match the filters' : 'Your backlog is empty. Create an issue below.'}</li>`}</ul>
+      <form class="inline-create" data-submit="inline-create" data-container="backlog">
+        <label class="sr-only" for="ic-type">Issue type</label>
+        <select id="ic-type" name="type" class="select">${TYPES.filter(t => t.id !== 'epic' && t.id !== 'subtask').map(t => `<option value="${t.id}" ${t.id === 'story' ? 'selected' : ''}>${t.name}</option>`).join('')}</select>
+        <label class="sr-only" for="ic-sum">What needs to be done?</label>
+        <input id="ic-sum" name="summary" class="input" placeholder="What needs to be done? Press Enter to create" autocomplete="off">
+        <button class="btn" type="submit">Create</button>
+      </form>`}
+    </section>`;
+}
+
+/* ---------- Board ---------- */
+function boardIssues(p) {
+  const sp = activeSprint(p.id);
+  let list = issuesOf(p.id).filter(i => i.type !== 'epic' && i.type !== 'subtask');
+  if (p.type === 'scrum') list = sp ? list.filter(i => i.sprintId === sp.id) : [];
+  else list = list.filter(i => i.status !== 'done' || (i.resolvedAt && withinDays(i.resolvedAt, 14)));
+  return list.sort((a, b) => a.rank - b.rank);
+}
+function viewBoard(p) {
+  const f = UI.board;
+  const sp = activeSprint(p.id);
+  const all = boardIssues(p);
+  const list = all.filter(i => (!f.mine || i.assigneeId === S.currentUserId) && (!f.epic || epicOf(i)?.id === f.epic)
+    && (!f.assignees.length || f.assignees.includes(i.assigneeId || 'none'))
+    && (!f.q || (i.summary + ' ' + i.key).toLowerCase().includes(f.q.toLowerCase())));
+  const people = [...new Set(all.map(i => i.assigneeId).filter(Boolean))];
+  const headActions = p.type === 'scrum' && sp
+    ? `<span class="sprint-info hide-sm">${icon('calendar')}${(n => n < 0 ? 'Overdue' : `${n} day${n === 1 ? '' : 's'} left`)(diffDays(TODAY, sp.endDate))}</span><button class="btn" data-action="complete-sprint" data-id="${sp.id}">Complete sprint</button>`
+    : '';
+  if (p.type === 'scrum' && !sp) {
+    return `${pageHead(p, 'Sprint board')}<div class="card empty"><strong>No active sprint</strong>Plan and start a sprint in the backlog to see its board.<div style="margin-top:12px"><a class="btn btn-primary" href="#/p/${p.key}/backlog">Go to backlog</a></div></div>`;
+  }
+  const cols = STATUSES.map(st => {
+    const cards = list.filter(i => i.status === st.id);
+    return `<section class="col" aria-label="${st.name}, ${cards.length} issues">
+      <div class="col-head">${st.name}<span class="count">${cards.length}</span>${st.id === 'done' ? '<span class="hide-sm" style="margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500">✓</span>' : ''}</div>
+      <div class="col-body" data-drop="board" data-status="${st.id}">
+        ${cards.map(i => {
+          const ep = epicOf(i);
+          return `<article class="bcard" draggable="true" data-dnd="board" data-key="${i.key}">
+            <button class="t" data-action="open-issue" data-key="${i.key}">${esc(i.summary)}</button>
+            ${ep ? `<div class="bcard-epic">${epicChip(ep)}</div>` : ''}
+            <div class="foot">${typeIcon(i.type)}<span class="key">${i.key}</span><span class="spacer"></span>${priIcon(i.priority)}${i.points != null ? `<span class="points" title="Story points">${i.points}</span>` : ''}${avatar(i.assigneeId)}
+              <button class="more-btn" data-action="move-menu" data-key="${i.key}" data-context="board" aria-label="Move ${i.key}">${icon('more')}</button></div>
+          </article>`;
+        }).join('')}
+      </div>
+      ${st.id === 'todo' ? `<button class="btn btn-ghost btn-sm col-add" data-action="create-issue" data-status="todo">${icon('plus')}Create issue</button>` : ''}
+    </section>`;
+  }).join('');
+  return `
+    ${pageHead(p, p.type === 'scrum' ? esc(sp.name) : 'Kanban board', headActions)}
+    ${p.type === 'scrum' && sp.goal ? `<p style="margin:-8px 0 12px;color:var(--text-2)">Sprint goal: ${esc(sp.goal)}</p>` : ''}
+    <div class="toolbar">
+      <div class="search-input">${icon('search')}<label class="sr-only" for="bd-q">Search this board</label><input id="bd-q" data-input="board-q" value="${esc(f.q)}" placeholder="Search this board"></div>
+      <div class="av-filter" role="group" aria-label="Filter by assignee">${people.map(id => `<button data-action="toggle-assignee" data-id="${id}" aria-pressed="${f.assignees.includes(id)}" aria-label="Show ${esc(user(id)?.name)}'s issues">${avatar(id)}</button>`).join('')}</div>
+      <label class="checkbox"><input type="checkbox" data-change="board-mine" ${f.mine ? 'checked' : ''}>Only my issues</label>
+      <label class="sr-only" for="bd-epic">Filter by epic</label>
+      <select id="bd-epic" class="select" style="width:auto" data-change="board-epic"><option value="">All epics</option>${epicsOf(p.id).map(e => `<option value="${e.id}" ${f.epic === e.id ? 'selected' : ''}>${esc(e.summary)}</option>`).join('')}</select>
+      ${f.mine || f.epic || f.q || f.assignees.length ? '<button class="btn btn-ghost btn-sm" data-action="clear-board-filters">Clear filters</button>' : ''}
+      <span class="spacer"></span><span class="hint hide-sm">${p.type === 'kanban' ? 'Done shows the last 14 days · ' : ''}Drag cards or use ⋯</span>
+    </div>
+    <div class="board-wrap" data-keep-scroll="board"><div class="board">${cols}</div></div>`;
+}
+
+/* ---------- Timeline ---------- */
+const ZOOM = { weeks: 30, months: 9, quarters: 3.2 };
+function timelineRange(p) {
+  const epics = epicsOf(p.id);
+  const dates = [TODAY];
+  epics.forEach(e => { if (e.startDate) dates.push(e.startDate); if (e.dueDate) dates.push(e.dueDate); });
+  sprintsOf(p.id).forEach(s => { dates.push(s.startDate, s.endDate); });
+  const min = dates.reduce((a, b) => a < b ? a : b);
+  const max = dates.reduce((a, b) => a > b ? a : b);
+  const start = parseISO(addDays(min, -10)); start.setDate(1);
+  const end = parseISO(addDays(max, 25)); end.setMonth(end.getMonth() + 1, 0);
+  return { start: toISO(start), end: toISO(end) };
+}
+function viewTimeline(p) {
+  const t = UI.timeline;
+  const dayW = ZOOM[t.zoom];
+  const { start, end } = timelineRange(p);
+  const totalDays = diffDays(start, end) + 1;
+  const width = Math.round(totalDays * dayW);
+  const x = iso => diffDays(start, iso) * dayW;
+  // Scale
+  let scaleTop = '', scaleBottom = '', gridLines = '';
+  if (t.zoom === 'quarters') {
+    let d = parseISO(start);
+    while (toISO(d) <= end) {
+      const q = Math.floor(d.getMonth() / 3);
+      const qStart = new Date(d.getFullYear(), q * 3, 1);
+      const qEnd = new Date(d.getFullYear(), q * 3 + 3, 0);
+      const s = toISO(qStart) < start ? start : toISO(qStart);
+      const e = toISO(qEnd) > end ? end : toISO(qEnd);
+      scaleTop += `<div class="m" style="left:${x(s)}px;width:${(diffDays(s, e) + 1) * dayW}px">Q${q + 1} ${qStart.getFullYear()}</div>`;
+      d = new Date(d.getFullYear(), q * 3 + 3, 1);
+    }
+  }
+  let m = parseISO(start);
+  while (toISO(m) <= end) {
+    const mStart = toISO(m);
+    const mEnd = toISO(new Date(m.getFullYear(), m.getMonth() + 1, 0));
+    const w = (diffDays(mStart, mEnd > end ? end : mEnd) + 1) * dayW;
+    const label = `${MONTHS[m.getMonth()]} ${m.getFullYear()}`;
+    if (t.zoom === 'quarters') scaleBottom += `<div class="d" style="left:${x(mStart)}px;width:${w}px">${MONTHS[m.getMonth()]}</div>`;
+    else scaleTop += `<div class="m" style="left:${x(mStart)}px;width:${w}px">${label}</div>`;
+    gridLines += `<div class="tl-grid-line" style="left:${x(mStart)}px"></div>`;
+    m = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+  }
+  if (t.zoom !== 'quarters') {
+    let d = parseISO(start);
+    while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+    while (toISO(d) <= end) {
+      const iso = toISO(d);
+      scaleBottom += `<div class="d" style="left:${x(iso)}px">${t.zoom === 'weeks' ? `${d.getDate()} ${MONTHS[d.getMonth()]}` : d.getDate()}</div>`;
+      if (t.zoom === 'weeks') gridLines += `<div class="tl-weekend" style="left:${x(addDays(iso, 5))}px;width:${2 * dayW}px"></div>`;
+      d.setDate(d.getDate() + 7);
+    }
+  }
+  const epics = epicsOf(p.id).filter(e => !t.q || e.summary.toLowerCase().includes(t.q.toLowerCase()) || e.key.toLowerCase().includes(t.q.toLowerCase()));
+  let left = '', lanes = '';
+  const sprints = p.type === 'scrum' ? sprintsOf(p.id) : [];
+  if (sprints.length) {
+    left += `<div class="tl-row sprint-row"><span class="hint" style="font-weight:600">Sprints</span></div>`;
+    lanes += `<div class="tl-lane sprint-row">${sprints.map(s => `<div class="tl-sprint ${s.state}" style="left:${x(s.startDate)}px;width:${(diffDays(s.startDate, s.endDate) + 1) * dayW - 2}px" data-tip="${esc(s.name)} · ${fmtDate(s.startDate)} – ${fmtDate(s.endDate)} · ${s.state}">${esc(s.name)}</div>`).join('')}</div>`;
+  }
+  epics.forEach(ep => {
+    const pr = epicProgress(ep);
+    const expanded = !!t.expanded[ep.id];
+    const kids = childrenOf(ep.id).filter(k => k.type !== 'subtask');
+    const color = epicColor(ep);
+    left += `<div class="tl-row">
+      <button class="exp" data-action="tl-expand" data-id="${ep.id}" aria-expanded="${expanded}" aria-label="${expanded ? 'Collapse' : 'Expand'} ${esc(ep.summary)}" ${kids.length ? '' : 'style="visibility:hidden"'}>${icon('chevron')}</button>
+      ${typeIcon('epic')}<span class="key">${ep.key}</span>
+      <button class="nm truncate" data-action="open-issue" data-key="${ep.key}">${esc(ep.summary)}</button>
+      <span class="pct tabular" data-tip="${pr.done} of ${pr.total} child issues done">${pr.pct}%</span>
+    </div>`;
+    if (ep.startDate && ep.dueDate) {
+      const w = (diffDays(ep.startDate, ep.dueDate) + 1) * dayW;
+      lanes += `<div class="tl-lane"><div class="tl-bar" tabindex="0" role="slider" aria-label="${esc(ep.summary)}: ${fmtDate(ep.startDate)} to ${fmtDate(ep.dueDate)}. Arrow keys move, Shift+arrow changes end date."
+        aria-valuetext="${fmtDate(ep.startDate)} to ${fmtDate(ep.dueDate)}" data-bar="${ep.key}" style="left:${x(ep.startDate)}px;width:${w}px;background:${color}"
+        data-tip="${esc(ep.key)} ${esc(ep.summary)} · ${fmtDate(ep.startDate)} – ${fmtDate(ep.dueDate)} · ${pr.pct}% done">
+        <span class="h l" data-edge="start"></span><span class="h r" data-edge="end"></span></div></div>`;
+    } else {
+      lanes += `<div class="tl-lane"><button class="btn btn-sm tl-sched" style="left:${x(TODAY)}px" data-action="tl-schedule" data-key="${ep.key}">${icon('calendar')}Schedule</button></div>`;
+    }
+    if (expanded) kids.forEach(k => {
+      left += `<div class="tl-row child">${typeIcon(k.type)}<span class="key">${k.key}</span><button class="nm truncate" data-action="open-issue" data-key="${k.key}">${esc(k.summary)}</button>${lozenge(k.status)}</div>`;
+      const sp = k.sprintId ? sprint(k.sprintId) : null;
+      const s0 = k.startDate || (sp && sp.startDate);
+      const s1 = k.dueDate || (sp && sp.endDate);
+      if (s0 && s1 && s0 <= s1) {
+        const derived = !(k.startDate && k.dueDate);
+        lanes += `<div class="tl-lane child"><div class="tl-bar child ${derived ? 'derived' : ''}" ${derived ? '' : `tabindex="0" data-bar="${k.key}"`} style="left:${x(s0)}px;width:${(diffDays(s0, s1) + 1) * dayW}px;background:${color}"
+          data-tip="${esc(k.key)} ${esc(k.summary)} · ${fmtDate(s0)} – ${fmtDate(s1)}${derived ? ` (from ${esc(sp.name)})` : ''}">${derived ? '' : '<span class="h l" data-edge="start"></span><span class="h r" data-edge="end"></span>'}</div></div>`;
+      } else lanes += `<div class="tl-lane child"></div>`;
+    });
+  });
+  if (!epics.length) { left += `<div class="tl-row"><span class="hint">No epics${t.q ? ' match your search' : ' yet'}</span></div>`; lanes += '<div class="tl-lane"></div>'; }
+  const todayX = x(TODAY);
+  return `
+    ${pageHead(p, 'Timeline')}
+    <div class="toolbar">
+      <div class="search-input">${icon('search')}<label class="sr-only" for="tl-q">Search epics</label><input id="tl-q" data-input="timeline-q" value="${esc(t.q)}" placeholder="Search epics"></div>
+      <div class="seg" role="group" aria-label="Zoom">${['weeks', 'months', 'quarters'].map(z => `<button data-action="tl-zoom" data-zoom="${z}" aria-pressed="${t.zoom === z}">${z[0].toUpperCase() + z.slice(1)}</button>`).join('')}</div>
+      <button class="btn btn-sm" data-action="tl-today">Today</button>
+      <button class="btn btn-sm" data-action="tl-expand-all">${Object.values(t.expanded).some(Boolean) ? 'Collapse all' : 'Expand all'}</button>
+      <span class="spacer"></span>
+      <span class="tl-legend hide-sm"><span>Drag a bar to move it · drag its ends to change dates</span></span>
+    </div>
+    <div class="tl">
+      <div class="tl-left">
+        <div class="tl-head-left">Epics</div>
+        ${left}
+        <form class="tl-create" data-submit="create-epic">
+          <label class="sr-only" for="tl-new">New epic name</label>
+          <input id="tl-new" name="summary" class="input" placeholder="+ Create epic" autocomplete="off">
+        </form>
+      </div>
+      <div class="tl-right" data-keep-scroll="timeline" id="tl-scroll">
+        <div class="tl-canvas" style="width:${width}px">
+          <div class="tl-scale">${scaleTop}${scaleBottom}<span class="tl-today-label" style="left:${todayX}px">Today</span></div>
+          <div style="position:relative">${gridLines}<div class="tl-today" style="left:${todayX}px"></div>${lanes}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------- Issues list & search ---------- */
+function issueTable(list, showProject) {
+  const f = UI.issues;
+  const col = (id, label) => `<th scope="col" aria-sort="${f.sort === id ? (f.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button data-action="sort" data-sort="${id}">${label}${f.sort === id ? (f.dir > 0 ? ' ↑' : ' ↓') : ''}</button></th>`;
+  return `<div class="card table-wrap"><table class="grid"><thead><tr>
+    ${col('type', 'Type')}${col('key', 'Key')}${col('summary', 'Summary')}${col('status', 'Status')}${col('priority', 'Priority')}<th class="hide-sm">Assignee</th>${col('dueDate', 'Due')}${col('updatedAt', 'Updated')}
+    </tr></thead><tbody>${list.map(i => `<tr class="clickable" data-action="open-issue" data-key="${i.key}">
+      <td>${typeIcon(i.type)}</td><td class="key">${i.key}</td>
+      <td style="max-width:420px"><div class="cell-flex"><a class="summary-link truncate" href="#" data-action="open-issue" data-key="${i.key}">${esc(i.summary)}</a>${showProject ? `<span class="hint">· ${esc(project(i.projectId).name)}</span>` : ''}</div></td>
+      <td>${lozenge(i.status)}</td><td><div class="cell-flex">${priIcon(i.priority)}<span class="hide-sm">${PRIORITY_NAME[i.priority]}</span></div></td>
+      <td class="hide-sm"><div class="cell-flex">${avatar(i.assigneeId)}<span class="truncate">${esc(user(i.assigneeId)?.name || 'Unassigned')}</span></div></td>
+      <td class="tabular">${fmtDate(i.dueDate)}</td><td class="tabular hint">${relTime(i.updatedAt)}</td></tr>`).join('')
+      || `<tr><td colspan="8"><div class="empty"><strong>No issues found</strong>Try clearing some filters.</div></td></tr>`}</tbody></table></div>`;
+}
+const PRI_ORDER = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
+const ST_ORDER = { todo: 0, inprogress: 1, review: 2, done: 3 };
+function sortIssues(list) {
+  const f = UI.issues;
+  const val = i => f.sort === 'priority' ? PRI_ORDER[i.priority] : f.sort === 'status' ? ST_ORDER[i.status] : f.sort === 'key' ? i.number : (i[f.sort] ?? '');
+  return list.slice().sort((a, b) => { const va = val(a), vb = val(b); return (va > vb ? 1 : va < vb ? -1 : 0) * f.dir; });
+}
+function viewIssues(p) {
+  const f = UI.issues;
+  let list = issuesOf(p.id).filter(i => (!f.type || i.type === f.type) && (!f.status || i.status === f.status) && (!f.priority || i.priority === f.priority)
+    && (!f.assignee || (f.assignee === 'none' ? !i.assigneeId : f.assignee === 'me' ? i.assigneeId === S.currentUserId : i.assigneeId === f.assignee))
+    && (!f.q || (i.summary + ' ' + i.key + ' ' + i.description).toLowerCase().includes(f.q.toLowerCase())));
+  list = sortIssues(list);
+  const sel = (id, label, opts, val) => `<label class="sr-only" for="${id}">${label}</label><select id="${id}" class="select" style="width:auto" data-change="${id}"><option value="">${label}: all</option>${opts.map(([v, n]) => `<option value="${v}" ${val === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  return `
+    ${pageHead(p, 'Issues', `<button class="btn btn-primary" data-action="create-issue">${icon('plus')}Create issue</button>`)}
+    <div class="toolbar">
+      <div class="search-input">${icon('search')}<label class="sr-only" for="is-q">Search issues</label><input id="is-q" data-input="issues-q" value="${esc(f.q)}" placeholder="Search issues"></div>
+      ${sel('f-type', 'Type', TYPES.map(t => [t.id, t.name]), f.type)}
+      ${sel('f-status', 'Status', STATUSES.map(s => [s.id, s.name]), f.status)}
+      ${sel('f-assignee', 'Assignee', [['me', 'Me'], ['none', 'Unassigned'], ...S.users.map(u => [u.id, u.name])], f.assignee)}
+      ${sel('f-priority', 'Priority', PRIORITIES.map(x => [x.id, x.name]), f.priority)}
+      <span class="spacer"></span><span class="hint tabular">${list.length} issue${list.length === 1 ? '' : 's'}</span>
+    </div>
+    ${issueTable(list, false)}`;
+}
+function viewSearch(q) {
+  const ql = q.toLowerCase();
+  const list = sortIssues(S.issues.filter(i => !q || (i.summary + ' ' + i.key + ' ' + i.description).toLowerCase().includes(ql)));
+  return `<div class="page-head"><div><h1>Search</h1><div class="hint">Across all projects</div></div></div>
+    <form class="toolbar" data-submit="search-page"><div class="search-input">${icon('search')}<label class="sr-only" for="sp-q">Search all projects</label><input id="sp-q" name="q" value="${esc(q)}" placeholder="Search all projects" style="width:320px"></div><button class="btn" type="submit">Search</button><span class="spacer"></span><span class="hint">${list.length} result${list.length === 1 ? '' : 's'}</span></form>
+    ${issueTable(list, true)}`;
+}
+
+/* ---------- Settings ---------- */
+function viewSettings(p) {
+  return `
+    ${pageHead(p, 'Project settings')}
+    <div class="sum-grid">
+      <form class="card sum-card" data-submit="save-project" data-key="${p.key}">
+        <h2>Details</h2>
+        <div class="field"><label for="ps-name">Name</label><input id="ps-name" name="name" class="input" value="${esc(p.name)}" required maxlength="80"></div>
+        <div class="row">
+          <div class="field"><label for="ps-key">Key</label><input id="ps-key" class="input" value="${esc(p.key)}" disabled><span class="hint">Keys never change, so issue links keep working.</span></div>
+          <div class="field"><label for="ps-type">Template</label><input id="ps-type" class="input" value="${p.type === 'scrum' ? 'Scrum' : 'Kanban'}" disabled></div>
+        </div>
+        <div class="field"><label for="ps-lead">Project lead</label><select id="ps-lead" name="leadId" class="select">${S.users.map(u => `<option value="${u.id}" ${u.id === p.leadId ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="ps-desc">Description</label><textarea id="ps-desc" name="description" class="textarea" maxlength="2000">${esc(p.description || '')}</textarea></div>
+        <button class="btn btn-primary" type="submit">Save changes</button>
+      </form>
+      <section class="card sum-card">
+        <h2>People</h2>
+        <div class="sub">Roles become enforceable permissions in the “Users, login &amp; permissions” module.</div>
+        <table class="grid"><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody>
+          ${S.users.map(u => `<tr><td><div class="cell-flex">${avatar(u.id)}<span>${esc(u.name)}<br><span class="hint">${esc(u.role)}</span></span></div></td><td>${u.id === p.leadId ? 'Project Admin' : u.role === 'Designer' ? 'Viewer' : 'Member'}</td></tr>`).join('')}
+        </tbody></table>
+      </section>
+    </div>`;
+}
+
+/* ---------- Issue panel ---------- */
+let lastPanelKey = null;
+function renderPanel(key) {
+  const root = $('#panel-root');
+  const is = key && issueByKey(key);
+  if (!is) { root.innerHTML = ''; lastPanelKey = null; return; }
+  const p = project(is.projectId);
+  const parent = is.parentId ? issueById(is.parentId) : null;
+  const kids = childrenOf(is.id);
+  const comments = S.comments.filter(c => c.issueId === is.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const history = S.activity.filter(a => a.issueId === is.id);
+  const epics = epicsOf(p.id).filter(e => e.id !== is.id);
+  const parentOpts = is.type === 'subtask'
+    ? issuesOf(p.id).filter(i => ['story', 'task', 'bug'].includes(i.type))
+    : epics;
+  const sprints = sprintsOf(p.id).filter(s => s.state !== 'completed' || s.id === is.sprintId);
+  const childType = is.type === 'epic' ? 'story' : 'subtask';
+  const opt = (v, n, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(n)}</option>`;
+  root.innerHTML = `
+    <div class="overlay" data-action="close-issue"></div>
+    <aside class="panel${lastPanelKey === is.key ? '' : ' enter'}" role="dialog" aria-modal="true" aria-labelledby="panel-title">
+      <div class="panel-head">
+        <span class="crumbs" style="margin:0">${esc(p.name)}${parent ? ` / <a href="#" data-action="open-issue" data-key="${parent.key}">${parent.key}</a>` : ''} / </span>
+        ${typeIcon(is.type)}<span class="key" style="color:var(--text)">${is.key}</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm btn-danger" data-action="delete-issue" data-key="${is.key}">${icon('trash')}<span class="btn-label">Delete</span></button>
+        <button class="icon-btn" data-action="close-issue" aria-label="Close issue panel" id="panel-close">${icon('close')}</button>
+      </div>
+      <div class="panel-body">
+        <div class="panel-main">
+          <label class="sr-only" for="pi-summary">Summary</label>
+          <input id="pi-summary" class="sum-edit" data-change-field="summary" data-key="${is.key}" value="${esc(is.summary)}" maxlength="255">
+          <h2 id="panel-title" class="sr-only">${is.key}: ${esc(is.summary)}</h2>
+          <div class="cell-flex" style="margin-bottom:6px">
+            <label class="sr-only" for="pi-status">Status</label>
+            <select id="pi-status" class="lozenge st-${is.status}" data-change-field="status" data-key="${is.key}">${STATUSES.map(s => opt(s.id, s.name, is.status)).join('')}</select>
+            ${is.type !== 'epic' && epicOf(is) ? epicChip(epicOf(is)) : ''}
+          </div>
+          <div class="section-title">Description</div>
+          ${UI.editingDesc
+            ? `<form data-submit="save-desc" data-key="${is.key}"><label class="sr-only" for="pi-desc">Description</label><textarea id="pi-desc" name="description" class="textarea" style="min-height:140px">${esc(is.description)}</textarea>
+               <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" type="submit">Save</button><button class="btn btn-sm" type="button" data-action="cancel-desc">Cancel</button></div></form>`
+            : `<div class="desc-view ${is.description ? '' : 'placeholder'}" role="button" tabindex="0" data-action="edit-desc">${is.description ? esc(is.description) : 'Add a description…'}</div>`}
+          ${is.type !== 'subtask' ? `
+          <div class="section-title">${is.type === 'epic' ? 'Child issues' : 'Sub-tasks'}${kids.length ? `<span class="hint">${kids.filter(k => k.status === 'done').length} of ${kids.length} done</span>` : ''}</div>
+          ${kids.length ? `<ul class="child-list">${kids.map(k => `<li>${typeIcon(k.type)}<a class="key-link key" href="#" data-action="open-issue" data-key="${k.key}">${k.key}</a><span class="truncate" style="flex:1">${esc(k.summary)}</span>${avatar(k.assigneeId)}${lozenge(k.status)}</li>`).join('')}</ul>` : ''}
+          <form class="cell-flex" data-submit="add-child" data-key="${is.key}" data-type="${childType}">
+            <label class="sr-only" for="pi-child">New ${is.type === 'epic' ? 'child issue' : 'sub-task'}</label>
+            <input id="pi-child" name="summary" class="input" placeholder="+ Add ${is.type === 'epic' ? 'a child issue' : 'a sub-task'}" autocomplete="off">
+            <button class="btn btn-sm" type="submit">Add</button>
+          </form>` : ''}
+          <div class="tabs" role="tablist">
+            <button role="tab" aria-selected="${UI.panelTab === 'comments'}" data-action="panel-tab" data-tab="comments">Comments (${comments.length})</button>
+            <button role="tab" aria-selected="${UI.panelTab === 'history'}" data-action="panel-tab" data-tab="history">History (${history.length})</button>
+          </div>
+          ${UI.panelTab === 'comments' ? `
+            <form data-submit="add-comment" data-key="${is.key}" style="display:flex;gap:10px;margin-bottom:18px">${avatar(S.currentUserId, true)}
+              <div style="flex:1"><label class="sr-only" for="pi-comment">Add a comment</label><textarea id="pi-comment" name="body" class="textarea" style="min-height:64px" placeholder="Add a comment… (mentions and email arrive with the Collaboration module)"></textarea>
+              <button class="btn btn-primary btn-sm" type="submit" style="margin-top:6px">Comment</button></div></form>
+            ${comments.map(c => `<div class="comment">${avatar(c.authorId, true)}<div><div class="who">${esc(user(c.authorId)?.name)}<span>${relTime(c.createdAt)}</span></div><p>${esc(c.body)}</p></div></div>`).join('') || '<p class="hint">No comments yet.</p>'}`
+            : history.map(h => `<div class="hist"><b>${esc(user(h.actorId)?.name)}</b> ${h.text} <span class="hint">· ${relTime(h.at)}</span></div>`).join('') || '<p class="hint">No changes yet.</p>'}
+        </div>
+        <div class="panel-side">
+          <div class="detail-row"><span>Assignee</span><div class="cell-flex">
+            <label class="sr-only" for="pi-assignee">Assignee</label>
+            <select id="pi-assignee" class="select" data-change-field="assigneeId" data-key="${is.key}">${opt('', 'Unassigned', is.assigneeId || '')}${S.users.map(u => opt(u.id, u.name, is.assigneeId)).join('')}</select></div></div>
+          ${is.assigneeId !== S.currentUserId ? `<div class="detail-row"><span></span><button class="btn btn-ghost btn-sm" style="justify-self:start;color:var(--link)" data-action="assign-me" data-key="${is.key}">Assign to me</button></div>` : ''}
+          <div class="detail-row"><span>Reporter</span><div class="cell-flex">${avatar(is.reporterId)}<span class="truncate">${esc(user(is.reporterId)?.name)}</span></div></div>
+          <div class="detail-row"><label for="pi-priority">Priority</label><select id="pi-priority" class="select" data-change-field="priority" data-key="${is.key}">${PRIORITIES.map(x => opt(x.id, x.name, is.priority)).join('')}</select></div>
+          ${is.type === 'epic' ? '' : `<div class="detail-row"><label for="pi-points">Story points</label><input id="pi-points" class="input" type="number" min="0" max="999" step="0.5" value="${is.points ?? ''}" data-change-field="points" data-key="${is.key}"></div>`}
+          ${is.type === 'epic' ? '' : `<div class="detail-row"><label for="pi-parent">${is.type === 'subtask' ? 'Parent' : 'Epic'}</label><select id="pi-parent" class="select" data-change-field="parentId" data-key="${is.key}">${is.type === 'subtask' ? '' : opt('', 'None', is.parentId || '')}${parentOpts.map(e => opt(e.id, `${e.key} ${e.summary}`, is.parentId)).join('')}</select></div>`}
+          ${p.type === 'scrum' && is.type !== 'epic' ? `<div class="detail-row"><label for="pi-sprint">Sprint</label><select id="pi-sprint" class="select" data-change-field="sprintId" data-key="${is.key}" ${is.type === 'subtask' ? 'disabled title="Sub-tasks follow their parent"' : ''}>${opt('', 'Backlog', is.sprintId || '')}${sprints.map(s => opt(s.id, s.name + (s.state === 'active' ? ' (active)' : ''), is.sprintId)).join('')}</select></div>` : ''}
+          <div class="detail-row"><label for="pi-labels">Labels</label><input id="pi-labels" class="input" value="${esc(is.labels.join(', '))}" placeholder="e.g. ui, security" data-change-field="labels" data-key="${is.key}"></div>
+          <div class="detail-row"><label for="pi-start">Start date</label><input id="pi-start" class="input" type="date" value="${is.startDate || ''}" data-change-field="startDate" data-key="${is.key}"></div>
+          <div class="detail-row"><label for="pi-due">Due date</label><input id="pi-due" class="input" type="date" value="${is.dueDate || ''}" data-change-field="dueDate" data-key="${is.key}"></div>
+          <div class="detail-row"><span>Created</span><span class="hint">${new Date(is.createdAt).toLocaleString()}</span></div>
+          <div class="detail-row"><span>Updated</span><span class="hint">${relTime(is.updatedAt)}</span></div>
+          ${is.resolvedAt ? `<div class="detail-row"><span>Resolved</span><span class="hint">${new Date(is.resolvedAt).toLocaleString()}</span></div>` : ''}
+        </div>
+      </div>
+    </aside>`;
+  lastPanelKey = is.key;
+}
+
+/* ---------- Modals ---------- */
+let lastFocus = null;
+function openModal(html, cls = '') {
+  lastFocus = document.activeElement;
+  $('#modal-root').innerHTML = `<div class="modal-back" data-action="modal-backdrop"><div class="modal ${cls}" role="dialog" aria-modal="true" aria-labelledby="modal-title">${html}</div></div>`;
+  const first = $('#modal-root [autofocus]') || $('#modal-root input, #modal-root select, #modal-root button:not(.icon-btn)');
+  if (first) first.focus();
+}
+function closeModal() { $('#modal-root').innerHTML = ''; if (lastFocus && document.body.contains(lastFocus)) lastFocus.focus(); }
+const modalHead = title => `<div class="modal-head"><h2 id="modal-title">${title}</h2><span class="spacer"></span><button class="icon-btn" data-action="close-modal" aria-label="Close">${icon('close')}</button></div>`;
+
+function modalCreateProject() {
+  openModal(`${modalHead('Create project')}
+    <form data-submit="create-project" novalidate>
+      <div class="modal-body">
+        <div class="field-label" style="margin-bottom:6px">Template</div>
+        <div class="tmpl-grid" role="group" aria-label="Template">
+          <button type="button" class="tmpl" data-action="pick-template" data-tmpl="scrum" aria-pressed="true"><div class="tmpl-art"><i></i><i></i><i></i><i></i></div><strong>Scrum</strong><span>Plan work in sprints from a ranked backlog, then track it on a sprint board.</span></button>
+          <button type="button" class="tmpl" data-action="pick-template" data-tmpl="kanban" aria-pressed="false"><div class="tmpl-art"><i></i><i></i><i></i><i></i></div><strong>Kanban</strong><span>Visualize continuous flow on a board. No sprints, just keep work moving.</span></button>
+        </div>
+        <input type="hidden" name="type" value="scrum">
+        <div class="field"><label for="np-name">Name *</label><input id="np-name" name="name" class="input" maxlength="80" placeholder="e.g. Mobile Banking App" autofocus autocomplete="off"><span class="error-text" id="np-name-err"></span></div>
+        <div class="row">
+          <div class="field"><label for="np-key">Key *</label><input id="np-key" name="key" class="input" maxlength="10" placeholder="e.g. MBA" autocomplete="off" style="text-transform:uppercase"><span class="hint">2–10 letters or digits, starting with a letter. Issues get keys like KEY-1.</span><span class="error-text" id="np-key-err"></span></div>
+          <div class="field"><label for="np-lead">Project lead</label><select id="np-lead" name="leadId" class="select">${S.users.map(u => `<option value="${u.id}" ${u.id === S.currentUserId ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+        </div>
+        <div class="field"><label for="np-desc">Description</label><textarea id="np-desc" name="description" class="textarea" maxlength="2000" placeholder="What is this project about?"></textarea></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="submit" class="btn btn-primary">Create project</button></div>
+    </form>`, 'wide');
+}
+
+function modalCreateIssue(defaults = {}) {
+  const cp = currentProject() || S.projects[0];
+  const pid = defaults.projectId || cp.id;
+  const p = project(pid);
+  const sp = activeSprint(pid);
+  const sprints = sprintsOf(pid).filter(s => s.state !== 'completed');
+  openModal(`${modalHead('Create issue')}
+    <form data-submit="create-issue" novalidate>
+      <div class="modal-body">
+        <div class="row">
+          <div class="field"><label for="ni-project">Project</label><select id="ni-project" name="projectId" class="select" data-change="ni-project">${S.projects.map(x => `<option value="${x.id}" ${x.id === pid ? 'selected' : ''}>${esc(x.name)} (${x.key})</option>`).join('')}</select></div>
+          <div class="field"><label for="ni-type">Issue type</label><select id="ni-type" name="type" class="select">${TYPES.filter(t => t.id !== 'subtask').map(t => `<option value="${t.id}" ${t.id === (defaults.type || 'story') ? 'selected' : ''}>${t.name}</option>`).join('')}</select></div>
+        </div>
+        <div class="field"><label for="ni-summary">Summary *</label><input id="ni-summary" name="summary" class="input" maxlength="255" autofocus autocomplete="off" placeholder="Short, clear title of the work"><span class="error-text" id="ni-summary-err"></span></div>
+        <div class="field"><label for="ni-desc">Description</label><textarea id="ni-desc" name="description" class="textarea" placeholder="Details, acceptance criteria…"></textarea></div>
+        <div class="row">
+          <div class="field"><label for="ni-assignee">Assignee</label><select id="ni-assignee" name="assigneeId" class="select"><option value="">Unassigned</option>${S.users.map(u => `<option value="${u.id}">${esc(u.name)}${u.id === S.currentUserId ? ' (me)' : ''}</option>`).join('')}</select></div>
+          <div class="field"><label for="ni-priority">Priority</label><select id="ni-priority" name="priority" class="select">${PRIORITIES.map(x => `<option value="${x.id}" ${x.id === 'medium' ? 'selected' : ''}>${x.name}</option>`).join('')}</select></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="ni-epic">Epic</label><select id="ni-epic" name="parentId" class="select"><option value="">None</option>${epicsOf(pid).map(e => `<option value="${e.id}">${e.key} ${esc(e.summary)}</option>`).join('')}</select></div>
+          ${p.type === 'scrum' ? `<div class="field"><label for="ni-sprint">Sprint</label><select id="ni-sprint" name="sprintId" class="select"><option value="">Backlog</option>${sprints.map(s => `<option value="${s.id}" ${defaults.sprintId === s.id || (!defaults.sprintId && defaults.fromBoard && sp && s.id === sp.id) ? 'selected' : ''}>${esc(s.name)}${s.state === 'active' ? ' (active)' : ''}</option>`).join('')}</select></div>` : '<div></div>'}
+        </div>
+        <div class="row">
+          <div class="field"><label for="ni-points">Story points</label><input id="ni-points" name="points" type="number" min="0" max="999" step="0.5" class="input"></div>
+          <div class="field"><label for="ni-start">Start date</label><input id="ni-start" name="startDate" type="date" class="input"></div>
+          <div class="field"><label for="ni-due">Due date</label><input id="ni-due" name="dueDate" type="date" class="input"></div>
+        </div>
+        <div class="field"><label for="ni-labels">Labels</label><input id="ni-labels" name="labels" class="input" placeholder="Comma separated, e.g. ui, security"></div>
+      </div>
+      <div class="modal-foot"><label class="checkbox" style="margin-right:auto"><input type="checkbox" name="another">Create another</label><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="submit" class="btn btn-primary">Create</button></div>
+    </form>`, 'wide');
+}
+
+function modalStartSprint(s) {
+  const start = s.startDate < TODAY ? TODAY : s.startDate;
+  const weeks = Math.max(1, Math.min(4, Math.round((diffDays(s.startDate, s.endDate) + 1) / 7)));
+  const count = issuesOf(s.projectId).filter(i => i.sprintId === s.id && i.type !== 'subtask').length;
+  openModal(`${modalHead(`Start ${esc(s.name)}`)}
+    <form data-submit="start-sprint" data-id="${s.id}">
+      <div class="modal-body">
+        <p class="hint" style="margin-top:0">${count} issue${count === 1 ? '' : 's'} will be included in this sprint.</p>
+        <div class="field"><label for="ss-name">Sprint name</label><input id="ss-name" name="name" class="input" value="${esc(s.name)}" maxlength="60"></div>
+        <div class="row">
+          <div class="field"><label for="ss-dur">Duration</label><select id="ss-dur" name="weeks" class="select" data-change="sprint-duration">${[1, 2, 3, 4].map(w => `<option value="${w}" ${w === weeks ? 'selected' : ''}>${w} week${w > 1 ? 's' : ''}</option>`).join('')}</select></div>
+          <div class="field"><label for="ss-start">Start date</label><input id="ss-start" name="startDate" type="date" class="input" value="${start}" data-change="sprint-duration"></div>
+          <div class="field"><label for="ss-end">End date</label><input id="ss-end" name="endDate" type="date" class="input" value="${addDays(start, weeks * 7 - 1)}"></div>
+        </div>
+        <div class="field"><label for="ss-goal">Sprint goal</label><textarea id="ss-goal" name="goal" class="textarea" style="min-height:70px">${esc(s.goal || '')}</textarea></div>
+        <span class="error-text" id="ss-err"></span>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="submit" class="btn btn-primary">Start sprint</button></div>
+    </form>`);
+}
+
+function modalCompleteSprint(s) {
+  const list = issuesOf(s.projectId).filter(i => i.sprintId === s.id && i.type !== 'subtask');
+  const done = list.filter(i => i.status === 'done');
+  const open = list.filter(i => i.status !== 'done');
+  const next = sprintsOf(s.projectId).filter(x => x.state === 'planned');
+  openModal(`${modalHead(`Complete ${esc(s.name)}`)}
+    <form data-submit="complete-sprint" data-id="${s.id}">
+      <div class="modal-body">
+        <div class="stat-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
+          <div class="card stat"><div class="v">${done.length}</div><div class="l">completed issues</div><div class="s">${done.reduce((n, i) => n + (i.points || 0), 0)} points</div></div>
+          <div class="card stat"><div class="v">${open.length}</div><div class="l">open issues</div><div class="s">${open.reduce((n, i) => n + (i.points || 0), 0)} points</div></div>
+        </div>
+        ${open.length ? `<div class="field"><label for="cs-to">Move open issues to</label><select id="cs-to" name="to" class="select"><option value="">Backlog</option>${next.map(x => `<option value="${x.id}" ${x === next[0] ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : '<p>All issues in this sprint are done. Great work!</p>'}
+      </div>
+      <div class="modal-foot"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="submit" class="btn btn-primary">Complete sprint</button></div>
+    </form>`, 'narrow');
+}
+
+function modalMove(is, context) {
+  const p = project(is.projectId);
+  const items = [];
+  if (context === 'board') {
+    STATUSES.filter(s => s.id !== is.status).forEach(s => items.push(`<li><button data-action="do-move" data-key="${is.key}" data-status="${s.id}">${lozenge(s.id)}Move to ${s.name}</button></li>`));
+  } else {
+    if (is.sprintId) items.push(`<li><button data-action="do-move" data-key="${is.key}" data-sprint="">Move to Backlog</button></li>`);
+    sprintsOf(p.id).filter(s => s.state !== 'completed' && s.id !== is.sprintId).forEach(s => items.push(`<li><button data-action="do-move" data-key="${is.key}" data-sprint="${s.id}">Move to ${esc(s.name)}</button></li>`));
+  }
+  items.push('<li class="sep" role="separator"></li>');
+  items.push(`<li><button data-action="do-move" data-key="${is.key}" data-pos="top" data-context="${context}">${icon('arrowUp')}Move to top</button></li>`);
+  items.push(`<li><button data-action="do-move" data-key="${is.key}" data-pos="bottom" data-context="${context}">${icon('arrowDown')}Move to bottom</button></li>`);
+  openModal(`${modalHead(`Move ${is.key}`)}<div class="modal-body"><p class="hint" style="margin-top:0">${esc(is.summary)}</p><ul class="menu-list">${items.join('')}</ul></div>`, 'narrow');
+}
+
+function modalConfirmDelete(is) {
+  const subs = childrenOf(is.id).filter(c => c.type === 'subtask').length;
+  const kids = childrenOf(is.id).filter(c => c.type !== 'subtask').length;
+  openModal(`${modalHead(`Delete ${is.key}?`)}
+    <div class="modal-body"><p style="margin-top:0">“${esc(is.summary)}” will be removed from the prototype.${subs ? ` Its ${subs} sub-task${subs > 1 ? 's' : ''} will be deleted too.` : ''}${kids ? ` Its ${kids} child issue${kids > 1 ? 's' : ''} will stay but lose the epic link.` : ''}</p>
+    <p class="hint">In the real product, deleted issues stay in an audit trail and administrators can restore them.</p></div>
+    <div class="modal-foot"><button class="btn" data-action="close-modal">Cancel</button><button class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)" data-action="confirm-delete" data-key="${is.key}">Delete</button></div>`, 'narrow');
+}
+
+function userMenu() {
+  const root = $('#menu-root');
+  if (root.innerHTML) { root.innerHTML = ''; return; }
+  root.innerHTML = `<div class="user-menu" role="menu" aria-label="Demo user menu">
+    <h3>Demo user (no login yet)</h3>
+    <ul class="menu-list">${S.users.map(u => `<li><button role="menuitemradio" aria-checked="${u.id === S.currentUserId}" data-action="switch-user" data-id="${u.id}">${avatar(u.id)}<span style="flex:1">${esc(u.name)}<br><span class="hint">${esc(u.role)}</span></span>${u.id === S.currentUserId ? '✓' : ''}</button></li>`).join('')}
+      <li class="sep" role="separator"></li>
+      <li><button role="menuitem" data-action="toggle-theme">${icon('moon')}Toggle light / dark theme</button></li>
+      <li><button role="menuitem" data-action="reset-demo">${icon('trash')}Reset demo data</button></li></ul></div>`;
+  $('#menu-root button').focus();
+}
+
+/* ---------- Toast, tooltip, announcements ---------- */
+function toast(msg, action) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<span>${msg}</span>${action || ''}`;
+  $('#toasts').appendChild(el);
+  while ($('#toasts').children.length > 3) $('#toasts').firstElementChild.remove();
+  setTimeout(() => el.remove(), 4500);
+}
+function announce(msg) { const l = $('#sr-live'); l.textContent = ''; setTimeout(() => { l.textContent = msg; }, 30); }
+const tip = $('#tooltip');
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]');
+  if (!t || dragState) { tip.classList.remove('show'); return; }
+  tip.textContent = t.dataset.tip;
+  tip.classList.add('show');
+});
+document.addEventListener('mousemove', e => {
+  if (!tip.classList.contains('show')) return;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + 12, y = e.clientY - h - 10;
+  if (x + w > innerWidth - 8) x = e.clientX - w - 12;
+  if (y < 8) y = e.clientY + 16;
+  tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+});
+document.addEventListener('mouseout', e => { if (e.target.closest('[data-tip]')) tip.classList.remove('show'); });
+
+/* =========================================================
+   Events
+   ========================================================= */
+document.addEventListener('click', e => {
+  const menu = $('#menu-root');
+  if (menu.innerHTML && !e.target.closest('.user-menu') && !e.target.closest('[data-action="user-menu"]')) menu.innerHTML = '';
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const a = el.dataset.action;
+  const key = el.dataset.key;
+  switch (a) {
+    case 'open-project': if (!e.target.closest('a')) go(`#/p/${key}/summary`); break;
+    case 'open-issue': e.preventDefault(); e.stopPropagation(); if (!$('#modal-root').innerHTML || el.closest('.modal')) { closeModal(); openIssue(key); } break;
+    case 'close-issue': closeIssue(); break;
+    case 'create-issue': modalCreateIssue({ fromBoard: !!el.dataset.status }); break;
+    case 'create-project': modalCreateProject(); break;
+    case 'close-modal': closeModal(); break;
+    case 'modal-backdrop': if (e.target === el) closeModal(); break;
+    case 'hide-banner': UI.bannerHidden = true; render(); break;
+    case 'toggle-theme': {
+      const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      const nextT = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = nextT;
+      try { localStorage.setItem(THEME_KEY, nextT); } catch (err) { /* ignore */ }
+      $('#menu-root').innerHTML = '';
+      render(); break;
+    }
+    case 'notifications': toast('Notifications arrive with the Comments &amp; notifications module.'); break;
+    case 'user-menu': e.stopPropagation(); userMenu(); break;
+    case 'switch-user': S.currentUserId = el.dataset.id; save(); $('#menu-root').innerHTML = ''; render(); toast(`You are now <b>${esc(me().name)}</b> (${esc(me().role)})`); break;
+    case 'reset-demo': S = seed(); save(); $('#menu-root').innerHTML = ''; go('#/projects'); render(); toast('Demo data reset'); break;
+    case 'pick-template': {
+      $$('.tmpl').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
+      el.closest('form').elements.type.value = el.dataset.tmpl; break;
+    }
+    case 'toggle-section': UI.backlog.collapsed[el.dataset.id] = !UI.backlog.collapsed[el.dataset.id]; render(); break;
+    case 'start-sprint': modalStartSprint(sprint(el.dataset.id)); break;
+    case 'complete-sprint': modalCompleteSprint(sprint(el.dataset.id)); break;
+    case 'create-sprint': {
+      const p = currentProject();
+      const list = sprintsOf(p.id);
+      const seq = Math.max(0, ...list.map(s => s.seq)) + 1;
+      const lastEnd = list.length ? list.reduce((m, s) => s.endDate > m ? s.endDate : m, TODAY) : TODAY;
+      S.sprints.push({ id: uid(), projectId: p.id, seq, name: `${p.key} Sprint ${seq}`, goal: '', state: 'planned', startDate: addDays(lastEnd, 1), endDate: addDays(lastEnd, 14) });
+      save(); render(); toast(`${p.key} Sprint ${seq} created`); break;
+    }
+    case 'move-menu': modalMove(issueByKey(key), el.dataset.context); break;
+    case 'do-move': doMove(el); break;
+    case 'toggle-assignee': {
+      const f = UI.board; const id = el.dataset.id;
+      f.assignees = f.assignees.includes(id) ? f.assignees.filter(x => x !== id) : [...f.assignees, id];
+      render(); break;
+    }
+    case 'clear-board-filters': UI.board = { q: '', mine: false, epic: '', assignees: [] }; render(); break;
+    case 'sort': { const f = UI.issues; const s = el.dataset.sort; if (f.sort === s) f.dir *= -1; else { f.sort = s; f.dir = s === 'updatedAt' ? -1 : 1; } render(); break; }
+    case 'tl-zoom': UI.timeline.zoom = el.dataset.zoom; render(); scrollTimelineToToday(); break;
+    case 'tl-today': scrollTimelineToToday(true); break;
+    case 'tl-expand': UI.timeline.expanded[el.dataset.id] = !UI.timeline.expanded[el.dataset.id]; render(); break;
+    case 'tl-expand-all': {
+      const p = currentProject(); const any = Object.values(UI.timeline.expanded).some(Boolean);
+      UI.timeline.expanded = {}; if (!any) epicsOf(p.id).forEach(ep => { UI.timeline.expanded[ep.id] = true; });
+      render(); break;
+    }
+    case 'tl-schedule': { const is = issueByKey(key); updateIssue(is, { startDate: TODAY, dueDate: addDays(TODAY, 27) }); toast(`${is.key} scheduled for 4 weeks`); break; }
+    case 'edit-desc': UI.editingDesc = true; render(); setTimeout(() => $('#pi-desc')?.focus(), 0); break;
+    case 'cancel-desc': UI.editingDesc = false; render(); break;
+    case 'panel-tab': UI.panelTab = el.dataset.tab; render(); break;
+    case 'assign-me': updateIssue(issueByKey(key), { assigneeId: S.currentUserId }); break;
+    case 'delete-issue': modalConfirmDelete(issueByKey(key)); break;
+    case 'confirm-delete': { const is = issueByKey(key); deleteIssue(is); closeModal(); closeIssue(); toast(`${is.key} deleted`); break; }
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if ($('#menu-root').innerHTML) { $('#menu-root').innerHTML = ''; return; }
+    if ($('#modal-root').innerHTML) { closeModal(); return; }
+    if (route().q.get('issue')) { closeIssue(); return; }
+  }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.desc-view')) { e.preventDefault(); e.target.click(); }
+  // Keyboard scheduling on timeline bars
+  const bar = e.target.closest && e.target.closest('.tl-bar[data-bar]');
+  if (bar && ['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    const is = issueByKey(bar.dataset.bar);
+    const step = e.key === 'ArrowLeft' ? -1 : 1;
+    const patch = e.shiftKey
+      ? { dueDate: addDays(is.dueDate, step) }
+      : { startDate: addDays(is.startDate, step), dueDate: addDays(is.dueDate, step) };
+    if (patch.dueDate < (patch.startDate || is.startDate)) return;
+    updateIssue(is, patch);
+    const again = $(`.tl-bar[data-bar="${is.key}"]`); if (again) again.focus();
+    announce(`${is.key}: ${fmtDate(is.startDate)} to ${fmtDate(is.dueDate)}`);
+  }
+});
+
+function suggestKey(name) {
+  const words = name.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+  let key = words.length > 1 ? words.map(w => w[0]).join('').slice(0, 5) : (words[0] || '').slice(0, 4);
+  key = key.replace(/^[0-9]+/, '');
+  if (key.length < 2) key = (words.join('') + 'XX').replace(/^[0-9]+/, '').slice(0, 3);
+  let candidate = key, n = 2;
+  while (S.projects.some(p => p.key === candidate)) candidate = (key.slice(0, 8) + n++);
+  return candidate;
+}
+document.addEventListener('input', e => {
+  if (e.target.id === 'np-key') e.target.dataset.touched = '1';
+  if (e.target.id === 'np-name') {
+    const keyEl = $('#np-key');
+    if (keyEl && !keyEl.dataset.touched) keyEl.value = e.target.value.trim() ? suggestKey(e.target.value) : '';
+    return;
+  }
+  const k = e.target.dataset.input;
+  if (!k) return;
+  const v = e.target.value;
+  if (k === 'projects-q') UI.projectsQ = v;
+  if (k === 'backlog-q') UI.backlog.q = v;
+  if (k === 'board-q') UI.board.q = v;
+  if (k === 'issues-q') UI.issues.q = v;
+  if (k === 'timeline-q') UI.timeline.q = v;
+  render();
+});
+
+document.addEventListener('change', e => {
+  const t = e.target;
+  const k = t.dataset.change;
+  if (k) {
+    if (k === 'backlog-epic') UI.backlog.epic = t.value;
+    if (k === 'backlog-mine') UI.backlog.mine = t.checked;
+    if (k === 'board-mine') UI.board.mine = t.checked;
+    if (k === 'board-epic') UI.board.epic = t.value;
+    if (k.startsWith('f-')) UI.issues[k.slice(2)] = t.value;
+    if (k === 'ni-project') { const form = t.form; const data = { projectId: t.value, type: form.elements.type.value }; const s = form.elements.summary.value; modalCreateIssue(data); $('#ni-summary').value = s; return; }
+    if (k === 'sprint-duration') { const f = t.form; f.elements.endDate.value = addDays(f.elements.startDate.value, Number(f.elements.weeks.value) * 7 - 1); return; }
+    render();
+    return;
+  }
+  const field = t.dataset.changeField;
+  if (field) {
+    const is = issueByKey(t.dataset.key);
+    let v = t.value;
+    if (field === 'summary') { v = v.trim(); if (!v) { t.value = is.summary; toast('Summary cannot be empty'); return; } }
+    if (field === 'points') v = v === '' ? null : Math.max(0, Math.min(999, Math.round(Number(v) * 10) / 10));
+    if (field === 'labels') v = v.split(',').map(x => x.trim().replace(/\s+/g, '-')).filter(Boolean);
+    if (['assigneeId', 'sprintId', 'parentId', 'startDate', 'dueDate'].includes(field) && v === '') v = null;
+    if (field === 'dueDate' && v && is.startDate && v < is.startDate) { toast('Due date cannot be before the start date'); t.value = is.dueDate || ''; return; }
+    if (field === 'startDate' && v && is.dueDate && v > is.dueDate) { toast('Start date cannot be after the due date'); t.value = is.startDate || ''; return; }
+    const warnSubs = field === 'status' && v === 'done' && childrenOf(is.id).some(c => c.type === 'subtask' && c.status !== 'done');
+    updateIssue(is, { [field]: v });
+    if (warnSubs) toast(`${is.key} is done, but some of its sub-tasks are still open`);
+    if (field === 'status') announce(`${is.key} moved to ${STATUS_NAME[v]}`);
+  }
+});
+
+document.addEventListener('submit', e => {
+  const f = e.target;
+  const k = f.dataset.submit;
+  if (!k) return;
+  e.preventDefault();
+  const fd = new FormData(f);
+  const val = n => String(fd.get(n) ?? '').trim();
+  switch (k) {
+    case 'global-search': {
+      const q = val('q');
+      const hit = /^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/.test(q) && issueByKey(q);
+      if (hit) { go(`#/p/${project(hit.projectId).key}/issues?issue=${hit.key}`); f.reset(); }
+      else go(`#/search?q=${encodeURIComponent(q)}`);
+      break;
+    }
+    case 'search-page': go(`#/search?q=${encodeURIComponent(val('q'))}`); break;
+    case 'create-project': {
+      const name = val('name');
+      const keyV = val('key').toUpperCase();
+      let ok = true;
+      $('#np-name-err').textContent = ''; $('#np-key-err').textContent = '';
+      if (!name) { $('#np-name-err').textContent = 'Enter a project name.'; ok = false; }
+      else if (S.projects.some(p => p.name.toLowerCase() === name.toLowerCase())) { $('#np-name-err').textContent = 'A project with this name already exists.'; ok = false; }
+      if (!/^[A-Z][A-Z0-9]{1,9}$/.test(keyV)) { $('#np-key-err').textContent = 'Use 2–10 letters or digits, starting with a letter.'; ok = false; }
+      else if (S.projects.some(p => p.key === keyV)) { $('#np-key-err').textContent = `Key ${keyV} is already used.`; ok = false; }
+      if (!ok) { (f.querySelector('.error-text:not(:empty)')?.previousElementSibling?.previousElementSibling || f.elements.name).focus(); announce('Please fix the highlighted fields'); return; }
+      const p = { id: uid(), key: keyV, name, type: val('type') || 'scrum', leadId: val('leadId'), description: val('description'), color: S.projects.length, nextNumber: 1, createdAt: nowStamp() };
+      S.projects.push(p);
+      if (p.type === 'scrum') S.sprints.push({ id: uid(), projectId: p.id, seq: 1, name: `${p.key} Sprint 1`, goal: '', state: 'planned', startDate: TODAY, endDate: addDays(TODAY, 13) });
+      save(); closeModal(); go(`#/p/${p.key}/${p.type === 'scrum' ? 'backlog' : 'board'}`);
+      toast(`Project <b>${esc(p.name)}</b> created with key ${p.key}`);
+      break;
+    }
+    case 'create-issue': {
+      const summary = val('summary');
+      if (!summary) { $('#ni-summary-err').textContent = 'Enter a summary.'; $('#ni-summary').focus(); return; }
+      const pid = val('projectId');
+      const is = createIssue(pid, { type: val('type'), summary, description: val('description'), assigneeId: val('assigneeId'), priority: val('priority'),
+        parentId: val('type') === 'epic' ? null : val('parentId'), sprintId: val('type') === 'epic' ? null : val('sprintId'), points: val('points'),
+        startDate: val('startDate'), dueDate: val('dueDate'), labels: val('labels').split(',').map(x => x.trim()).filter(Boolean) });
+      if (fd.get('another')) { modalCreateIssue({ projectId: pid, type: val('type') }); $('#modal-root [name="another"]').checked = true; }
+      else closeModal();
+      render();
+      toast(`<b>${is.key}</b> created`, `<button data-action="open-issue" data-key="${is.key}">View</button>`);
+      break;
+    }
+    case 'inline-create': {
+      const summary = val('summary');
+      if (!summary) return;
+      const p = currentProject();
+      const is = createIssue(p.id, { type: val('type'), summary });
+      render(); $('#ic-sum')?.focus();
+      announce(`${is.key} created`);
+      break;
+    }
+    case 'create-epic': {
+      const summary = val('summary');
+      if (!summary) return;
+      const p = currentProject();
+      const is = createIssue(p.id, { type: 'epic', summary, startDate: TODAY, dueDate: addDays(TODAY, 27) });
+      render(); $('#tl-new')?.focus();
+      toast(`Epic <b>${is.key}</b> created — drag it to plan`);
+      break;
+    }
+    case 'add-child': {
+      const summary = val('summary');
+      if (!summary) return;
+      const parent = issueByKey(f.dataset.key);
+      const is = createIssue(parent.projectId, { type: f.dataset.type, summary, parentId: parent.id, sprintId: f.dataset.type === 'subtask' ? parent.sprintId : null });
+      render(); $('#pi-child')?.focus();
+      announce(`${is.key} added`);
+      break;
+    }
+    case 'add-comment': {
+      const body = val('body');
+      if (!body) return;
+      const is = issueByKey(f.dataset.key);
+      S.comments.push({ id: uid(), issueId: is.id, authorId: S.currentUserId, body, createdAt: nowStamp() });
+      log(is, 'added a <b>comment</b>'); is.updatedAt = nowStamp(); save(); render();
+      break;
+    }
+    case 'save-desc': { UI.editingDesc = false; updateIssue(issueByKey(f.dataset.key), { description: String(fd.get('description') || '') }); render(); break; }
+    case 'save-project': {
+      const p = projectByKey(f.dataset.key);
+      const name = val('name');
+      if (!name) { toast('Project name is required'); return; }
+      Object.assign(p, { name, leadId: val('leadId'), description: val('description') });
+      save(); render(); toast('Project settings saved');
+      break;
+    }
+    case 'start-sprint': {
+      const s = sprint(f.dataset.id);
+      const startDate = val('startDate'), endDate = val('endDate');
+      if (!startDate || !endDate || endDate <= startDate) { $('#ss-err').textContent = 'The end date must be after the start date.'; return; }
+      if (activeSprint(s.projectId)) { $('#ss-err').textContent = 'Only one sprint can be active at a time.'; return; }
+      Object.assign(s, { name: val('name') || s.name, goal: val('goal'), startDate, endDate, state: 'active' });
+      save(); closeModal(); go(`#/p/${project(s.projectId).key}/board`); toast(`<b>${esc(s.name)}</b> started`);
+      break;
+    }
+    case 'complete-sprint': {
+      const s = sprint(f.dataset.id);
+      const to = val('to') || null;
+      const open = issuesOf(s.projectId).filter(i => i.sprintId === s.id && i.status !== 'done' && i.type !== 'subtask');
+      open.forEach(i => updateIssue(i, { sprintId: to }, { silent: true }));
+      s.state = 'completed';
+      save(); closeModal(); go(`#/p/${project(s.projectId).key}/backlog`);
+      toast(`<b>${esc(s.name)}</b> completed${open.length ? ` · ${open.length} open issue${open.length > 1 ? 's' : ''} moved to ${to ? esc(sprint(to).name) : 'the backlog'}` : ''}`);
+      break;
+    }
+  }
+});
+
+function doMove(el) {
+  const is = issueByKey(el.dataset.key);
+  const p = project(is.projectId);
+  closeModal();
+  if (el.dataset.status) { updateIssue(is, { status: el.dataset.status }); toast(`${is.key} moved to ${STATUS_NAME[is.status]}`); return; }
+  if ('sprint' in el.dataset) {
+    const to = el.dataset.sprint || null;
+    const siblings = issuesOf(p.id).filter(i => i.type !== 'epic' && i.type !== 'subtask' && (i.sprintId || null) === to);
+    updateIssue(is, { sprintId: to, rank: siblings.length ? Math.max(...siblings.map(i => i.rank)) + 10 : is.rank });
+    toast(`${is.key} moved to ${to ? esc(sprint(to).name) : 'the backlog'}`); return;
+  }
+  const scope = el.dataset.context === 'board' ? boardIssues(p).filter(i => i.status === is.status) : issuesOf(p.id).filter(i => i.type !== 'epic' && i.type !== 'subtask' && (i.sprintId || null) === (is.sprintId || null));
+  const ranks = scope.filter(i => i.id !== is.id).map(i => i.rank);
+  if (!ranks.length) return;
+  updateIssue(is, { rank: el.dataset.pos === 'top' ? Math.min(...ranks) - 10 : Math.max(...ranks) + 10 });
+  log(is, `ranked to the <b>${el.dataset.pos}</b>`); save(); render();
+  announce(`${is.key} moved to the ${el.dataset.pos}`);
+}
+
+/* ---------- Drag and drop (board & backlog) ---------- */
+let dragKey = null;
+let dragState = null;
+document.addEventListener('dragstart', e => {
+  const it = e.target.closest('[data-dnd]');
+  if (!it) return;
+  dragKey = it.dataset.key;
+  it.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', dragKey); } catch (err) { /* ignore */ }
+});
+document.addEventListener('dragend', e => {
+  const it = e.target.closest('[data-dnd]'); if (it) it.classList.remove('dragging');
+  $$('.drop-line').forEach(x => x.remove()); $$('.drop-target').forEach(x => x.classList.remove('drop-target'));
+  dragKey = null;
+});
+function dropPosition(zone, y) {
+  const items = $$('[data-dnd]', zone).filter(x => x.dataset.key !== dragKey);
+  const before = items.find(x => { const r = x.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  return { items, before };
+}
+document.addEventListener('dragover', e => {
+  const zone = e.target.closest('[data-drop]');
+  if (!zone || !dragKey) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  $$('.drop-target').forEach(x => x !== zone && x.classList.remove('drop-target'));
+  zone.classList.add('drop-target');
+  const { before } = dropPosition(zone, e.clientY);
+  let line = $('.drop-line');
+  if (!line) { line = document.createElement(zone.tagName === 'UL' ? 'li' : 'div'); line.className = 'drop-line'; }
+  if (before) zone.insertBefore(line, before); else zone.appendChild(line);
+});
+document.addEventListener('drop', e => {
+  const zone = e.target.closest('[data-drop]');
+  if (!zone || !dragKey) return;
+  e.preventDefault();
+  const is = issueByKey(dragKey);
+  const { items, before } = dropPosition(zone, e.clientY);
+  const idx = before ? items.indexOf(before) : items.length;
+  const prev = idx > 0 ? issueByKey(items[idx - 1].dataset.key).rank : null;
+  const next = before ? issueByKey(before.dataset.key).rank : null;
+  const rank = rankBetween(prev, next);
+  if (zone.dataset.drop === 'board') {
+    const status = zone.dataset.status;
+    const moved = is.status !== status;
+    updateIssue(is, { status, rank });
+    if (moved) { toast(`${is.key} moved to ${STATUS_NAME[status]}`); announce(`${is.key} moved to ${STATUS_NAME[status]}`); }
+  } else {
+    const c = zone.dataset.container;
+    const sprintId = c === 'backlog' ? null : c;
+    const moved = (is.sprintId || null) !== sprintId;
+    updateIssue(is, { sprintId, rank });
+    if (moved) toast(`${is.key} moved to ${sprintId ? esc(sprint(sprintId).name) : 'the backlog'}`);
+  }
+  dragKey = null;
+});
+
+/* ---------- Timeline bar dragging (pointer events) ---------- */
+document.addEventListener('pointerdown', e => {
+  const bar = e.target.closest('.tl-bar[data-bar]');
+  if (!bar || e.button !== 0) return;
+  const is = issueByKey(bar.dataset.bar);
+  dragState = { bar, is, mode: e.target.dataset.edge || 'move', x0: e.clientX, left0: parseFloat(bar.style.left), w0: parseFloat(bar.style.width), dayW: ZOOM[UI.timeline.zoom], delta: 0 };
+  bar.setPointerCapture(e.pointerId);
+  bar.classList.add('dragging');
+  tip.classList.remove('show');
+});
+document.addEventListener('pointermove', e => {
+  if (!dragState) return;
+  const d = dragState;
+  const delta = Math.round((e.clientX - d.x0) / d.dayW);
+  const days = Math.round(d.w0 / d.dayW);
+  if (d.mode === 'start' && delta >= days) return;
+  if (d.mode === 'end' && -delta >= days) return;
+  d.delta = delta;
+  if (d.mode === 'move') d.bar.style.left = `${d.left0 + delta * d.dayW}px`;
+  if (d.mode === 'start') { d.bar.style.left = `${d.left0 + delta * d.dayW}px`; d.bar.style.width = `${d.w0 - delta * d.dayW}px`; }
+  if (d.mode === 'end') d.bar.style.width = `${d.w0 + delta * d.dayW}px`;
+  const s = d.mode === 'end' ? d.is.startDate : addDays(d.is.startDate, delta);
+  const en = d.mode === 'start' ? d.is.dueDate : addDays(d.is.dueDate, delta);
+  tip.textContent = `${fmtDate(s)} – ${fmtDate(en)}`;
+  tip.classList.add('show');
+  tip.style.left = `${e.clientX + 12}px`; tip.style.top = `${e.clientY - 36}px`;
+});
+document.addEventListener('pointerup', () => {
+  if (!dragState) return;
+  const d = dragState;
+  dragState = null;
+  tip.classList.remove('show');
+  d.bar.classList.remove('dragging');
+  if (!d.delta) return;
+  const patch = d.mode === 'move' ? { startDate: addDays(d.is.startDate, d.delta), dueDate: addDays(d.is.dueDate, d.delta) }
+    : d.mode === 'start' ? { startDate: addDays(d.is.startDate, d.delta) } : { dueDate: addDays(d.is.dueDate, d.delta) };
+  updateIssue(d.is, patch);
+  toast(`${d.is.key}: ${fmtDate(d.is.startDate)} – ${fmtDate(d.is.dueDate)}`);
+});
+// A click right after a drag should not open anything
+document.addEventListener('click', e => { if (e.target.closest('.tl-bar[data-bar]') && !e.target.closest('[data-action]')) { /* bars open via their row name */ } }, true);
+document.addEventListener('dblclick', e => { const bar = e.target.closest('.tl-bar[data-bar]'); if (bar) openIssue(bar.dataset.bar); });
+
+function scrollTimelineToToday(smooth) {
+  const sc = $('#tl-scroll'); if (!sc) return;
+  const today = $('.tl-today', sc); if (!today) return;
+  sc.scrollTo({ left: Math.max(0, parseFloat(today.style.left) - sc.clientWidth * 0.3), behavior: smooth ? 'smooth' : 'auto' });
+}
+
+let lastRouteKey = '';
+function afterRender(r) {
+  const routeKey = r.parts.join('/');
+  if (routeKey !== lastRouteKey) {
+    lastRouteKey = routeKey;
+    if (r.parts[2] === 'timeline') scrollTimelineToToday();
+    if (!r.q.get('issue')) $('#main').focus({ preventScroll: true });
+    window.scrollTo(0, 0);
+  }
+  if (r.q.get('issue') && !$('#panel-root').contains(document.activeElement)) $('#panel-close')?.focus({ preventScroll: true });
+  document.title = (() => {
+    const p = currentProject();
+    const v = r.parts[2] || 'summary';
+    if (r.q.get('issue')) return `${r.q.get('issue')} · U-PMS Prototype`;
+    if (p) return `${v[0].toUpperCase() + v.slice(1)} · ${p.name} · U-PMS Prototype`;
+    return 'U-PMS Prototype';
+  })();
+}
+
+window.addEventListener('hashchange', render);
+render();
+})();
+</script>
+</body>
+</html>

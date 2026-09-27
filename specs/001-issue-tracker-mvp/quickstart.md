@@ -28,8 +28,8 @@ docker compose ps           # all three healthy; ClamAV needs ~1–2 minutes to 
 ## 2. Configure secrets (development only)
 
 ```bash
-cd src/UblJira.Web
-dotnet user-secrets set "ConnectionStrings:Default" "Server=localhost,1433;Database=UblJira;User Id=sa;Password=<local-sa-password>;TrustServerCertificate=True"
+cd src/Upms.Web
+dotnet user-secrets set "ConnectionStrings:Default" "Server=localhost,1433;Database=Upms;User Id=sa;Password=<local-sa-password>;TrustServerCertificate=True"
 dotnet user-secrets set "Setup:Token" "<any-long-random-string>"
 dotnet user-secrets set "App:PublicBaseUrl" "https://localhost:5001"
 dotnet user-secrets set "Email:Smtp:Host" "localhost"
@@ -45,8 +45,8 @@ committed (constitution, Configuration).
 
 ```bash
 dotnet tool restore
-dotnet ef database update --project src/UblJira.Infrastructure --startup-project src/UblJira.Web
-dotnet run --project src/UblJira.Web
+dotnet ef database update --project src/Upms.Infrastructure --startup-project src/Upms.Web
+dotnet run --project src/Upms.Web
 ```
 
 Open `https://localhost:5001/setup`, enter the setup token and create the first administrator
@@ -127,8 +127,8 @@ step 5 cover the same scenarios; these steps are for demos and exploratory check
 ```bash
 dotnet test                                             # all unit, integration, component, architecture tests
 dotnet test --filter "FullyQualifiedName~US3_"           # one story's acceptance tests
-pwsh tests/UblJira.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install   # once, installs browsers
-dotnet test tests/UblJira.E2E.Tests                      # end-to-end journeys + axe accessibility scans
+pwsh tests/Upms.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install   # once, installs browsers
+dotnet test tests/Upms.E2E.Tests                      # end-to-end journeys + axe accessibility scans
 ```
 
 Integration and end-to-end tests start their own containers through Testcontainers, so step 1 is not
@@ -143,14 +143,14 @@ required for them, only a running Docker engine.
 ```bash
 dotnet format --verify-no-changes
 dotnet build -c Release                  # warnings are errors; NuGet audit fails on high/critical advisories
-dotnet ef migrations has-pending-model-changes --project src/UblJira.Infrastructure --startup-project src/UblJira.Web
+dotnet ef migrations has-pending-model-changes --project src/Upms.Infrastructure --startup-project src/Upms.Web
 ```
 
 ## 7. Performance validation (SC-002)
 
 ```bash
-dotnet run --project tools/UblJira.Seed -- --users 2000 --projects 60 --issues 500000
-dotnet test tests/UblJira.Performance.Tests --filter "Category=Performance"
+dotnet run --project tools/Upms.Seed -- --users 2000 --projects 60 --issues 500000
+dotnet test tests/Upms.Performance.Tests --filter "Category=Performance"
 ```
 
 **Expected**: with 300 simulated concurrent users, p95 ≤ 1 s for opening an issue, loading a board,

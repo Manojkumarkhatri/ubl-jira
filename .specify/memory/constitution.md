@@ -1,4 +1,4 @@
-# UBL Jira Constitution
+# U-PMS Constitution
 
 ## Core Principles
 
@@ -149,4 +149,4 @@ assistive technology.
 - **Runtime guidance**: day-to-day development guidance lives in `README.md` and each feature's
   `quickstart.md`, and MUST stay consistent with this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-26
+**Version**: 1.0.1 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-27

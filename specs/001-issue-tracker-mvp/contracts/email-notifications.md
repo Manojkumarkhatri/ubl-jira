@@ -8,7 +8,7 @@ emails switched on, and never for the user's own actions. They carry the minimum
 
 ## Common properties
 
-- **From**: `Email:From` setting (for example `UBL Jira <jira-noreply@company.example>`).
+- **From**: `Email:From` setting (for example `U-PMS <upms-noreply@company.example>`).
 - **Headers**: `Auto-Submitted: auto-generated`, `X-Auto-Response-Suppress: All`, unique
   `Message-ID`.
 - **Formats**: plain text plus a simple, accessible HTML alternative (single column, real text, no

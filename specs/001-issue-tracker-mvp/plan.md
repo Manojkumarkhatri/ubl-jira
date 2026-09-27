@@ -103,7 +103,7 @@ specs/001-issue-tracker-mvp/
 ### Source Code (repository root)
 
 ```text
-UblJira.slnx
+Upms.slnx
 global.json                         # pins the .NET 10 SDK
 Directory.Build.props               # nullable on, warnings as errors, analyzers, NuGetAudit
 Directory.Packages.props            # central package versions
@@ -111,11 +111,11 @@ Directory.Packages.props            # central package versions
 .config/dotnet-tools.json           # dotnet-ef
 docker-compose.yml                  # local sqlserver (FTS), clamav, mailpit
 docker/sqlserver-fts/Dockerfile     # SQL Server image with Full-Text Search
-Dockerfile                          # production container image for UblJira.Web
+Dockerfile                          # production container image for Upms.Web
 .github/workflows/ci.yml            # build, format, tests, audit, migrations check
 
 src/
-├── UblJira.Domain/                 # entities, value objects, domain rules; no I/O
+├── Upms.Domain/                 # entities, value objects, domain rules; no I/O
 │   ├── Common/                     # Entity base, domain errors, IssueKey, Rank (fractional index)
 │   ├── Identity/                   # User roles, AuditEventType
 │   ├── Projects/                   # Project, ProjectMember, ProjectRole, BoardStyle
@@ -123,7 +123,7 @@ src/
 │   ├── Collaboration/              # Comment, Watch, Notification, EmailOutboxMessage
 │   ├── Planning/                   # Sprint, SprintIssueEvent
 │   └── Search/                     # SavedFilter, RecentIssueView
-├── UblJira.Application/            # use cases; permission checks; DTOs; module contracts
+├── Upms.Application/            # use cases; permission checks; DTOs; module contracts
 │   ├── Common/                     # Result/AppError, Page<T>, ICurrentUser, IAppDbContext, TimeProvider use
 │   ├── Identity/                   # Setup, Account, UserAdmin, AuditLog, OrganizationSettings
 │   ├── Projects/                   # ProjectService, MembershipService, Contracts/IProjectAccess
@@ -131,7 +131,7 @@ src/
 │   ├── Collaboration/              # Comments, Mentions, Watches, Notifications, Contracts/IIssueEventPublisher
 │   ├── Planning/                   # BoardService, BacklogService, SprintService
 │   └── Search/                     # IssueSearchService, SavedFilterService, MyWorkService, Contracts/IRecentViews
-├── UblJira.Infrastructure/         # EF Core, Identity stores, email, scanning, workers
+├── Upms.Infrastructure/         # EF Core, Identity stores, email, scanning, workers
 │   ├── Persistence/                # AppDbContext, Configurations/<Module>/, Migrations/, query filters
 │   ├── Identity/                   # AuditingSignInManager, UsernamePasswordValidator, revalidation
 │   ├── Search/                     # Full-text query composition
@@ -139,7 +139,7 @@ src/
 │   ├── Scanning/                   # ClamAvScanner (INSTREAM client), AttachmentScanWorker
 │   ├── Email/                      # MailKitEmailSender, EmailOutboxWorker, templates
 │   └── Workers/                    # RankRebalanceWorker
-└── UblJira.Web/                    # Blazor Web App host and composition root
+└── Upms.Web/                    # Blazor Web App host and composition root
     ├── Program.cs
     ├── Components/                 # App.razor, Routes.razor, Layout/, Shared/ (editor, pickers, dialogs)
     ├── Components/Account/         # Identity pages (static SSR), Setup, ChangePassword
@@ -150,24 +150,24 @@ src/
     └── wwwroot/                    # app.css, js/idle-monitor.js, js/drag-drop.js
 
 tools/
-└── UblJira.Seed/                   # generates realistic data volumes for performance tests
+└── Upms.Seed/                   # generates realistic data volumes for performance tests
 
 tests/
-├── UblJira.Domain.Tests/           # unit: workflow, hierarchy, keys, ranks, sprint rules
-├── UblJira.Application.Tests/      # integration: services on real SQL Server (Testcontainers + Respawn)
-├── UblJira.Web.Tests/              # bUnit component tests
-├── UblJira.E2E.Tests/              # Playwright journeys per story + axe accessibility scans
-├── UblJira.Architecture.Tests/     # ArchUnitNET: module boundaries, private setters
-└── UblJira.Performance.Tests/      # opt-in: 300 concurrent users on the seeded database (SC-002)
+├── Upms.Domain.Tests/           # unit: workflow, hierarchy, keys, ranks, sprint rules
+├── Upms.Application.Tests/      # integration: services on real SQL Server (Testcontainers + Respawn)
+├── Upms.Web.Tests/              # bUnit component tests
+├── Upms.E2E.Tests/              # Playwright journeys per story + axe accessibility scans
+├── Upms.Architecture.Tests/     # ArchUnitNET: module boundaries, private setters
+└── Upms.Performance.Tests/      # opt-in: 300 concurrent users on the seeded database (SC-002)
 
 docs/
 └── operations/                     # deployment (container and IIS), backup-restore runbook, monitoring
 ```
 
-**Structure Decision**: A single web application (one deployable, `UblJira.Web`) layered into
+**Structure Decision**: A single web application (one deployable, `Upms.Web`) layered into
 Domain, Application, Infrastructure, and Web projects, with the six feature modules as folders and
 namespaces inside each layer (research R4). There is no separate frontend project: Blazor components
-live in `UblJira.Web` and call `UblJira.Application` services directly. Tests mirror the layers,
+live in `Upms.Web` and call `Upms.Application` services directly. Tests mirror the layers,
 plus architecture and performance suites.
 
 ## Complexity Tracking
