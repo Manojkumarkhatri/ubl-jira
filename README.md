@@ -6,7 +6,8 @@ Portfolio → Project → work items (epics or phases, stories, tasks, bugs, mil
 covers projects, work items, backlog and sprints, an interactive timeline, boards, project and
 portfolio dashboards, collaboration, search, and user administration.
 
-**Status**: Phase 1 (core Kanban project) is specified and planned; implementation not started. The
+**Status**: Phase 1 (core Kanban project) is specified, planned and broken into tasks; implementation
+not started. The
 project follows
 [Spec Kit](https://github.com/github/spec-kit) spec-driven development: every feature is specified,
 clarified, planned, and broken into tasks before any code is written.
@@ -39,6 +40,7 @@ the product vision and requirement backlog for Phases 2 and 3.
 | [Research](specs/002-kanban-project-core/research.md) | Technology decisions, including how Phases 2–3 extend Phase 1 |
 | [Data model](specs/002-kanban-project-core/data-model.md) | Tables, rules, and the planned additive changes for later phases |
 | [Contracts](specs/002-kanban-project-core/contracts/) | Application services, permissions, UI routes, HTTP endpoints |
+| [Tasks](specs/002-kanban-project-core/tasks.md) | 114 test-first tasks: setup, foundation, then one phase per story |
 | [Quickstart](specs/002-kanban-project-core/quickstart.md) | How to run and validate Phase 1 once built |
 | [Design prototype](design/prototype/index.html) | Clickable prototype with demo data: open the file in any browser |
 
@@ -54,7 +56,7 @@ browser; use the avatar menu to switch demo users or reset the data. It shows mo
 
 The Spec Kit commands are installed as Claude Code skills in `.claude/skills/`:
 
-- `/speckit-tasks`, then `/speckit-analyze`: break Phase 1 into test-first tasks and cross-check them
+- `/speckit-analyze`: cross-check Phase 1's spec, plan and tasks before building
 - `/speckit-implement`: build Phase 1 from its `tasks.md`
 - `/speckit-specify`, `/speckit-clarify`, `/speckit-plan`: for Phase 2 and Phase 3 when their turn
   comes
