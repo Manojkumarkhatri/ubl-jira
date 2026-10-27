@@ -1,0 +1,294 @@
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject ISpaceFieldService Fields
+@inject IJSRuntime JS
+@* A space field on a work item, edited as its type needs: text, a date, a number, a date and time, a web address, one
+   option, several options, labels or people. A formula shows its result. Each change saves on its own, as the drawer's
+   other fields do; a refused value stays in the box with the reason. *@
+<div class="custom-field custom-@Field.Type.ToString().ToLowerInvariant() @(Main ? "is-main" : "")" data-testid="field-@Field.Id">
+    @if (!CanEdit || Field.Type == FieldType.Formula)
+    {
+        <span class="custom-value @(Field.IsEmpty ? "is-empty" : "")" title="@(Field.Type == FieldType.Formula ? "Worked out from other fields" : null)">
+            @if (Field.IsEmpty)
+            {
+                <text>None</text>
+            }
+            else if (Field.Type == FieldType.Url)
+            {
+                <a href="@Field.Value" target="_blank" rel="noopener noreferrer">@Field.Value</a>
+            }
+            else if (Field.Type == FieldType.Timestamp && DateTimeOffset.TryParse(Field.Value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var shownStamp))
+            {
+                <LocalTime Value="shownStamp" />
+            }
+            else
+            {
+                @Field.Display
+            }
+        </span>
+    }
+    else
+    {
+        @switch (Field.Type)
+        {
+            case FieldType.ShortText:
+                <input id="@InputId" class="input" type="text" maxlength="@FieldValues.ShortTextMaxLength" autocomplete="off" placeholder="None"
+                       value="@Field.Value" disabled="@_busy" @onchange="e => SaveAsync(e.Value?.ToString(), null)" aria-describedby="@ErrorId" />
+                break;
+            case FieldType.Paragraph:
+                @if (_editing)
+                {
+                    <textarea id="@InputId" class="input" rows="4" maxlength="@FieldValues.ParagraphMaxLength" @bind="_draft" @bind:event="oninput" aria-describedby="@ErrorId"></textarea>
+                    <span class="custom-actions">
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveDraftAsync">Save</button>
+                        <button type="button" class="btn btn-sm" @onclick="() => _editing = false">Cancel</button>
+                    </span>
+                }
+                else
+                {
+                    <button type="button" id="@InputId" class="placeholder-btn custom-paragraph-view" @onclick="EditParagraph" aria-label="Edit @Field.Name">
+                        @if (Field.IsEmpty)
+                        {
+                            <span class="hint">Add @Field.Name.ToLowerInvariant()…</span>
+                        }
+                        else
+                        {
+                            <span class="custom-text">@Field.Value</span>
+                        }
+                    </button>
+                }
+                break;
+            case FieldType.Date:
+                <input id="@InputId" class="input" type="date" min="2000-01-01" max="2099-12-31" value="@Field.Value" disabled="@_busy"
+                       @onchange="e => SaveAsync(e.Value?.ToString(), null)" aria-describedby="@ErrorId" />
+                break;
+            case FieldType.Number:
+                <input id="@InputId" class="input custom-number" type="text" inputmode="decimal" maxlength="20" autocomplete="off" placeholder="None"
+                       value="@Field.Value" disabled="@_busy" @onchange="e => SaveAsync(e.Value?.ToString(), null)" aria-describedby="@ErrorId" />
+                break;
+            case FieldType.Timestamp:
+                <input id="@InputId" class="input" type="datetime-local" value="@LocalStamp" disabled="@_busy"
+                       @onchange="e => SaveStampAsync(e.Value?.ToString())" aria-describedby="@ErrorId" />
+                break;
+            case FieldType.Url:
+                <span class="custom-url">
+                    <input id="@InputId" class="input" type="url" maxlength="@FieldValues.UrlMaxLength" autocomplete="off" placeholder="https://"
+                           value="@Field.Value" disabled="@_busy" @onchange="e => SaveAsync(e.Value?.ToString(), null)" aria-describedby="@ErrorId" />
+                    @if (!Field.IsEmpty)
+                    {
+                        <a class="icon-btn" href="@Field.Value" target="_blank" rel="noopener noreferrer" title="Open" aria-label="Open @Field.Name"><Icon Name="link" Size="14" /></a>
+                    }
+                </span>
+                break;
+            case FieldType.Dropdown:
+                <select id="@InputId" class="select" value="@(Field.Value ?? "")" disabled="@_busy" @onchange="e => SaveAsync(e.Value?.ToString(), null)"
+                        aria-describedby="@ErrorId">
+                    <option value="">None</option>
+                    @foreach (var option in Field.Options)
+                    {
+                        <option value="@option.Id">@option.Name</option>
+                    }
+                </select>
+                break;
+            case FieldType.Checkbox:
+                <fieldset class="custom-checks" aria-describedby="@ErrorId">
+                    <legend class="sr-only">@Field.Name</legend>
+                    @foreach (var option in Field.Options)
+                    {
+                        <label class="check">
+                            <input type="checkbox" checked="@Field.Items.Contains(option.Id)" disabled="@_busy" @onchange="e => ToggleAsync(option.Id, e)" />
+                            @option.Name
+                        </label>
+                    }
+                </fieldset>
+                break;
+            case FieldType.Labels:
+                <span class="custom-chips">
+                    @foreach (var label in Field.Items)
+                    {
+                        <span class="label-chip">@label
+                            <button type="button" class="chip-remove" aria-label="Remove @label" disabled="@_busy"
+                                    @onclick="() => SaveAsync(null, Field.Items.Where(l => l != label).ToList())">×</button>
+                        </span>
+                    }
+                    <input id="@InputId" class="input chip-input" type="text" maxlength="50" autocomplete="off" placeholder="Add label" disabled="@_busy"
+                           @bind="_draft" @bind:event="oninput" @onkeydown="LabelKeyAsync" aria-describedby="@ErrorId" />
+                </span>
+                break;
+            default: // People
+                <span class="custom-chips">
+                    @foreach (var person in Field.People)
+                    {
+                        <span class="person-chip"><Avatar UserId="person.UserId" Initials="@AssigneeRef.InitialsOf(person.Name)" /> @person.Name
+                            <button type="button" class="chip-remove" aria-label="Remove @person.Name" disabled="@_busy"
+                                    @onclick="() => SaveAsync(null, Field.Items.Where(id => id != person.UserId.ToString()).ToList())">×</button>
+                        </span>
+                    }
+                    <select id="@InputId" class="select chip-input" value="" disabled="@_busy" @onchange="AddPersonAsync" aria-describedby="@ErrorId">
+                        <option value="">Add person</option>
+                        @foreach (var option in People.Where(p => !Field.Items.Contains(p.UserId.ToString())))
+                        {
+                            <option value="@option.UserId">@option.DisplayName</option>
+                        }
+                    </select>
+                </span>
+                break;
+        }
+        <span id="@ErrorId" class="error-text" role="alert">@_error</span>
+    }
+</div>
+
+@code {
+    private bool _editing;
+    private string? _draft;
+    private string? _error;
+    private bool _busy;
+    private int _offset;
+
+    [Parameter, EditorRequired]
+    public string WorkItemKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public CustomFieldView Field { get; set; } = default!;
+
+    [Parameter]
+    public bool CanEdit { get; set; }
+
+    /// <summary>In the main column rather than the details panel.</summary>
+    [Parameter]
+    public bool Main { get; set; }
+
+    /// <summary>The people a people field can name.</summary>
+    [Parameter]
+    public IReadOnlyList<AssigneeOption> People { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<string> OnSaved { get; set; }
+
+    /// <summary>The id of the field's control, for its label.</summary>
+    public string InputId => $"field-{Field.Id}-input";
+
+    private string ErrorId => $"field-{Field.Id}-error";
+
+    private string? LocalStamp =>
+        DateTimeOffset.TryParse(Field.Value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var stamp)
+            ? stamp.ToOffset(TimeSpan.FromMinutes(_offset)).ToString("yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture)
+            : null;
+
+    /// <summary>A time stamp shows in the viewer's own time, so the browser says how far it is from UTC.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || Field.Type != FieldType.Timestamp)
+        {
+            return;
+        }
+
+        try
+        {
+            var now = await JS.InvokeAsync<string[]>("upms.localNow");
+            if (int.TryParse(now[1], CultureInfo.InvariantCulture, out var offset) && offset != _offset)
+            {
+                _offset = offset;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private void EditParagraph()
+    {
+        _draft = Field.Value;
+        _editing = true;
+        _error = null;
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (await SaveAsync(_draft, null))
+        {
+            _editing = false;
+        }
+    }
+
+    private Task ToggleAsync(string optionId, ChangeEventArgs e)
+    {
+        var on = e.Value is true || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        var items = Field.Items.Where(id => id != optionId).ToList();
+        if (on)
+        {
+            items.Add(optionId);
+        }
+
+        return SaveAsync(null, items);
+    }
+
+    private async Task LabelKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key is not ("Enter" or ",") || string.IsNullOrWhiteSpace(_draft))
+        {
+            return;
+        }
+
+        var label = _draft.Trim().TrimEnd(',');
+        if (await SaveAsync(null, [.. Field.Items, label]))
+        {
+            _draft = null;
+        }
+    }
+
+    private Task AddPersonAsync(ChangeEventArgs e) =>
+        e.Value?.ToString() is { Length: > 0 } id ? SaveAsync(null, [.. Field.Items, id]) : Task.CompletedTask;
+
+    /// <summary>The browser's local date and time with its offset from UTC, so the time means the same everywhere.</summary>
+    private async Task SaveStampAsync(string? local)
+    {
+        if (string.IsNullOrEmpty(local))
+        {
+            await SaveAsync(null, null);
+            return;
+        }
+
+        // The browser sends "2026-12-01T09:30", sometimes with seconds.
+        if (!DateTime.TryParse(local, CultureInfo.InvariantCulture, DateTimeStyles.None, out var value))
+        {
+            _error = "Enter a date and time.";
+            return;
+        }
+
+        var stamp = new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Unspecified), TimeSpan.FromMinutes(_offset));
+        await SaveAsync(stamp.ToString("o", CultureInfo.InvariantCulture), null);
+    }
+
+    private async Task<bool> SaveAsync(string? value, IReadOnlyList<string>? items)
+    {
+        if (_busy)
+        {
+            return false;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await Fields.SetValueAsync(WorkItemKey, Field.Id, new FieldValueInput(value, items), CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.MessageFor("Value");
+                return false;
+            }
+
+            await OnSaved.InvokeAsync($"{Field.Name} saved");
+            return true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

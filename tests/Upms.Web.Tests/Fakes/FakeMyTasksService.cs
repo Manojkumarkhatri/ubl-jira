@@ -28,4 +28,13 @@ public sealed class FakeMyTasksService : IMyTasksService
         var items = Rows.Skip(page.Skip).Take(page.PageSize).ToList();
         return Task.FromResult(Result<Page<MyTaskRow>>.Ok(new Page<MyTaskRow>(items, Rows.Count, page.Page, page.PageSize)));
     }
+
+    /// <summary>Gates waiting for amina's decision (Phase 3 FR-041); none unless a test adds some.</summary>
+    public List<WaitingGateRow> Gates { get; } = [];
+
+    public Task<Result<IReadOnlyList<WaitingGateRow>>> ListGatesAsync(CancellationToken ct) =>
+        Task.FromResult(Result<IReadOnlyList<WaitingGateRow>>.Ok(Gates));
+
+    public Task<Result<MyWorkSummary>> SummaryAsync(DateOnly today, CancellationToken ct) =>
+        Task.FromResult(Result<MyWorkSummary>.Ok(new MyWorkSummary(Rows.Count, 1, 2, 0, 3, 1, Rows.Take(3).ToList(), Rows, [])));
 }

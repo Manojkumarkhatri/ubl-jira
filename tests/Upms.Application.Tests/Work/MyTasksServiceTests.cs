@@ -31,7 +31,7 @@ public sealed class MyTasksServiceTests(SqlServerFixture fixture) : IntegrationT
         ActAs(_owen);
         foreach (var (name, key) in new[] { ("Website Revamp", "WEB"), ("Payroll", "PAY") })
         {
-            (await CallAsync<IProjectService, Result<string>>(s => s.CreateAsync(name, key, null, Ct))).ValueOrThrow();
+            (await CallAsync<IProjectService, Result<string>>(s => s.CreateAsync(name, key, null, ProjectTemplate.Kanban, Ct))).ValueOrThrow();
             await Data.MembersAsync(key, ProjectRole.Member, _amina, _bilal);
         }
     }
@@ -40,7 +40,7 @@ public sealed class MyTasksServiceTests(SqlServerFixture fixture) : IntegrationT
         Priority priority = Priority.Medium)
     {
         var board = (await CallAsync<IBoardService, Result<BoardView>>(s => s.GetAsync(projectKey, false, Ct))).ValueOrThrow();
-        var card = (await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync(projectKey, board.Columns[0].Id, title, Ct))).ValueOrThrow();
+        var card = (await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync(projectKey, board.Columns[0].Id, title, WorkItemType.Task, Ct))).ValueOrThrow();
         await ChangeAsync(card.Key, assignee, due, priority);
         return card.Key;
     }
@@ -164,6 +164,20 @@ public sealed class MyTasksServiceTests(SqlServerFixture fixture) : IntegrationT
         Assert.Equal(["WEB-3", "WEB-4"], second.Items.Select(r => r.Key));
         Assert.Equal(["WEB-5"], last.Items.Select(r => r.Key));
         Assert.Equal((5, 3), (last.TotalCount, last.PageCount));
+    }
+
+    [Fact]
+    public async Task P3_FR041_Open_assigned_items_of_every_type_are_listed_with_their_type()
+    {
+        var epic = (await CallAsync<IWorkItemService, Result<WorkItemDetails>>(s =>
+            s.CreateAsync("WEB", new NewWorkItem(WorkItemType.Epic, "Card refunds"), Ct))).ValueOrThrow().Key;
+        await ChangeAsync(epic, _amina, null, Priority.Medium);
+        var bug = await TaskAsync("WEB", "Refund shows twice", _amina);
+        await EditAsync(bug, new WorkItemEdit.Type(WorkItemType.Bug));
+
+        var page = await MyTasksAsync(_amina);
+
+        Assert.Equal([(epic, WorkItemType.Epic), (bug, WorkItemType.Bug)], page.Items.Select(r => (r.Key, r.Type)));
     }
 
     [Fact]

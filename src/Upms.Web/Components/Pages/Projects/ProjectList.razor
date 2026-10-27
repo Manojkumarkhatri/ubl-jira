@@ -1,15 +1,31 @@
-@page "/projects"
+@page "/spaces"
 @using Upms.Application.Projects
 @using Upms.Domain.Projects
 @inject IProjectService Projects
+@inject IOrganizationAdminService Organization
 
-<PageTitle>Projects · U-PMS</PageTitle>
+<PageTitle>Spaces · U-PMS</PageTitle>
 
 <div class="page-head">
-    <h1>Projects</h1>
+    <h1>Spaces</h1>
     <span class="spacer"></span>
-    <button type="button" class="btn btn-primary" @onclick="() => _create.Open()">Create project</button>
+    @if (_isAdministrator)
+    {
+        @* Jira keeps deleted spaces in the trash, where Admins restore them (owner, 2026-10-26). *@
+        <a class="btn" href="trash" data-testid="space-trash-link"><Icon Name="trash" Size="16" /> Trash</a>
+    }
+    @if (_canCreate)
+    {
+        <a class="btn btn-primary" href="create-space">Create space</a>
+    }
 </div>
+
+@if (Trashed is { } trashed && Project.IsValidKey(trashed))
+{
+    <div class="alert alert-success" role="status" data-testid="space-trashed">
+        @trashed was moved to the trash. It left every board, list and search. An Admin can restore it from the trash.
+    </div>
+}
 
 @if (_page is null)
 {
@@ -17,20 +33,25 @@
 }
 else if (_page.TotalCount == 0)
 {
-    <EmptyState Title="No projects yet" Text="Create a project to get a Kanban board for your team. Projects you are added to appear here too.">
-        <button type="button" class="btn btn-primary" @onclick="() => _create.Open()">Create project</button>
+    <EmptyState Title="No spaces yet" Text="@(_canCreate ? "Create a Kanban, Scrum or Stage-gate space for your team. Spaces you are added to appear here too." : "Spaces you are added to appear here.")">
+        @if (_canCreate)
+        {
+            <a class="btn btn-primary" href="create-space">Create space</a>
+        }
     </EmptyState>
 }
 else
 {
     <div class="table-wrap">
         <table class="tbl">
-            <caption class="sr-only">Your projects, sorted by name</caption>
+            <caption class="sr-only">Your spaces, sorted by name</caption>
             <thead>
                 <tr>
+                    <th scope="col"><span class="sr-only">Star</span></th>
                     <th scope="col">Name</th>
                     <th scope="col">Key</th>
-                    <th scope="col" class="hide-sm">Your role</th>
+                    <th scope="col" class="hide-sm">Template</th>
+                    <th scope="col" class="hide-sm">Your access</th>
                     <th scope="col">Open tasks</th>
                 </tr>
             </thead>
@@ -38,26 +59,38 @@ else
                 @foreach (var project in _page.Items)
                 {
                     <tr>
-                        <td><a href="projects/@project.Key/board"><strong>@project.Name</strong></a></td>
+                        <td class="star-cell"><StarButton SpaceKey="@project.Key" /></td>
+                        <td><a href="spaces/@project.Key/board"><strong>@project.Name</strong></a></td>
                         <td><span class="key">@project.Key</span></td>
-                        <td class="hide-sm">@(project.MyRole is { } role ? role.DisplayName() : "Administrator access")</td>
+                        <td class="hide-sm" data-testid="project-template">@ProjectHeader.TemplateName(project.Template)</td>
+                        <td class="hide-sm">@(project.MyRole is { } role ? role.DisplayName() : "Admin access")</td>
                         <td>@project.OpenItemCount</td>
                     </tr>
                 }
             </tbody>
         </table>
     </div>
-    <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Project pages" OnPageChanged="GoToPageAsync" />
+    <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Space pages" OnPageChanged="GoToPageAsync" />
 }
 
-<CreateProjectDialog @ref="_create" />
 
 @code {
-    private CreateProjectDialog _create = default!;
     private Page<ProjectSummary>? _page;
     private int _pageNumber = 1;
+    private bool _canCreate;
+    private bool _isAdministrator;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    /// <summary>The key of a space just moved to the trash, from its settings.</summary>
+    [SupplyParameterFromQuery(Name = "trashed")]
+    public string? Trashed { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var access = await Organization.MyAccessAsync(CancellationToken.None);
+        _canCreate = access.Can(Rights.CreateSpaces);
+        _isAdministrator = access.IsAdministrator;
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {

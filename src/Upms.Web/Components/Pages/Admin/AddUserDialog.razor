@@ -1,0 +1,193 @@
+@inject IUserAdminService Admin
+@inject LiveAnnouncer Announcer
+@inject IJSRuntime JS
+
+@* Jira's "Add user": the account gets a temporary password, shown once. Every type is listed; those the person adding can't
+   create show locked (owner, 2026-10-26). *@
+<ModalDialog @ref="_dialog" Title="@(_created is null ? "Add user" : "User added")" Class="add-user-dialog" TestId="add-user-dialog">
+    <ChildContent>
+        @if (_created is { } created)
+        {
+            <div class="alert alert-success" role="status" data-testid="temporary-password">
+                <p><strong>Account @created.UserName created.</strong></p>
+                <p>
+                    Temporary password (shown only once): <code class="temp-password">@created.TemporaryPassword</code>
+                    <button type="button" class="btn btn-sm" @onclick="CopyAsync">@(_copied ? "Copied" : "Copy")</button>
+                </p>
+                <p class="hint">Give it to the person through a secure channel. They choose their own password when they first sign in.</p>
+            </div>
+            <p>They have the @_input.Type.DisplayName() rights. Open their rights to add or remove some.</p>
+        }
+        else
+        {
+            <form id="add-user-form" class="form" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+                @if (_error is { Kind: not ErrorKind.Validation })
+                {
+                    <div class="alert alert-error" role="alert">@_error.Message</div>
+                }
+                <div class="field">
+                    <label for="new-displayname">Full name</label>
+                    <input id="new-displayname" class="input" @bind="_input.DisplayName" autocomplete="off" aria-describedby="new-displayname-error" />
+                    <span id="new-displayname-error" class="error-text">@FieldError("DisplayName")</span>
+                </div>
+                <div class="row">
+                    <div class="field">
+                        <label for="new-username">User name</label>
+                        <input id="new-username" class="input" @bind="_input.UserName" autocomplete="off" aria-describedby="new-username-hint new-username-error" />
+                        <span id="new-username-hint" class="hint">3–64 letters, digits, ".", "-" or "_".</span>
+                        <span id="new-username-error" class="error-text">@FieldError("UserName")</span>
+                    </div>
+                    <div class="field">
+                        <label for="new-email">Email address</label>
+                        <input id="new-email" type="email" class="input" @bind="_input.Email" autocomplete="off" aria-describedby="new-email-error" />
+                        <span id="new-email-error" class="error-text">@FieldError("Email")</span>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="field">
+                        <label for="new-type">Type</label>
+                        <select id="new-type" class="select" value="@_input.Type" @onchange="TypeChanged" aria-describedby="new-type-hint new-type-error">
+                            @foreach (var type in UserTypes.Ordered)
+                            {
+                                <option value="@type" disabled="@(!Caller.Types.Contains(type))">@type.DisplayName()@(Caller.Types.Contains(type) ? "" : " (locked)")</option>
+                            }
+                        </select>
+                        <span id="new-type-hint" class="hint">@_input.Type.Description() You can add: @string.Join(", ", Caller.Types.Select(t => t.DisplayName())).</span>
+                        <span id="new-type-error" class="error-text">@FieldError("Type")</span>
+                    </div>
+                    <div class="field">
+                        <label for="new-department">Department</label>
+                        @if (Caller.IsAdministrator)
+                        {
+                            <select id="new-department" class="select" @bind="_input.DepartmentId" aria-describedby="new-department-error">
+                                <option value="">No department</option>
+                                @foreach (var department in Departments)
+                                {
+                                    <option value="@department.Id">@department.Name</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <input id="new-department" class="input" value="@(Departments.FirstOrDefault(d => d.Id == Caller.DepartmentId)?.Name ?? "Your department")" readonly />
+                        }
+                        <span id="new-department-error" class="error-text">@FieldError("DepartmentId")</span>
+                    </div>
+                </div>
+                <p class="hint">They get a temporary password and choose their own when they first sign in.</p>
+            </form>
+        }
+    </ChildContent>
+    <Footer>
+        @if (_created is { } created)
+        {
+            <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Done</button>
+            <button type="button" class="btn btn-primary" data-testid="open-new-user" @onclick="() => OpenRightsAsync(created)">Open their rights</button>
+        }
+        else
+        {
+            <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+            <button type="submit" form="add-user-form" class="btn btn-primary" data-testid="create-user" disabled="@_busy">Add user</button>
+        }
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _dialog;
+    private Input _input = new();
+    private AppError? _error;
+    private CreatedUser? _created;
+    private bool _copied;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public PeopleRights Caller { get; set; } = default!;
+
+    [Parameter]
+    public IReadOnlyList<DepartmentInfo> Departments { get; set; } = [];
+
+    /// <summary>A person was added: the list reloads.</summary>
+    [Parameter]
+    public EventCallback<CreatedUser> OnCreated { get; set; }
+
+    /// <summary>"Open their rights" after adding.</summary>
+    [Parameter]
+    public EventCallback<CreatedUser> OnOpenRights { get; set; }
+
+    public void Open()
+    {
+        _input = new Input { Type = Caller.Types.Contains(UserType.Member) ? UserType.Member : Caller.Types.LastOrDefault(UserType.Member) };
+        _error = null;
+        _created = null;
+        StateHasChanged();
+        _dialog!.Open();
+    }
+
+    private void TypeChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<UserType>(e.Value?.ToString(), out var type) && Caller.Types.Contains(type))
+        {
+            _input.Type = type;
+        }
+    }
+
+    private string? FieldError(string field) =>
+        _error?.FieldErrors is { } errors && errors.TryGetValue(field, out var messages) ? string.Join(" ", messages) : null;
+
+    private async Task CreateAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Admin.AddPersonAsync(new NewPerson(_input.UserName, _input.DisplayName, _input.Email, _input.Type, _input.DepartmentId),
+                CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error;
+                return;
+            }
+
+            _error = null;
+            _copied = false;
+            _created = result.Value!;
+            Announcer.Announce($"Account {_created.UserName} created.");
+            await OnCreated.InvokeAsync(_created);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OpenRightsAsync(CreatedUser created)
+    {
+        await _dialog!.CloseAsync();
+        await OnOpenRights.InvokeAsync(created);
+    }
+
+    private async Task CopyAsync()
+    {
+        if (_created is not null)
+        {
+            _copied = await JS.InvokeAsync<bool>("upms.clipboard.copy", _created.TemporaryPassword);
+        }
+    }
+
+    private sealed class Input
+    {
+        public string UserName { get; set; } = "";
+
+        public string DisplayName { get; set; } = "";
+
+        public string Email { get; set; } = "";
+
+        public UserType Type { get; set; } = UserType.Member;
+
+        public long? DepartmentId { get; set; }
+    }
+}

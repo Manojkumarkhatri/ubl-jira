@@ -1,0 +1,116 @@
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@inject IWorkItemActionService Actions
+@* Jira's "Clone": a copy in the same space, starting in the first "to do" column, with the summary "CLONE - …" and the
+   parts the person chooses to include. *@
+<ModalDialog @ref="_dialog" Title="Clone" TestId="clone-dialog" Class="clone-dialog">
+    <ChildContent>
+        @if (_details is { } d)
+        {
+            <div class="field">
+                <label for="clone-summary">Summary <span class="required" aria-hidden="true">*</span></label>
+                <input id="clone-summary" class="input" type="text" autofocus maxlength="@WorkItem.TitleMaxLength" autocomplete="off" @bind="_title" @bind:event="oninput"
+                       aria-required="true" aria-invalid="@(_titleError is null ? "false" : "true")" aria-describedby="clone-summary-error" />
+                <span id="clone-summary-error" class="error-text" role="alert">@_titleError</span>
+            </div>
+            <fieldset class="clone-include">
+                <legend>Include</legend>
+                @if (HasChildren(d))
+                {
+                    <label class="check"><input type="checkbox" @bind="_children" /> @ChildLabel(d)</label>
+                }
+                @if (d.Attachments.Count > 0)
+                {
+                    <label class="check"><input type="checkbox" @bind="_attachments" /> Attachments (@d.Attachments.Count)</label>
+                }
+                @if (d.Dependencies is { } links && links.WaitsFor.Count + links.Blocks.Count > 0)
+                {
+                    <label class="check"><input type="checkbox" @bind="_links" /> Links (@(links.WaitsFor.Count + links.Blocks.Count))</label>
+                }
+                @if (d.Sprint is { State: not SprintState.Completed } sprint)
+                {
+                    <label class="check"><input type="checkbox" @bind="_sprint" /> Sprint value (@sprint.Name)</label>
+                }
+                <p class="hint">The copy starts in the first “to do” column, with the same description, priority, assignee, dates, estimates and labels. You watch it.</p>
+            </fieldset>
+            <span class="error-text" role="alert">@_error</span>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" data-testid="clone-save" disabled="@_busy" @onclick="CloneAsync">Clone</button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _dialog;
+    private WorkItemDetails? _details;
+    private string _title = "";
+    private bool _children = true;
+    private bool _attachments = true;
+    private bool _links = true;
+    private bool _sprint = true;
+    private string? _titleError;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter]
+    public EventCallback<string> OnCloned { get; set; }
+
+    public void Open(WorkItemDetails details)
+    {
+        _details = details;
+        var title = "CLONE - " + details.Title;
+        _title = title.Length <= WorkItem.TitleMaxLength ? title : title[..WorkItem.TitleMaxLength];
+        _children = _attachments = _links = _sprint = true;
+        _titleError = _error = null;
+        _dialog!.Open();
+    }
+
+    private static bool HasChildren(WorkItemDetails d) =>
+        d.Subtasks.TotalCount > 0 || (d.Type == WorkItemType.Epic && d.AsContainer?.Items.TotalCount > 0);
+
+    private static string ChildLabel(WorkItemDetails d) => d.Type == WorkItemType.Epic
+        ? $"Child work items ({d.AsContainer?.Items.TotalCount ?? 0})"
+        : $"Sub-tasks ({d.Subtasks.TotalCount})";
+
+    private async Task CloneAsync()
+    {
+        if (_busy || _details is not { } d)
+        {
+            return;
+        }
+
+        _titleError = _error = null;
+        _busy = true;
+        try
+        {
+            var request = new CloneRequest(_title, _children && HasChildren(d), _attachments && d.Attachments.Count > 0,
+                _links && d.Dependencies is { } links && links.WaitsFor.Count + links.Blocks.Count > 0,
+                _sprint && d.Sprint is { State: not SprintState.Completed });
+            var result = await Actions.CloneAsync(d.Key, request, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                var error = result.Error!;
+                if (error.FieldErrors?.ContainsKey("Title") == true)
+                {
+                    _titleError = error.MessageFor("Title");
+                }
+                else
+                {
+                    _error = error.Message;
+                }
+
+                return;
+            }
+
+            await _dialog!.CloseAsync();
+            await OnCloned.InvokeAsync(result.Value!);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

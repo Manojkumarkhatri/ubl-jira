@@ -1,0 +1,44 @@
+@page "/for-you"
+@page "/for-you/worked-on"
+@using Upms.Application.Work
+@inject ISearchService Search
+
+<PageTitle>Worked on · For you · U-PMS</PageTitle>
+
+@* "Worked on": items the person created, changed or commented on in the last 30 days, newest first (Jira parity pass
+   FR-022a). *@
+<ForYouTabs Current="ForYouTab.WorkedOn" />
+
+@if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">@_error</div>
+}
+else if (_page is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else if (_page.TotalCount == 0)
+{
+    <EmptyState Title="Nothing worked on lately" Text="Items you create, change or comment on in the last 30 days appear here, newest first." />
+}
+else
+{
+    <ItemRows Rows="_page.Items" Caption="Items you worked on in the last 30 days, newest first" WhenLabel="Last worked on" />
+    <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Worked on pages" OnPageChanged="GoToPageAsync" />
+}
+
+@code {
+    private Page<SearchResultRow>? _page;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private Task GoToPageAsync(int page) => LoadAsync(page);
+
+    private async Task LoadAsync(int page)
+    {
+        var result = await Search.WorkedOnAsync(new PageRequest(page), CancellationToken.None);
+        _error = result.IsSuccess ? null : result.Error!.Message;
+        _page = result.IsSuccess ? result.Value : null;
+    }
+}

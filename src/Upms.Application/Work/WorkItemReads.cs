@@ -27,6 +27,26 @@ internal sealed class WorkItemReads(IAppDbContext db, IUserDirectory users, Assi
         return new Page<SubtaskView>(items, total, page.Page, page.PageSize);
     }
 
+    /// <summary>An epic's or stage's items, by key, and its progress (Phase 3 FR-016, FR-017): its standard items other than
+    /// milestones that are done (resolved), out of all of them; 100% once the container itself is done.</summary>
+    public async Task<ContainerSummary> ContainedAsync(long containerId, bool containerDone, IReadOnlyList<StatusInfo> statuses,
+        IReadOnlyList<TeamMemberInfo> team, PageRequest page, CancellationToken ct)
+    {
+        page = page.Normalized();
+        var query = db.WorkItems.AsNoTracking().Where(w => w.ContainerId == containerId);
+        var counted = query.Where(w => w.Type != WorkItemType.Milestone);
+        var progress = new Progress(await counted.CountAsync(w => w.ResolvedAt != null, ct), await counted.CountAsync(ct), containerDone);
+        var total = await query.CountAsync(ct);
+        var rows = await query.OrderBy(w => w.Number)
+            .Skip(page.Skip).Take(page.PageSize)
+            .Select(w => new { w.Key, w.Type, w.Title, w.StatusId, w.AssigneeId, w.DueDate, w.RowVersion })
+            .ToListAsync(ct);
+        var people = await assignees.DescribeAsync(team, rows.Where(r => r.AssigneeId != null).Select(r => r.AssigneeId!.Value), ct);
+        var items = rows.ConvertAll(r => new ContainedItemView(r.Key, r.Type, r.Title, ToOption(statuses, r.StatusId),
+            r.AssigneeId is { } assigneeId ? people[assigneeId] : null, r.DueDate, r.RowVersion));
+        return new ContainerSummary(progress, new Page<ContainedItemView>(items, total, page.Page, page.PageSize));
+    }
+
     public async Task<Page<CommentView>> CommentsAsync(long workItemId, Guid viewerId, PageRequest page, CancellationToken ct)
     {
         page = page.Normalized();
@@ -37,7 +57,25 @@ internal sealed class WorkItemReads(IAppDbContext db, IUserDirectory users, Assi
             .ToListAsync(ct);
         var names = await users.GetAsync(rows.Select(c => c.AuthorId).Distinct().ToList(), ct);
         var items = rows.ConvertAll(c => ToView(c, viewerId, names));
-        return new Page<CommentView>(items, total, page.Page, page.PageSize);
+        var bodies = await WithCurrentNamesAsync(items.ConvertAll(c => c.Body), ct);
+        return new Page<CommentView>(items.Select((c, i) => c with { Body = bodies[i] }).ToList(), total, page.Page, page.PageSize);
+    }
+
+    /// <summary>The texts with each mention showing the person's current display name, or the name stored with it when the
+    /// person is unknown (Phase 4 FR-010); all the people are read at once.</summary>
+    public async Task<IReadOnlyList<RichText?>> WithCurrentNamesAsync(IReadOnlyList<RichText?> texts, CancellationToken ct)
+    {
+        var documents = texts.Select(t => t is { Format: TextFormat.Document } ? FormattedText.Parse(t.Content, "Body").Value : null).ToList();
+        var people = documents.Where(d => d is not null).SelectMany(d => d!.MentionIds).Distinct().ToList();
+        if (people.Count == 0)
+        {
+            return texts;
+        }
+
+        var names = (await users.GetAsync(people, ct)).ToDictionary(p => p.Key, p => p.Value.DisplayName);
+        return texts.Select((text, i) => documents[i]?.WithMentionNames(names) is { } shown
+            ? new RichText(TextFormat.Document, shown.Json, shown.PlainText)
+            : text).ToList();
     }
 
     public async Task<Page<ChangeView>> HistoryAsync(long workItemId, PageRequest page, CancellationToken ct)
@@ -61,7 +99,8 @@ internal sealed class WorkItemReads(IAppDbContext db, IUserDirectory users, Assi
 
     public static CommentView ToView(Domain.Work.Comment comment, Guid viewerId, IReadOnlyDictionary<Guid, UserDisplay> names) =>
         new(comment.Id, comment.AuthorId, NameOf(names, comment.AuthorId), comment.AuthorId == viewerId,
-            comment.IsDeleted ? null : comment.Body, comment.CreatedAt, comment.EditedAt, comment.IsDeleted, comment.RowVersion);
+            comment.IsDeleted ? null : RichText.Of(comment.BodyFormat, comment.Body, comment.BodyText), comment.CreatedAt,
+            comment.EditedAt, comment.IsDeleted, comment.RowVersion);
 
     public static string NameOf(IReadOnlyDictionary<Guid, UserDisplay> names, Guid userId) =>
         names.TryGetValue(userId, out var user) ? user.DisplayName : "Unknown user";

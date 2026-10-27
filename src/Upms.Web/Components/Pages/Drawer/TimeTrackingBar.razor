@@ -1,0 +1,32 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@* Jira's time tracking bar: the time logged out of logged plus remaining, with both written under it. *@
+<span class="time-bar-wrap">
+    <span class="time-bar" role="img" aria-label="@Label">
+        <span class="time-bar-fill @(Over ? "is-over" : "")" style="width: @(Time.Percent)%"></span>
+    </span>
+    <span class="time-bar-text" aria-hidden="true">
+        <span>@(Time.SpentMinutes > 0 ? $"{WorkDuration.Format(Time.SpentMinutes)} logged" : "No time logged")</span>
+        @if (Time.RemainingMinutes is { } left)
+        {
+            <span>@WorkDuration.Format(left) remaining</span>
+        }
+        else if (Time.OriginalMinutes is { } original)
+        {
+            <span>@WorkDuration.Format(original) estimated</span>
+        }
+    </span>
+</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public TimeTracking Time { get; set; } = default!;
+
+    /// <summary>More logged than first estimated, as Jira's orange bar.</summary>
+    private bool Over => Time.OriginalMinutes is { } original && Time.SpentMinutes > original;
+
+    private string Label =>
+        (Time.SpentMinutes > 0 ? $"{WorkDuration.Format(Time.SpentMinutes)} logged" : "No time logged")
+        + (Time.RemainingMinutes is { } left ? $", {WorkDuration.Format(left)} remaining" : "")
+        + (Time.OriginalMinutes is { } original ? $", original estimate {WorkDuration.Format(original)}" : "");
+}

@@ -1,0 +1,336 @@
+@page "/spaces/{Key}/stages"
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject IStageGateService Stages
+@inject LiveAnnouncer Announcer
+@inject IJSRuntime JS
+
+<PageTitle>@(_view?.ProjectName ?? Key) · Stages · U-PMS</PageTitle>
+
+@* The Stages view of a Stage-gate project (Phase 3 FR-031–FR-040): the stages in order, each with its place, dates,
+   progress and gate. One change at a time; a change made meanwhile by someone else reloads the view and says so. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_view is null)
+{
+    <p aria-busy="true">Loading the stages…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.Stages" Template="ProjectTemplate.StageGate"
+                   CanManage="_view.CanManage" CanRestoreDeleted="_view.CanRestoreDeleted" />
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">
+            @_error
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _error = null">Dismiss</button>
+        </div>
+    }
+
+    <ol class="stage-list">
+        @for (var i = 0; i < _view.Stages.Count; i++)
+        {
+            var stage = _view.Stages[i];
+            var previous = i > 0 ? _view.Stages[i - 1] : null;
+            var next = i + 1 < _view.Stages.Count ? _view.Stages[i + 1] : null;
+            <li class="stage-card place-@stage.Place.ToString().ToLowerInvariant()" data-testid="stage" data-key="@stage.Key" id="stage-@stage.Key"
+                tabindex="-1" aria-labelledby="stage-@stage.Key-title" @key="stage.Key">
+                <div class="stage-head">
+                    <h2 id="stage-@stage.Key-title" data-testid="stage-title">@stage.Title</h2>
+                    <span class="key">@stage.Key</span>
+                    <span class="stage-place" data-testid="stage-place">@stage.Place</span>
+                    <span class="spacer"></span>
+                    @if (_view.CanManage && stage.Place == StagePlace.Locked)
+                    {
+                        @if (previous?.Place == StagePlace.Locked)
+                        {
+                            <button type="button" class="btn btn-sm btn-ghost" id="move-up-@stage.Key" data-testid="move-stage-up"
+                                    aria-label="Move @stage.Title up" disabled="@_busy" @onclick="() => MoveAsync(stage, -1)">Move up</button>
+                        }
+                        @if (next is not null)
+                        {
+                            <button type="button" class="btn btn-sm btn-ghost" id="move-down-@stage.Key" data-testid="move-stage-down"
+                                    aria-label="Move @stage.Title down" disabled="@_busy" @onclick="() => MoveAsync(stage, 1)">Move down</button>
+                        }
+                    }
+                </div>
+                <p class="hint stage-meta">
+                    <span>@DatesText(stage)</span>
+                    · <span data-testid="stage-progress">@stage.Progress.Done of @stage.Progress.Total done (@stage.Progress.Percent%)</span>
+                    · <a href="spaces/@_view.ProjectKey/list?container=@stage.Key">Items</a>
+                </p>
+                @if (stage.WaitsFor is { } waitsFor)
+                {
+                    <p class="stage-waits" data-testid="stage-waits">Waits for the @waitsFor gate</p>
+                }
+                <GatePanel Stage="stage" CanContribute="_view.CanContribute" CanManage="_view.CanManage"
+                           OnDecide="kind => OpenDecision(stage, kind)" OnRequest="() => OpenRequestAsync(stage)"
+                           OnWithdraw="() => WithdrawAsync(stage)" OnSetUp="() => _setup!.Open(_view.ProjectKey, stage)" />
+            </li>
+        }
+    </ol>
+
+    @if (_view.CanManage)
+    {
+        <form class="add-stage" @onsubmit="AddStageAsync">
+            <label for="new-stage-title">New stage</label>
+            <input id="new-stage-title" class="input" type="text" maxlength="255" autocomplete="off" placeholder="Stage name"
+                   @bind="_newTitle" @bind:event="oninput" aria-describedby="new-stage-hint" />
+            <button type="submit" class="btn" data-testid="add-stage" disabled="@_busy">Add stage</button>
+            <span id="new-stage-hint" class="hint">New stages go at the end, with a gate to set up.</span>
+        </form>
+    }
+
+    <GateSetupDialog @ref="_setup" OnSaved="GateSavedAsync" OnConflict="ConflictAsync" />
+
+    <ModalDialog @ref="_requestDialog" Title="@($"Request approval of the {_requestStage?.Title} gate?")" TestId="request-dialog">
+        <ChildContent>
+            @if (_openItems.Count == 0)
+            {
+                <p>All items in this stage are done.</p>
+            }
+            else
+            {
+                <p>@(_openItems.Count == 1 ? "1 item is still open:" : $"{_openItems.Count} items are still open:")</p>
+                <ul class="child-list">
+                    @foreach (var item in _openItems)
+                    {
+                        <li data-testid="open-item"><span class="key">@item.Key</span> @item.Title <span class="hint">@item.Status.Name</span></li>
+                    }
+                </ul>
+                <p class="hint">You can still request approval; the approvers will see the stage as it is.</p>
+            }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn" @onclick="() => _requestDialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="RequestAsync">Request approval</button>
+        </Footer>
+    </ModalDialog>
+
+    <ModalDialog @ref="_decisionDialog" Title="@DecisionTitle" TestId="decision-dialog" OnClosed="() => _decisionError = null">
+        <ChildContent>
+            <div class="field">
+                <label for="gate-note">Note @(_decision == GateDecisionKind.SendBack ? "(required)" : "(optional)")</label>
+                <textarea id="gate-note" class="textarea" maxlength="1000" @bind="_note" @bind:event="oninput"
+                          aria-invalid="@(_decisionError is null ? "false" : "true")" aria-describedby="decision-error"></textarea>
+                <span id="decision-error" class="error-text" role="alert" data-testid="decision-error">@_decisionError</span>
+            </div>
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn" @onclick="() => _decisionDialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="DecideAsync">@(_decision == GateDecisionKind.Approve ? "Approve" : "Send back")</button>
+        </Footer>
+    </ModalDialog>
+}
+
+@code {
+    private StagesView? _view;
+    private bool _notFound;
+    private string? _error;
+    private bool _busy;
+    private string _newTitle = "";
+    private string? _focusId;
+    private string? _loadedKey;
+    private GateSetupDialog? _setup;
+    private ModalDialog? _requestDialog;
+    private StageView? _requestStage;
+    private IReadOnlyList<ContainedItemView> _openItems = [];
+    private ModalDialog? _decisionDialog;
+    private StageView? _decisionStage;
+    private GateDecisionKind _decision;
+    private string _note = "";
+    private string? _decisionError;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary><c>?stage={KEY-N}</c> focuses a stage, as "Gates waiting for you" links do (FR-041).</summary>
+    [SupplyParameterFromQuery(Name = "stage")]
+    public string? StageKey { get; set; }
+
+    private string DecisionTitle => _decision == GateDecisionKind.Approve
+        ? $"Approve the {_decisionStage?.Title} gate"
+        : $"Send back the {_decisionStage?.Title} gate";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedKey != Key)
+        {
+            _loadedKey = Key;
+            await LoadAsync();
+            if (StageKey is { } stage && _view?.Stages.Any(s => s.Key == stage) == true)
+            {
+                _focusId = $"stage-{stage}";
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is { } id)
+        {
+            _focusId = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await Stages.GetAsync(Key, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _view = null;
+            _notFound = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
+            _error = _notFound ? null : result.Error.Message;
+            return;
+        }
+
+        _notFound = false;
+        _view = result.Value!;
+    }
+
+    /// <summary>One change at a time. A refused change is explained; a conflict reloads the stages as they are now.</summary>
+    private async Task RunAsync<T>(Func<Task<Result<T>>> change, Func<T, string> announcement)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await change();
+            await LoadAsync();
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                Announcer.Announce(result.Error.Message);
+                return;
+            }
+
+            Announcer.Announce(announcement(result.Value!));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MoveAsync(StageView stage, int offset)
+    {
+        await RunAsync(() => Stages.MoveStageAsync(stage.Key, offset, stage.StageVersion, CancellationToken.None), view =>
+        {
+            var position = view.Stages.ToList().FindIndex(s => s.Key == stage.Key) + 1;
+            return $"Moved {stage.Title} {(offset < 0 ? "up" : "down")}: it is now stage {position} of {view.Stages.Count}.";
+        });
+        _focusId = $"stage-{stage.Key}"; // focus follows the stage (contracts/ui-routes.md, "Keyboard")
+    }
+
+    private async Task AddStageAsync()
+    {
+        var title = _newTitle.Trim();
+        if (title.Length == 0)
+        {
+            return;
+        }
+
+        await RunAsync(() => Stages.AddStageAsync(Key, title, null, CancellationToken.None), _ => $"Added the stage {title} at the end.");
+        if (_error is null)
+        {
+            _newTitle = "";
+        }
+    }
+
+    private async Task OpenRequestAsync(StageView stage)
+    {
+        var preview = await Stages.PreviewRequestAsync(stage.Key, CancellationToken.None);
+        if (!preview.IsSuccess)
+        {
+            _error = preview.Error!.Message;
+            return;
+        }
+
+        _requestStage = stage;
+        _openItems = preview.Value!.OpenItems;
+        StateHasChanged();
+        _requestDialog!.Open();
+    }
+
+    private async Task RequestAsync()
+    {
+        var stage = _requestStage!;
+        await _requestDialog!.CloseAsync();
+        await RunAsync(() => Stages.RequestApprovalAsync(stage.Key, stage.Gate.Version, CancellationToken.None),
+            _ => $"Requested approval of the {stage.Title} gate.");
+    }
+
+    private Task WithdrawAsync(StageView stage) =>
+        RunAsync(() => Stages.WithdrawAsync(stage.Key, stage.Gate.CurrentRequest!.Number, CancellationToken.None),
+            _ => $"Withdrew the request for the {stage.Title} gate.");
+
+    private void OpenDecision(StageView stage, GateDecisionKind decision)
+    {
+        _decisionStage = stage;
+        _decision = decision;
+        _note = "";
+        _decisionError = null;
+        StateHasChanged();
+        _decisionDialog!.Open();
+    }
+
+    private async Task DecideAsync()
+    {
+        var stage = _decisionStage!;
+        var note = string.IsNullOrWhiteSpace(_note) ? null : _note.Trim();
+        if (_decision == GateDecisionKind.SendBack && note is null)
+        {
+            _decisionError = "Say why you send the gate back.";
+            return;
+        }
+
+        var decision = _decision;
+        var result = await Stages.DecideAsync(stage.Key, stage.Gate.CurrentRequest!.Number, decision, note, CancellationToken.None);
+        if (result.Error is { Kind: ErrorKind.Validation } invalid)
+        {
+            _decisionError = invalid.FieldErrors is { Count: > 0 } fields ? invalid.MessageFor(fields.Keys.First()) : invalid.Message;
+            return;
+        }
+
+        await _decisionDialog!.CloseAsync();
+        await RunAsync(() => Task.FromResult(result), view => view.Gate.State == GateState.Approved
+            ? $"The {stage.Title} gate is approved."
+            : decision == GateDecisionKind.Approve ? $"You approved the {stage.Title} gate." : $"You sent back the {stage.Title} gate.");
+    }
+
+    private async Task GateSavedAsync(string title)
+    {
+        await LoadAsync();
+        Announcer.Announce($"Saved the {title} gate.");
+    }
+
+    private async Task ConflictAsync(string message)
+    {
+        await LoadAsync();
+        _error = message;
+        Announcer.Announce(message);
+    }
+
+    private static string DatesText(StageView stage) => (stage.StartDate, stage.DueDate) switch
+    {
+        ({ } start, { } due) => $"{start.ToString("d MMM", CultureInfo.InvariantCulture)} – {due.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}",
+        (null, { } due) => $"Due {due.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}",
+        _ => "No dates yet",
+    };
+}

@@ -1,14 +1,50 @@
 @using Upms.Application.Work
 
+@* A Jira-style card (Jira parity pass FR-024; research R15): the summary first; the epic or stage tag and the labels; then
+   the type, the key (and a sub-task's parent), the priority, the estimate, the sub-task progress, the due date and the
+   assignee's avatar, each also in words for screen readers. *@
 <article class="bcard @(IsDragging ? "dragging" : "") @(_dropHint ? "drop-hint" : "")" draggable="@(CanContribute ? "true" : "false")"
          data-drag-key="@Card.Key" data-testid="card-@Card.Key" aria-labelledby="@(TitleId)"
          @ondragstart="() => OnDragStart.InvokeAsync(Card)" @ondragend="() => OnDragEnd.InvokeAsync()"
          @ondragenter="() => _dropHint = true" @ondragleave="() => _dropHint = false"
          @ondragover:preventDefault @ondrop:preventDefault @ondrop="DropAsync">
-    <a id="@TitleId" class="card-title" href="@TaskHref" draggable="false">@Card.Title</a>
+    @if (Card.CoverImageId is { } coverImage)
+    {
+        @* Jira's card cover (the "⋯" menu's "Select cover"): an attached image, or a band of colour. *@
+        <img class="card-cover-image" src="attachments/@coverImage/preview" alt="" loading="lazy" draggable="false" />
+    }
+    else if (Card.CoverColor is { } coverColor)
+    {
+        <div class="card-cover cover-@coverColor" aria-hidden="true"></div>
+    }
+    <a id="@TitleId" class="card-title" href="@TaskHref" draggable="false" title="@Card.Title">@Card.Title</a>
+    @if (Card.Container is not null || Card.Labels.Count > 0)
+    {
+        <div class="card-tags">
+            <EpicTag Container="Card.Container" />
+            @if (Card.Labels.Count > 0)
+            {
+                <ul class="card-labels" aria-label="Labels" data-testid="card-labels">
+                    @foreach (var label in Card.Labels)
+                    {
+                        <li class="label-chip">@label</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
     <div class="foot">
-        <PriorityIcon Priority="Card.Priority" />
+        <TypeIcon Type="Card.Type" />
         <span class="key">@Card.Key</span>
+        @if (Card.ParentKey is { } parentKey)
+        {
+            <span class="parent-key hint" data-testid="card-parent">Sub-task of @parentKey</span>
+        }
+        <PriorityIcon Priority="Card.Priority" />
+        @if (Card.Estimate is { } estimate)
+        {
+            <span class="estimate" data-testid="card-estimate">@Upms.Domain.Work.WorkItem.FormatEstimate(estimate)<span class="sr-only"> estimate</span></span>
+        }
         @if (Card.SubtasksTotal > 0)
         {
             <span class="subtasks" data-testid="subtask-progress">@Card.SubtasksDone/@Card.SubtasksTotal<span class="sr-only"> sub-tasks done</span></span>
@@ -18,7 +54,8 @@
         <AssigneeBadge Assignee="Card.Assignee" />
         @if (CanContribute)
         {
-            <MoveToMenu CardKey="@Card.Key" Columns="MoveTargets" OnMove="request => OnMove.InvokeAsync((Card, request))" />
+            <MoveToMenu CardKey="@Card.Key" Columns="MoveTargets" ColumnId="Card.ColumnId" Lanes="Lanes" OnMove="request => OnMove.InvokeAsync((Card, request))"
+                        OnDelete="@(OnDelete.HasDelegate ? EventCallback.Factory.Create(this, () => OnDelete.InvokeAsync(Card)) : default)" />
         }
     </div>
 </article>
@@ -34,6 +71,10 @@
 
     [Parameter, EditorRequired]
     public IReadOnlyList<ColumnOption> MoveTargets { get; set; } = [];
+
+    /// <summary>The other lanes "Move to" offers (Jira parity pass FR-027).</summary>
+    [Parameter]
+    public IReadOnlyList<LaneOption> Lanes { get; set; } = [];
 
     [Parameter]
     public bool ShowAllDone { get; set; }
@@ -66,10 +107,18 @@
     [Parameter]
     public EventCallback<(CardView Card, MoveRequest Request)> OnMove { get; set; }
 
+    /// <summary>The card menu's "Delete": the board asks first.</summary>
+    [Parameter]
+    public EventCallback<CardView> OnDelete { get; set; }
+
     private string TitleId => $"card-{Card.Key}-title";
 
-    // Opens the details drawer over the board (FR-023), keeping the "show all completed" view.
-    private string TaskHref => $"projects/{ProjectKey}/board?{(ShowAllDone ? "done=all&" : "")}task={Card.Key}";
+    /// <summary>The board's filters as the start of a query string, so opening a card keeps them (Phase 4 FR-047).</summary>
+    [Parameter]
+    public string FilterQuery { get; set; } = "";
+
+    // Opens the details drawer over the board (FR-023), keeping the "show all completed" view and the filters.
+    private string TaskHref => $"spaces/{ProjectKey}/board?{(ShowAllDone ? "done=all&" : "")}{FilterQuery}task={Card.Key}";
 
     private async Task DropAsync()
     {

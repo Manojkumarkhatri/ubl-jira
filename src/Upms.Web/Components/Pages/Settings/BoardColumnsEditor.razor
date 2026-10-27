@@ -136,46 +136,10 @@
         </form>
     }
 
-    <ModalDialog @ref="_deleteDialog" Title="@($"Delete {_deleting?.Name}?")" TestId="delete-column">
-        <ChildContent>
-            @if (_deleting is { } deleting)
-            {
-                @if (_deleteBlocked is not null)
-                {
-                    <p role="alert" data-testid="delete-blocked">@_deleteBlocked</p>
-                }
-                else if (deleting.IsEmpty)
-                {
-                    <p>@deleting.Name holds no work items.</p>
-                }
-                else
-                {
-                    <div class="field">
-                        <label for="delete-destination">
-                            Move its work items@(deleting.ItemCount > 0 ? $" ({deleting.ItemCount})" : "") to
-                        </label>
-                        <select id="delete-destination" class="select" @bind="_destinationId"
-                                aria-invalid="@(_deleteError is null ? "false" : "true")" aria-describedby="delete-destination-hint delete-destination-error">
-                            <option value="">Choose a column</option>
-                            @foreach (var other in _view!.Columns.Where(c => c.Id != deleting.Id))
-                            {
-                                <option value="@other.Id">@other.Name</option>
-                            }
-                        </select>
-                        <span id="delete-destination-hint" class="hint">Sub-tasks and deleted tasks in the column move too; each move is recorded in the task's history.</span>
-                    </div>
-                }
-                <span id="delete-destination-error" class="error-text" role="alert">@_deleteError</span>
-            }
-        </ChildContent>
-        <Footer>
-            <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">@(_deleteBlocked is null ? "Cancel" : "Close")</button>
-            @if (_deleteBlocked is null)
-            {
-                <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete column</button>
-            }
-        </Footer>
-    </ModalDialog>
+    @if (_view is not null)
+    {
+        <DeleteColumnDialog @ref="_deleteDialog" Columns="_view.Columns" OnDelete="DeleteAsync" />
+    }
 </section>
 
 @code {
@@ -191,11 +155,7 @@
     private StatusCategory _newCategory = StatusCategory.InProgress;
     private int _newPosition;
     private string? _addError;
-    private BoardColumnView? _deleting;
-    private string? _destinationId;
-    private string? _deleteError;
-    private string? _deleteBlocked;
-    private ModalDialog? _deleteDialog;
+    private DeleteColumnDialog? _deleteDialog;
     private BoardColumnView? _dragging;
     private long? _dropTarget;
     private (long ColumnId, StatusCategory Category)? _pendingCategory;
@@ -248,12 +208,7 @@
     private static int DefaultPosition(BoardColumnsView view) =>
         view.Columns.FirstOrDefault(c => c.Category == StatusCategory.Done)?.Position ?? view.Columns.Count;
 
-    private static string CategoryName(StatusCategory category) => category switch
-    {
-        StatusCategory.ToDo => "To do",
-        StatusCategory.InProgress => "In progress",
-        _ => "Done",
-    };
+    private static string CategoryName(StatusCategory category) => DeleteColumnDialog.CategoryName(category);
 
     private static string WorkItems(int count) => count == 1 ? "1 work item" : $"{count} work items";
 
@@ -434,48 +389,16 @@
         }
     }
 
-    private void AskDelete(BoardColumnView column)
+    private void AskDelete(BoardColumnView column) => _deleteDialog!.Open(column);
+
+    private async Task<AppError?> DeleteAsync(BoardColumnView column, long? destination)
     {
-        _deleting = column;
-        _destinationId = null;
-        _deleteError = null;
-        // Say straight away when the column cannot go (FR-038); the server enforces the same rule.
-        var lastOfKind = column.Category != StatusCategory.InProgress
-            && _view!.Columns.Count(c => c.Category == column.Category) == 1;
-        _deleteBlocked = lastOfKind
-            ? $"{column.Name} is the board's only \"{CategoryName(column.Category).ToLowerInvariant()}\" column, and every board needs one. " +
-              "Add another column of that type first."
-            : null;
-        _deleteDialog!.Open();
-    }
-
-    private async Task DeleteAsync()
-    {
-        if (_deleting is not { } column)
-        {
-            return;
-        }
-
-        long? destination = long.TryParse(_destinationId, System.Globalization.CultureInfo.InvariantCulture, out var id) ? id : null;
-        if (!column.IsEmpty && destination is null)
-        {
-            _deleteError = "Choose the column its work items should move to.";
-            return;
-        }
-
         var destinationName = _view!.Columns.FirstOrDefault(c => c.Id == destination)?.Name;
         var error = await RunAsync(version => Columns.DeleteAsync(ProjectKey, column.Id, destination, version, CancellationToken.None),
             destinationName is null || column.IsEmpty
                 ? $"Deleted the column {column.Name}."
                 : $"Deleted the column {column.Name}; its work items moved to {destinationName}.");
-        if (error is null || error.Kind == ErrorKind.Conflict)
-        {
-            await _deleteDialog!.CloseAsync();
-            _deleting = null;
-        }
-        else
-        {
-            _deleteError = error.MessageFor("DestinationColumnId");
-        }
+        StateHasChanged(); // the dialog's click re-renders only the dialog
+        return error is { Kind: not ErrorKind.Conflict } ? error : null;
     }
 }

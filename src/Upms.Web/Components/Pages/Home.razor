@@ -1,6 +1,271 @@
 @page "/"
-@inject NavigationManager Navigation
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@using Upms.Domain.Projects
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Search
+@inject IMyTasksService MyWork
+@inject IProjectService Projects
+@inject IOrganizationAdminService Organization
+@inject IAccountService Accounts
+@inject ViewerToday ViewerToday
+@inject ViewerTimeZone ViewerTimeZone
+@inject TimeProvider Time
+@inject CreateWorkLauncher Launcher
+
+<PageTitle>Home · U-PMS</PageTitle>
+
+@* The first page after signing in: a greeting with what the person can do from here, their numbers (spaces, open work,
+   due soon, overdue, done this week), what is due first, their spaces, what is assigned to them, and their open work
+   by status and by space. Every number opens the list behind it. *@
+@if (_work is null || _spaces is null)
+{
+    <p aria-busy="true">Loading your home page…</p>
+}
+else
+{
+    <div class="home-page">
+        <div class="home-hero">
+            <div class="home-hello">
+                <h1>@Greeting, @FirstName</h1>
+                <p class="home-sub">
+                    <UserTypeBadge Type="_access.Type" />
+                    <span>@HelloText</span>
+                </p>
+            </div>
+            <div class="home-actions" role="group" aria-label="Quick actions">
+                @* One solid button, for the most common action (theme of 2026-10-28). *@
+                @if (CanCreateWork)
+                {
+                    <button type="button" class="btn btn-primary" @onclick="() => Launcher.Open()"><Icon Name="plus" /> Create work item</button>
+                }
+                @if (_access.Can(Rights.CreateSpaces))
+                {
+                    <a class="btn @(CanCreateWork ? "" : "btn-primary")" href="create-space" data-testid="home-create-space"><Icon Name="plus" /> Create space</a>
+                }
+                <a class="btn" href="search"><Icon Name="search" /> Search work</a>
+                @if (CanDownloadMis)
+                {
+                    <a class="btn" href="mis"><Icon Name="reports" /> MIS reports</a>
+                }
+            </div>
+        </div>
+
+        <section class="home-counts" aria-label="Your numbers" data-testid="home-counts">
+            @Count("spaces", _spaces.TotalCount, _spaces.TotalCount == 1 ? "space" : "spaces", _access.IsAdministrator ? "in the organization" : "you are part of", "spaces", "")
+            @Count("foryou", _work.Open, "assigned to you", "open work items", "for-you/assigned", "")
+            @Count("calendar", _work.DueSoon, "due soon", "in the next 7 days", Search(s => s with { Due = new DateRange(_today, _today.AddDays(7)) }), _work.DueSoon > 0 ? "is-warn" : "")
+            @Count("warning", _work.Overdue, "overdue", "past their due date", Search(s => s with { Due = new DateRange(null, _today.AddDays(-1)) }), _work.Overdue > 0 ? "is-danger" : "")
+            @Count("check-circle", _work.DoneLast7Days, "done", "in the last 7 days", SearchDone, "")
+        </section>
+
+        @if (_gates.Count > 0)
+        {
+            <section class="sum-card home-gates" aria-labelledby="home-gates-title" data-testid="home-gates">
+                <h2 id="home-gates-title">Waiting for your approval</h2>
+                <ul class="home-list">
+                    @foreach (var gate in _gates)
+                    {
+                        <li>
+                            <TypeIcon Type="WorkItemType.Stage" />
+                            <span class="home-item">
+                                <a href="spaces/@gate.ProjectKey/stages?stage=@gate.StageKey"><span class="key">@gate.StageKey</span> @gate.StageTitle gate</a>
+                                <span class="home-meta">@gate.ProjectName · asked by @gate.RequestedBy</span>
+                            </span>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <div class="sum-grid home-grid">
+            <section class="sum-card" aria-labelledby="home-due-title" data-testid="home-due-soon">
+                <h2 id="home-due-title">Due soon</h2>
+                <p class="sum-sub">Your open work that is overdue or due in the next 7 days.</p>
+                @if (_work.Upcoming.Count == 0)
+                {
+                    <p class="sum-empty">Nothing is due in the next 7 days.</p>
+                }
+                else
+                {
+                    @Items(_work.Upcoming)
+                }
+            </section>
+
+            <section class="sum-card" aria-labelledby="home-spaces-title" data-testid="home-spaces">
+                <h2 id="home-spaces-title">Your spaces</h2>
+                <p class="sum-sub">@(_access.IsAdministrator ? "Every space in the organization." : "The spaces you are part of.") <a href="spaces">View all spaces</a></p>
+                @if (_spaces.TotalCount == 0)
+                {
+                    <div class="home-empty">
+                        <p>@(_access.Can(Rights.CreateSpaces) ? "You are not in any space yet. Create the first one for your team." : "You are not in any space yet. A Space admin adds you to one.")</p>
+                        @if (_access.Can(Rights.CreateSpaces))
+                        {
+                            <a class="btn btn-primary" href="create-space"><Icon Name="plus" /> Create space</a>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <ul class="home-list">
+                        @foreach (var space in _spaces.Items)
+                        {
+                            <li>
+                                <span class="space-icon space-icon-@ProjectHeader.SpaceColor(space.Key)" aria-hidden="true">@space.Key[..1]</span>
+                                <span class="home-item">
+                                    <a href="spaces/@space.Key/board"><strong>@space.Name</strong></a>
+                                    <span class="home-meta">@space.Key · @ProjectHeader.TemplateName(space.Template) · @(space.MyRole is { } role ? role.DisplayName() : "Admin access")</span>
+                                </span>
+                                <span class="home-number" title="Open work items">@N(space.OpenItemCount) <span class="hint">open</span></span>
+                            </li>
+                        }
+                    </ul>
+                    @if (_spaces.TotalCount > _spaces.Items.Count)
+                    {
+                        <a class="home-more" href="spaces">All @N(_spaces.TotalCount) spaces</a>
+                    }
+                }
+            </section>
+
+            <section class="sum-card" aria-labelledby="home-assigned-title" data-testid="home-assigned">
+                <h2 id="home-assigned-title">Assigned to you</h2>
+                <p class="sum-sub">Your open work, the earliest due first. <a href="for-you/assigned">View all</a></p>
+                @if (_work.Assigned.Count == 0)
+                {
+                    <p class="sum-empty">Nothing is assigned to you.</p>
+                }
+                else
+                {
+                    @Items(_work.Assigned)
+                }
+            </section>
+
+            <section class="sum-card" aria-labelledby="home-glance-title" data-testid="home-at-a-glance">
+                <h2 id="home-glance-title">Your work at a glance</h2>
+                <p class="sum-sub">Your open work by status and by space.</p>
+                @if (_work.Open == 0)
+                {
+                    <p class="sum-empty">No open work assigned to you.</p>
+                }
+                else
+                {
+                    <div class="home-glance">
+                        <DonutChart Slices="StatusSlices" Caption="Open" Compact="true" />
+                        <table class="dist-table">
+                            <caption class="sr-only">Your open work items per space, with their share of all your open work</caption>
+                            <thead><tr><th scope="col">Space</th><th scope="col">Your open work</th></tr></thead>
+                            <tbody>
+                                @foreach (var space in _work.BySpace)
+                                {
+                                    <tr>
+                                        <th scope="row"><a href="@Search(s => s with { Projects = [space.ProjectKey] })">@space.ProjectName</a></th>
+                                        <td>@Distribution(space.Open, _work.Open)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        </div>
+    </div>
+}
 
 @code {
-    protected override void OnInitialized() => Navigation.NavigateTo("projects");
+    private static readonly IReadOnlyList<StatusCategory> Open = [StatusCategory.ToDo, StatusCategory.InProgress];
+    private MyWorkSummary? _work;
+    private Page<ProjectSummary>? _spaces;
+    private IReadOnlyList<WaitingGateRow> _gates = [];
+    private MyAccess _access = MyAccess.None;
+    private string _name = "";
+    private DateOnly _today;
+    private int _hour;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = await ViewerToday.GetAsync();
+        _hour = TimeZoneInfo.ConvertTime(Time.GetUtcNow(), await ViewerTimeZone.GetAsync()).Hour;
+        _access = await Organization.MyAccessAsync(CancellationToken.None);
+        _name = (await Accounts.GetProfileAsync(CancellationToken.None)).Value?.DisplayName ?? "";
+        _spaces = (await Projects.ListAsync(new PageRequest(1, 6), CancellationToken.None)).Value ?? Page<ProjectSummary>.Empty(PageRequest.First);
+        _gates = (await MyWork.ListGatesAsync(CancellationToken.None)).Value ?? [];
+        _work = (await MyWork.SummaryAsync(_today, CancellationToken.None)).Value ?? MyWorkSummary.Empty;
+    }
+
+    private string Greeting => _hour switch
+    {
+        < 12 => "Good morning",
+        < 17 => "Good afternoon",
+        _ => "Good evening",
+    };
+
+    private string FirstName => _name.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "there";
+
+    private string HelloText => _spaces!.TotalCount switch
+    {
+        0 => "Welcome to U-PMS.",
+        1 => "Here is your work in 1 space.",
+        var n => $"Here is your work across {n} spaces.",
+    };
+
+    private bool CanCreateWork => _spaces is { TotalCount: > 0 } && _access.Can(Rights.EditWork);
+
+    private bool CanDownloadMis => _access.Can(Rights.DownloadSpaceMis) || _access.Can(Rights.DownloadPortfolioMis)
+        || _access.Can(Rights.DownloadDepartmentMis) || _access.Can(Rights.DownloadAllMis);
+
+    /// <summary>The search page with the viewer's own open work and another filter.</summary>
+    private string Search(Func<SearchState, SearchState> filter) =>
+        "search?" + filter(SearchState.Default with { Me = true, Categories = Open }).ToQueryString();
+
+    private string SearchDone => "search?" + (SearchState.Default with { Me = true, Resolved = new DateRange(_today.AddDays(-6), _today) }).ToQueryString();
+
+    private List<DonutChart.Slice> StatusSlices =>
+    [
+        // The theme's status colours: to do slate, in progress blue.
+        new("To do", _work!.ToDo, "#8996a6", Search(s => s with { Categories = [StatusCategory.ToDo] })),
+        new("In progress", _work.InProgress, "#1d5fb4", Search(s => s with { Categories = [StatusCategory.InProgress] })),
+    ];
+
+    private static RenderFragment Count(string icon, int count, string what, string when, string href, string tone) => __builder =>
+    {
+        <a class="sum-count home-count @tone" href="@href">
+            <span class="home-count-top"><b>@N(count)</b> <span class="sum-count-icon"><Icon Name="@icon" Size="16" /></span></span>
+            <span class="home-count-what">@what</span> <span class="home-count-when">@when</span>
+        </a>
+    };
+
+    /// <summary>A count as people read it: "1,285".</summary>
+    private static string N(int count) => count.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
+
+    private RenderFragment Items(IReadOnlyList<MyTaskRow> items) => __builder =>
+    {
+        <ul class="home-list home-work">
+            @foreach (var item in items)
+            {
+                <li>
+                    <TypeIcon Type="item.Type" />
+                    <span class="home-item">
+                        <a href="spaces/@item.ProjectKey/board?task=@item.Key"><span class="key">@item.Key</span> @item.Title</a>
+                        <span class="home-meta">@item.ProjectName</span>
+                    </span>
+                    <DueDateText Due="item.DueDate" IsOpen="true" Today="_today" />
+                    <span class="lozenge-status st-@CategoryClass(item.Status.Category)" title="@item.Status.Name">@item.Status.Name</span>
+                </li>
+            }
+        </ul>
+    };
+
+    private static RenderFragment Distribution(int count, int total) => __builder =>
+    {
+        var share = total == 0 ? 0 : (int)Math.Round(100.0 * count / total, MidpointRounding.AwayFromZero);
+        <span class="dist-bar"><span class="dist-fill" style="width: @share%"><span class="dist-text">@count</span></span></span>
+        <span class="sr-only">, @share% of your open work</span>
+    };
+
+    private static string CategoryClass(StatusCategory category) => category switch
+    {
+        StatusCategory.Done => "done",
+        StatusCategory.InProgress => "inprogress",
+        _ => "todo",
+    };
 }

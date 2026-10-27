@@ -25,7 +25,7 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
     {
         var page = await NewPageAsync();
 
-        await page.GotoAsync("/projects");
+        await page.GotoAsync("/spaces");
 
         await Assertions.Expect(page).ToHaveURLAsync(LoginUrl());
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Sign in" })).ToBeVisibleAsync();
@@ -37,7 +37,7 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         var temporary = await App.CreateUserAsync("ines", "Ines Qureshi", mustChangePassword: true);
 
         var page = await SignInAsync("ines", temporary);
-        await page.GotoAsync("/projects");
+        await page.GotoAsync("/spaces");
 
         await Assertions.Expect(page).ToHaveURLAsync(ChangePasswordUrl());
     }
@@ -50,9 +50,10 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         var page = await SignInAsync("amina", aminaPassword);
 
         // US1_AS3: create "Website Revamp"; the key is suggested, then changed to WEB.
-        await GotoAsync(page, "/projects");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(page, "/spaces");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync("Website Revamp");
         await Assertions.Expect(dialog.GetByLabel("Key")).ToHaveValueAsync("WR");
         // The suggested key appears first; typing over it before it arrives would mix the two.
@@ -60,7 +61,7 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         await dialog.GetByLabel("Key").FillAsync("WEB");
         await dialog.GetByLabel("Description (optional)").FillAsync("The new public website");
         await page.AssertNoAccessibilityViolationsAsync();
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
 
         await Assertions.Expect(page).ToHaveURLAsync(BoardUrl());
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Website Revamp" })).ToBeVisibleAsync();
@@ -86,7 +87,7 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         await Assertions.Expect(Titles(page, 0)).ToHaveTextAsync(["Plan the launch", "Write the copy", "Pick the colours"]);
 
         // US1_AS8: move a card with the keyboard only.
-        var moveButton = page.GetByTestId("card-WEB-3").GetByRole(AriaRole.Button, new() { Name = "Move WEB-3 to…" });
+        var moveButton = page.GetByTestId("card-WEB-3").GetByRole(AriaRole.Button, new() { Name = "Actions for WEB-3" });
         await moveButton.FocusAsync();
         await page.Keyboard.PressAsync("Enter");
         var target = page.GetByTestId("card-WEB-3").GetByRole(AriaRole.Button, new() { Name = "Done: bottom" });
@@ -104,13 +105,13 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
         // Another member of the project sees the same board.
         await App.AddMemberAsync("WEB", "bilal");
         var bilal = await SignInAsync("bilal", bilalPassword);
-        await GotoAsync(bilal, "/projects/WEB/board");
+        await GotoAsync(bilal, "/spaces/WEB/board");
         await Assertions.Expect(Titles(bilal, 0)).ToHaveTextAsync(["Plan the launch", "Write the copy"]);
         await Assertions.Expect(Titles(bilal, 1)).ToHaveTextAsync(["Design the home page"]);
         await Assertions.Expect(Titles(bilal, 2)).ToHaveTextAsync(["Set up hosting", "Pick the colours"]);
 
-        await GotoAsync(bilal, "/projects");
-        await Assertions.Expect(bilal.GetByRole(AriaRole.Link, new() { Name = "Website Revamp" })).ToBeVisibleAsync();
+        await GotoAsync(bilal, "/spaces");
+        await Assertions.Expect(bilal.Locator("main").GetByRole(AriaRole.Link, new() { Name = "Website Revamp" })).ToBeVisibleAsync();
         await bilal.AssertNoAccessibilityViolationsAsync();
     }
 
@@ -119,24 +120,26 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
     {
         var password = await App.CreateUserAsync("jamal", "Jamal Siddiqui");
         var page = await SignInAsync("jamal", password);
-        await GotoAsync(page, "/projects");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(page, "/spaces");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync("Payroll");
         await Assertions.Expect(dialog.GetByLabel("Key")).ToHaveValueAsync("PAY");
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
         await Assertions.Expect(page).ToHaveURLAsync(PayBoardUrl());
 
-        await GotoAsync(page, "/projects");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(page, "/spaces");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         dialog = page.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync("Payments");
         // The suggested key appears first; typing over it before it arrives would mix the two.
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("PAY");
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
 
-        await Assertions.Expect(dialog.GetByText("The key PAY is already used by another project.")).ToBeVisibleAsync();
+        await Assertions.Expect(dialog.GetByText("The key PAY is already used by another space.")).ToBeVisibleAsync();
         await Assertions.Expect(dialog.GetByLabel("Name")).ToHaveValueAsync("Payments");
         await Assertions.Expect(dialog.GetByLabel("Key")).ToHaveValueAsync("PAY");
     }
@@ -147,9 +150,9 @@ public sealed partial class US1_KanbanBoardTests(AppFixture app) : BrowserTest(a
     [GeneratedRegex("/Account/ChangePassword")]
     private static partial Regex ChangePasswordUrl();
 
-    [GeneratedRegex("/projects/WEB/board$")]
+    [GeneratedRegex("/spaces/WEB/board$")]
     private static partial Regex BoardUrl();
 
-    [GeneratedRegex("/projects/PAY/board$")]
+    [GeneratedRegex("/spaces/PAY/board$")]
     private static partial Regex PayBoardUrl();
 }

@@ -1,0 +1,323 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@implements IAsyncDisposable
+@inject IAttachmentService Attachments
+@inject IJSRuntime JS
+@inject TimeProvider Time
+@* The drawer's files (Phase 4 FR-023–FR-029; research R13, R25). "Attach files" is the keyboard alternative to dropping
+   files on the drawer; uploads, checks and refusals are announced; files being checked refresh until they are done. *@
+<section class="drawer-section attachments" aria-labelledby="attachments-title" data-testid="attachments">
+    <div class="section-head">
+        <h3 id="attachments-title" class="section-title">Attachments <span class="hint">(@_items.Count)</span></h3>
+        @if (CanAttach)
+        {
+            <button type="button" class="btn btn-ghost btn-sm" data-testid="attach-files" disabled="@_uploading" @onclick="ChooseAsync">Attach files</button>
+            <input type="file" multiple hidden tabindex="-1" aria-hidden="true" @ref="_input" />
+        }
+    </div>
+    @if (CanAttach)
+    {
+        <p class="hint attach-hint">Drop files on the task, or use Attach files. Up to 25 MB each.</p>
+    }
+    <span class="sr-only" role="status">@_status</span>
+    @if (_error is not null)
+    {
+        <p class="error-text" role="alert">@_error</p>
+    }
+    @if (_items.Count > 0)
+    {
+        <ul class="attachment-list">
+            @foreach (var file in _items)
+            {
+                <li @key="file.Id" class="attachment" data-testid="attachment">
+                    @if (file is { IsImage: true, Status: AttachmentCheckStatus.Passed })
+                    {
+                        <button type="button" class="attachment-thumb" aria-label="Enlarge @file.FileName" @onclick="() => Enlarge(file)">
+                            <img src="@Preview(file)" alt="" loading="lazy" />
+                        </button>
+                    }
+                    <div class="attachment-meta">
+                        <span class="attachment-name">@file.FileName</span>
+                        <span class="hint">@SizeText(file.Size) · @file.UploadedBy · <LocalTime Value="file.UploadedAt" /></span>
+                        @switch (file.Status)
+                        {
+                            case AttachmentCheckStatus.Checking:
+                                <span class="attachment-state">Being checked</span>
+                                break;
+                            case AttachmentCheckStatus.Blocked:
+                                <span class="attachment-state blocked">Blocked by the malware check</span>
+                                break;
+                        }
+                    </div>
+                    <div class="attachment-actions">
+                        @if (file.Status == AttachmentCheckStatus.Passed)
+                        {
+                            <a class="btn btn-ghost btn-sm" href="@($"attachments/{file.Id}")" download="@file.FileName" aria-label="Download @file.FileName">Download</a>
+                        }
+                        @if (_confirm is { } confirm && confirm.Id == file.Id)
+                        {
+                            <span class="confirm-text">@(confirm.Purge ? $"Delete {file.FileName} permanently? This can't be undone." : $"Remove {file.FileName}?")</span>
+                            <button type="button" class="btn btn-sm btn-danger" data-testid="@(confirm.Purge ? "confirm-purge" : "confirm-remove")"
+                                    disabled="@_busy" @onclick="() => ConfirmAsync(file)">@(confirm.Purge ? "Delete permanently" : "Remove")</button>
+                            <button type="button" class="btn btn-sm" @onclick="() => _confirm = null">Keep it</button>
+                        }
+                        else
+                        {
+                            @if (file.CanRemove)
+                            {
+                                <button type="button" class="btn btn-ghost btn-sm" aria-label="Remove @file.FileName" @onclick="() => _confirm = (file.Id, false)">Remove</button>
+                            }
+                            @if (file.CanPurge)
+                            {
+                                <button type="button" class="btn btn-ghost btn-sm btn-danger" aria-label="Delete @file.FileName permanently"
+                                        @onclick="() => _confirm = (file.Id, true)">Delete permanently</button>
+                            }
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+    else if (!CanAttach)
+    {
+        <p class="hint">No attachments.</p>
+    }
+    <ModalDialog @ref="_preview" Title="@(_enlarged?.FileName ?? "")" TestId="attachment-preview" Class="attachment-preview">
+        @if (_enlarged is { } shown)
+        {
+            <img src="@Preview(shown)" alt="@shown.FileName" />
+        }
+    </ModalDialog>
+</section>
+
+@code {
+    private static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(5);
+
+    private readonly CancellationTokenSource _stop = new();
+    private List<AttachmentView> _items = [];
+    private IReadOnlyList<AttachmentView>? _initial;
+    private ElementReference _input;
+    private DotNetObjectReference<AttachmentsSection>? _self;
+    private ModalDialog? _preview;
+    private AttachmentView? _enlarged;
+    private (long Id, bool Purge)? _confirm;
+    private string? _status;
+    private string? _error;
+    private bool _busy;
+    private bool _uploading;
+    private bool _refreshing;
+
+    [Parameter, EditorRequired]
+    public string WorkItemKey { get; set; } = "";
+
+    /// <summary>The files loaded with the item's details.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<AttachmentView> Initial { get; set; } = [];
+
+    /// <summary>Members, Project Admins and administrators: the caller may attach files.</summary>
+    [Parameter]
+    public bool CanAttach { get; set; }
+
+    /// <summary>The list changed: a file was attached, checked, removed or deleted (the drawer's history and images).</summary>
+    [Parameter]
+    public EventCallback<IReadOnlyList<AttachmentView>> OnChanged { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(Initial, _initial))
+        {
+            _initial = Initial;
+            _items = Initial.ToList();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        if (CanAttach)
+        {
+            _self = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("upms.attachments.init", _input, _self);
+        }
+
+        StartRefreshing();
+    }
+
+    /// <summary>A file from the chooser or a drop, one at a time (research R13). Files over 25 MB are refused before they are
+    /// sent.</summary>
+    [JSInvokable]
+    public async Task UploadAsync(string fileName, long size, IJSStreamReference content)
+    {
+        await using (content)
+        {
+            _uploading = true;
+            _error = null;
+            _status = $"Attaching {fileName}…";
+            StateHasChanged();
+            try
+            {
+                if (AttachmentRules.CheckSize(size) is { Code: AttachmentRules.FileTooLargeCode } tooLarge)
+                {
+                    _error = $"{fileName}: {tooLarge.Message}";
+                    _status = null;
+                    return;
+                }
+
+                await using var stream = await content.OpenReadStreamAsync(AttachmentRules.MaxSize + 1, _stop.Token);
+                var added = await Attachments.AddAsync(WorkItemKey, fileName, size, stream, _stop.Token);
+                if (!added.IsSuccess)
+                {
+                    _error = $"{fileName}: {added.Error!.Message}";
+                    _status = null;
+                    return;
+                }
+
+                _items.Add(added.Value!);
+                _status = $"{added.Value!.FileName} attached. It is being checked for malware.";
+                await OnChanged.InvokeAsync(_items);
+                StartRefreshing();
+            }
+            finally
+            {
+                _uploading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    /// <summary>Reloads the list, for example after an image was pasted into the editor.</summary>
+    public async Task ReloadAsync()
+    {
+        await RefreshAsync();
+        StartRefreshing();
+        StateHasChanged();
+    }
+
+    /// <summary>The file chooser, from "Attach files" or from "Attach" under the title.</summary>
+    public async Task ChooseAsync() => await JS.InvokeVoidAsync("upms.attachments.choose", _input);
+
+    private void Enlarge(AttachmentView file)
+    {
+        _enlarged = file;
+        _preview?.Open();
+    }
+
+    private async Task ConfirmAsync(AttachmentView file)
+    {
+        if (_busy || _confirm is not { } confirm)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var done = confirm.Purge
+                ? await Attachments.PurgeAsync(file.Id, CancellationToken.None)
+                : await Attachments.RemoveAsync(file.Id, CancellationToken.None);
+            _confirm = null;
+            if (!done.IsSuccess)
+            {
+                _error = $"{file.FileName}: {done.Error!.Message}";
+                return;
+            }
+
+            _items.RemoveAll(a => a.Id == file.Id);
+            _status = confirm.Purge ? $"{file.FileName} deleted permanently." : $"{file.FileName} removed.";
+            await OnChanged.InvokeAsync(_items);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>While a file is being checked, the list refreshes every 5 seconds; it stops once none is.</summary>
+    private void StartRefreshing()
+    {
+        if (_refreshing || !_items.Any(a => a.Status == AttachmentCheckStatus.Checking))
+        {
+            return;
+        }
+
+        _refreshing = true;
+        _ = RefreshWhileCheckingAsync(_stop.Token);
+    }
+
+    private async Task RefreshWhileCheckingAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(RefreshEvery, Time);
+            while (_items.Any(a => a.Status == AttachmentCheckStatus.Checking) && await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The drawer closed.
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        var listed = await Attachments.ListAsync(WorkItemKey, _stop.Token);
+        if (!listed.IsSuccess)
+        {
+            return;
+        }
+
+        var before = _items.ToDictionary(a => a.Id, a => a.Status);
+        _items = listed.Value!.ToList();
+        foreach (var file in _items.Where(a => before.TryGetValue(a.Id, out var was) && was == AttachmentCheckStatus.Checking && a.Status != was))
+        {
+            _status = file.Status == AttachmentCheckStatus.Passed
+                ? $"{file.FileName} passed the malware check."
+                : $"{file.FileName} was blocked by the malware check.";
+        }
+
+        await OnChanged.InvokeAsync(_items);
+    }
+
+    private static string Preview(AttachmentView file) => $"attachments/{file.Id}/preview";
+
+    /// <summary>"1.5 KB", "2.0 MB" or "512 bytes".</summary>
+    public static string SizeText(long bytes) => bytes switch
+    {
+        < 1_024 => $"{bytes} bytes",
+        < 1_048_576 => $"{bytes / 1_024.0:0.0} KB",
+        _ => $"{bytes / 1_048_576.0:0.0} MB",
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        _stop.Cancel();
+        try
+        {
+            if (_self is not null)
+            {
+                await JS.InvokeVoidAsync("upms.attachments.dispose", _input);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is gone, and the page with it.
+        }
+
+        _self?.Dispose();
+        _stop.Dispose();
+    }
+}

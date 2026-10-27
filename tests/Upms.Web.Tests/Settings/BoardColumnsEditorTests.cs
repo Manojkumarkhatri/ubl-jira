@@ -228,6 +228,6 @@ public sealed class BoardColumnsEditorTests : BunitTestBase
 
         var cut = Render<BoardPage>(p => p.Add(x => x.Key, "WEB"));
 
-        Assert.DoesNotContain(cut.FindAll("a"), a => a.TextContent.Contains("Project settings", StringComparison.Ordinal));
+        Assert.DoesNotContain(cut.FindAll("a"), a => a.TextContent.Contains("Space settings", StringComparison.Ordinal));
     }
 }

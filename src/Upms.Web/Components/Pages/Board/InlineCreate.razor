@@ -1,5 +1,17 @@
+@using Upms.Domain.Work
 <div class="inline-create">
-    <label class="sr-only" for="@_id">What needs to be done? New task in @ColumnName</label>
+    @if (Types.Count > 1)
+    {
+        @* The type of the new item (Phase 3 FR-010); it stays chosen for the next one. *@
+        <label class="sr-only" for="@(_id)-type">Type of the new item</label>
+        <select id="@(_id)-type" class="select select-sm type-choice" value="@SelectedType" @onchange="TypeChanged">
+            @foreach (var type in Types)
+            {
+                <option value="@type">@WorkItemTypes.DisplayName(type)</option>
+            }
+        </select>
+    }
+    <label class="sr-only" for="@_id">What needs to be done? New @Noun in @ColumnName</label>
     <input id="@_id" class="input inline-input" type="text" placeholder="What needs to be done?" autocomplete="off"
            @ref="_input" @bind="_text" @bind:event="oninput" @onkeydown="OnKeyDownAsync"
            aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="@(_id)-error" />
@@ -15,13 +27,50 @@
     private string _text = "";
     private string? _error;
     private bool _busy;
+    private WorkItemType? _chosen;
 
     [Parameter, EditorRequired]
     public string ColumnName { get; set; } = "";
 
-    /// <summary>Creates the task; returns an error message, or null when the task was created.</summary>
+    /// <summary>The types the box can create; with more than one, a choice is shown (Phase 3 FR-010).</summary>
+    [Parameter]
+    public IReadOnlyList<WorkItemType> Types { get; set; } = [];
+
+    /// <summary>The type chosen at first: Story in Scrum projects, Task otherwise.</summary>
+    [Parameter]
+    public WorkItemType DefaultType { get; set; } = WorkItemType.Task;
+
+    /// <summary>Escape: the board closes the box again, as Jira's "+" does.</summary>
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    /// <summary>Puts the cursor in the box when it opens.</summary>
+    [Parameter]
+    public bool AutoFocus { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && AutoFocus)
+        {
+            await _input.FocusAsync();
+        }
+    }
+
+    /// <summary>Creates the item with its title and type; returns an error message, or null when it was created.</summary>
     [Parameter, EditorRequired]
-    public Func<string, Task<string?>> OnCreate { get; set; } = default!;
+    public Func<string, WorkItemType, Task<string?>> OnCreate { get; set; } = default!;
+
+    private WorkItemType SelectedType => _chosen is { } chosen && (Types.Count == 0 || Types.Contains(chosen)) ? chosen : DefaultType;
+
+    private string Noun => Types.Count > 1 ? "item" : WorkItemTypes.DisplayName(SelectedType).ToLowerInvariant();
+
+    private void TypeChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<WorkItemType>(e.Value?.ToString(), out var type))
+        {
+            _chosen = type;
+        }
+    }
 
     private async Task OnKeyDownAsync(KeyboardEventArgs e)
     {
@@ -29,6 +78,7 @@
         {
             _text = "";
             _error = null;
+            await OnCancel.InvokeAsync();
             return;
         }
 
@@ -46,7 +96,7 @@
         _busy = true;
         try
         {
-            _error = await OnCreate(title);
+            _error = await OnCreate(title, SelectedType);
             if (_error is null)
             {
                 _text = "";

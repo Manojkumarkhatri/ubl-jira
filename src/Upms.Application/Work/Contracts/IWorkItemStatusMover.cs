@@ -12,4 +12,8 @@ public interface IWorkItemStatusMover
     /// a "done" column marks them completed. The caller's next save commits the moves together with its own
     /// changes, in one transaction.</summary>
     Task MoveAllAsync(long fromStatusId, long toStatusId, string note, CancellationToken ct);
+
+    /// <summary>How many live items in the status belong to a locked stage: a column holding them can be deleted only
+    /// if they go to another "to do" column (Phase 3 FR-033).</summary>
+    Task<int> CountInLockedStagesAsync(long statusId, CancellationToken ct);
 }

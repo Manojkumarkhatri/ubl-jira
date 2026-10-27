@@ -1,0 +1,120 @@
+@page "/trash"
+@using Upms.Application.Projects
+@inject ISpaceTrashService Trash
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+
+<PageTitle>Trash · U-PMS</PageTitle>
+
+@* Jira's space trash (owner, 2026-10-26): deleted spaces wait here, with their work items, history and people, until an Admin
+   restores them. Nothing is erased. *@
+<div class="page-head">
+    <div>
+        <div class="crumbs"><a href="spaces">Spaces</a></div>
+        <h1>Trash</h1>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <EmptyState Title="Not available" Text="@_error" />
+}
+else if (_spaces is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else
+{
+    <p class="hint">Deleted spaces stay here with their work items and history. Restoring a space brings it back for its people.</p>
+    @if (_problem is not null)
+    {
+        <div class="alert alert-error" role="alert">@_problem</div>
+    }
+    @if (_spaces.Count == 0)
+    {
+        <EmptyState Title="The trash is empty" Text="Deleted spaces appear here." />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="tbl" data-testid="space-trash">
+                <caption class="sr-only">Spaces in the trash, newest first</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Space</th>
+                        <th scope="col">Key</th>
+                        <th scope="col" class="hide-sm">Work items</th>
+                        <th scope="col">Deleted</th>
+                        <th scope="col" class="hide-sm">By</th>
+                        <th scope="col"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var space in _spaces)
+                    {
+                        <tr @key="space.Key">
+                            <td><strong>@space.Name</strong></td>
+                            <td>@space.Key</td>
+                            <td class="hide-sm">@space.ItemCount</td>
+                            <td><LocalTime Value="space.DeletedAt" /></td>
+                            <td class="hide-sm">@space.DeletedByName</td>
+                            <td class="actions">
+                                <button type="button" class="btn btn-sm" disabled="@_busy" aria-label="Restore @space.Name"
+                                        @onclick="() => RestoreAsync(space)"><Icon Name="refresh" Size="14" /> Restore</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private IReadOnlyList<TrashedSpace>? _spaces;
+    private string? _error;
+    private string? _problem;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await Trash.ListAsync(CancellationToken.None);
+        if (result.IsSuccess)
+        {
+            _spaces = result.Value!;
+        }
+        else
+        {
+            _error = result.Error!.Message;
+        }
+    }
+
+    private async Task RestoreAsync(TrashedSpace space)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _problem = null;
+        try
+        {
+            var result = await Trash.RestoreAsync(space.Key, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _problem = result.Error!.Message;
+                return;
+            }
+
+            Announcer.Announce($"{space.Name} restored.");
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

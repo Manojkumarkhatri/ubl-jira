@@ -1,0 +1,35 @@
+@page "/create-space"
+@layout FocusLayout
+
+<PageTitle>Create space · U-PMS</PageTitle>
+
+@* "Create space" opens Jira's template gallery: a full page of template cards; choosing one names the space. *@
+<div class="gallery-backdrop">
+    <div class="gallery-page">
+        <a class="gallery-close icon-btn" href="spaces" aria-label="Close" title="Close">
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.6" fill="none" /></svg>
+        </a>
+        <h1 class="sr-only">Create space</h1>
+        <section class="gallery-section" aria-labelledby="made-for-you">
+            <p class="gallery-eyebrow" aria-hidden="true"><AppLogo Size="20" /> Create a space</p>
+            <h2 id="made-for-you">Made for you</h2>
+            <p class="gallery-lead">Templates for you based on how similar teams work. You can change columns and work types later.</p>
+            <ul class="gallery-grid">
+                @foreach (var template in SpaceTemplates.All)
+                {
+                    <li>
+                        <a class="gallery-card" href="create-space/@template.Slug" data-testid="template-@template.Slug">
+                            <span class="gallery-art"><TemplateArt Kind="@template.Slug" /></span>
+                            <span class="gallery-name">@template.Name</span>
+                            <span class="gallery-text">@template.Description</span>
+                            <span class="gallery-foot">
+                                <span class="gallery-product"><AppLogo Size="18" /> U-PMS</span>
+                                <span class="gallery-use" aria-hidden="true">Use template <Icon Name="arrow-right" Size="14" /></span>
+                            </span>
+                        </a>
+                    </li>
+                }
+            </ul>
+        </section>
+    </div>
+</div>

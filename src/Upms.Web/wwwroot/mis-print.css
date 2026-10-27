@@ -1,0 +1,43 @@
+/* The printable MIS (owner's decision of 2026-10-20): A4 landscape, saved as PDF from the print dialog. */
+@page { size: A4 landscape; margin: 12mm; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; font: 12px/1.45 "Segoe UI", Arial, Helvetica, sans-serif; color: #13233a; background: #fff; }
+.muted { color: #626f86; }
+.mis-head { border-bottom: 2px solid #1d5fb4; padding-bottom: 10px; margin-bottom: 16px; }
+.brand { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #0e2643; }
+.mark { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #0e2643; color: #fff; font-size: 13px; }
+h1 { font-size: 22px; margin: 6px 0 2px; }
+h2 { font-size: 15px; margin: 18px 0 8px; }
+.count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px; background: #e8f0fa; color: #1a55a3; font-size: 11px; text-align: center; }
+.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.tile { border: 1px solid #dcdfe4; border-radius: 8px; padding: 10px 12px; }
+.tile .label { color: #44546f; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.tile .value { font-size: 24px; font-weight: 600; margin: 2px 0; }
+.tile .note { color: #626f86; font-size: 11px; }
+.tile.bad .value { color: #ae2e24; }
+.health .bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: #f1f2f4; }
+.health .bar span { display: block; }
+.good { background: #22a06b; }
+.warn { background: #e2b203; }
+.bad { background: #e2483d; }
+.none { background: #c1c7d0; }
+.legend { margin: 6px 0 0; color: #44546f; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 2px 0 10px; }
+.legend .dot:first-child { margin-left: 0; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; color: #44546f; background: #f7f8f9; border-bottom: 1px solid #c1c7d0; padding: 6px 8px; }
+td { border-bottom: 1px solid #ebecf0; padding: 6px 8px; vertical-align: top; }
+tr { break-inside: avoid; }
+section { break-inside: auto; }
+h2 { break-after: avoid; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; }
+.pill.warn { color: #533f04; }
+.pill.none { color: #44546f; }
+.bad-text { color: #ae2e24; font-weight: 600; }
+.progress { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: #dcdfe4; vertical-align: middle; overflow: hidden; }
+.progress span { display: block; height: 100%; background: #22a06b; }
+footer { margin-top: 20px; font-size: 10px; border-top: 1px solid #dcdfe4; padding-top: 6px; }
+@media print {
+    body { padding: 0; }
+    .tile, th, .progress span, .bar span, .pill, .count, .mark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

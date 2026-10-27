@@ -12,7 +12,7 @@ public sealed partial class P2_US3_ListViewTests(AppFixture app) : BrowserTest(a
     private static Task<string[]> KeysAsync(IPage page) =>
         page.GetByTestId("list-row").EvaluateAllAsync<string[]>("rows => rows.map(r => r.dataset.key)");
 
-    [GeneratedRegex(@"/projects/CAT/list\?sort=due&due=overdue&assignee=none$")]
+    [GeneratedRegex(@"/spaces/CAT/list\?sort=due&due=overdue&assignee=none$")]
     private static partial Regex SharedAddress();
 
     [Fact]
@@ -21,15 +21,16 @@ public sealed partial class P2_US3_ListViewTests(AppFixture app) : BrowserTest(a
         var ilyasPassword = await App.CreateUserAsync("ilyas", "Ilyas Butt");
         var junaidPassword = await App.CreateUserAsync("junaid", "Junaid Aslam");
         var ilyas = await SignInAsync("ilyas", ilyasPassword);
-        await GotoAsync(ilyas, "/projects");
-        await ilyas.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(ilyas, "/spaces");
+        await ilyas.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = ilyas.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync("Catalogue");
         // The suggested key appears first; typing over it before it arrives would mix the two.
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("CAT");
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await WaitForPathAsync(ilyas, "/projects/CAT/board");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
+        await WaitForPathAsync(ilyas, "/spaces/CAT/board");
         await App.AddMemberAsync("CAT", "junaid");
         // Due dates at least two days away from today, so the result is the same in every viewer's time zone.
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -43,20 +44,20 @@ public sealed partial class P2_US3_ListViewTests(AppFixture app) : BrowserTest(a
         }, n == 20 ? "junaid" : null)));
 
         // P2_US3_AS1: the List view shows the first 50 tasks, newest first, with the total.
-        await GotoAsync(ilyas, "/projects/CAT/board");
+        await GotoAsync(ilyas, "/spaces/CAT/board");
         await ilyas.Locator("nav.project-nav").GetByRole(AriaRole.Link, new() { Name = "List" }).ClickAsync();
-        await WaitForPathAsync(ilyas, "/projects/CAT/list");
+        await WaitForPathAsync(ilyas, "/spaces/CAT/list");
         await WaitForInteractivityAsync(ilyas);
         var rows = ilyas.GetByTestId("list-row");
         await Assertions.Expect(rows).ToHaveCountAsync(50);
-        await Assertions.Expect(ilyas.GetByTestId("list-count")).ToHaveTextAsync("60 tasks");
+        await Assertions.Expect(ilyas.GetByTestId("list-count")).ToHaveTextAsync("60 items");
         await Assertions.Expect(rows.First).ToHaveAttributeAsync("data-key", "CAT-60");
 
         // P2_US3_AS6: a task added from the list starts in the first "to do" column.
         var box = ilyas.GetByPlaceholder("What needs to be done?");
         await box.FillAsync("Added from the list");
         await box.PressAsync("Enter");
-        await Assertions.Expect(ilyas.GetByTestId("list-count")).ToHaveTextAsync("61 tasks");
+        await Assertions.Expect(ilyas.GetByTestId("list-count")).ToHaveTextAsync("61 items");
         await Assertions.Expect(rows.First).ToHaveAttributeAsync("data-key", "CAT-61");
         await Assertions.Expect(rows.First).ToContainTextAsync("To Do");
 
@@ -94,7 +95,7 @@ public sealed partial class P2_US3_ListViewTests(AppFixture app) : BrowserTest(a
 
         // P2_US3_AS3: "Clear filters" shows every task again, still sorted by due date.
         await ilyas.GetByTestId("clear-filters").ClickAsync();
-        await Assertions.Expect(ilyas.GetByTestId("list-count")).ToHaveTextAsync("61 tasks");
+        await Assertions.Expect(ilyas.GetByTestId("list-count")).ToHaveTextAsync("61 items");
         await Assertions.Expect(ilyas.GetByTestId("filter-chip")).ToHaveCountAsync(0);
         Assert.Equal(["CAT-20", "CAT-5", "CAT-12", "CAT-30"], (await KeysAsync(ilyas)).Take(4));
 

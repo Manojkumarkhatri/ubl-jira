@@ -1,0 +1,148 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject ILabelService LabelService
+@* Labels chosen before an item exists (the Create form, Jira parity pass FR-004): chips with "Remove", and an "Add label"
+   combobox that suggests labels in use, like the drawer's labels section. Enter or a space adds what is typed. *@
+<div class="label-picker">
+    @if (Labels.Count > 0)
+    {
+        <ul class="label-list" aria-label="Chosen labels">
+            @foreach (var label in Labels)
+            {
+                <li @key="label" class="label-chip">
+                    @label
+                    <button type="button" class="chip-remove" aria-label="Remove label @label" @onclick="() => RemoveAsync(label)">×</button>
+                </li>
+            }
+        </ul>
+    }
+    <div class="label-add">
+        <input id="@Id" class="input input-sm" type="text" role="combobox" autocomplete="off" spellcheck="false" maxlength="60"
+               placeholder="Add label" aria-autocomplete="list" aria-expanded="@(Open ? "true" : "false")" aria-controls="@($"{Id}-suggestions")"
+               aria-activedescendant="@ActiveId" aria-describedby="@($"{Id}-error")" aria-invalid="@(ShownError is null ? "false" : "true")"
+               @bind="_text" @bind:event="oninput" @bind:after="TypedAsync" @onkeydown="KeyDownAsync"
+               @onblur="() => _suggestions = []" />
+        @if (Open)
+        {
+            <ul id="@($"{Id}-suggestions")" class="label-suggestions" role="listbox" aria-label="Labels in use">
+                @for (var i = 0; i < _suggestions.Count; i++)
+                {
+                    var index = i;
+                    var suggestion = _suggestions[i];
+                    <li id="@OptionId(index)" role="option" aria-selected="@(index == _active ? "true" : "false")"
+                        class="@(index == _active ? "is-active" : "")" @onmousedown="() => AddAsync(suggestion)" @onmousedown:preventDefault="true">@suggestion</li>
+                }
+            </ul>
+        }
+        <span id="@($"{Id}-error")" class="error-text" role="alert">@ShownError</span>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<string> _suggestions = [];
+    private string _text = "";
+    private int _active = -1;
+    private string? _error;
+
+    /// <summary>The input's id, for its label.</summary>
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = "";
+
+    /// <summary>The space whose labels in use are suggested.</summary>
+    [Parameter, EditorRequired]
+    public string SpaceKey { get; set; } = "";
+
+    [Parameter]
+    public IReadOnlyList<string> Labels { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<IReadOnlyList<string>> LabelsChanged { get; set; }
+
+    /// <summary>A refusal from the server, shown until the labels change.</summary>
+    [Parameter]
+    public string? Error { get; set; }
+
+    private string? ShownError => _error ?? Error;
+
+    private bool Open => _suggestions.Count > 0;
+
+    private string? ActiveId => Open && _active >= 0 ? OptionId(_active) : null;
+
+    private string OptionId(int index) => $"{Id}-option-{index}";
+
+    private async Task TypedAsync()
+    {
+        var text = _text;
+        _error = null;
+        if (text.Length > 0 && char.IsWhiteSpace(text[^1]) && text.Trim().Length > 0)
+        {
+            _text = "";
+            await AddAsync(text.Trim());
+            return;
+        }
+
+        _active = -1;
+        var term = text.Trim();
+        IReadOnlyList<string> found = [];
+        if (term.Length > 0 && await LabelService.SuggestAsync(SpaceKey, term, CancellationToken.None) is { IsSuccess: true } suggested)
+        {
+            found = suggested.Value!;
+        }
+
+        if (_text == text)
+        {
+            _suggestions = found.Where(s => !Labels.Contains(s, StringComparer.OrdinalIgnoreCase)).ToList();
+        }
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when Open:
+                _active = (_active + 1) % _suggestions.Count;
+                break;
+            case "ArrowUp" when Open:
+                _active = _active <= 0 ? _suggestions.Count - 1 : _active - 1;
+                break;
+            case "Escape" when Open:
+                _suggestions = [];
+                _active = -1;
+                break;
+            case "Enter":
+                var chosen = Open && _active >= 0 ? _suggestions[_active] : _text.Trim();
+                if (chosen.Length > 0)
+                {
+                    await AddAsync(chosen);
+                }
+
+                break;
+        }
+    }
+
+    private async Task AddAsync(string label)
+    {
+        if (Labels.Contains(label, StringComparer.OrdinalIgnoreCase))
+        {
+            _text = "";
+            _suggestions = [];
+            return;
+        }
+
+        // The same rules as on an item, checked here so the person sees them at once (Phase 4 FR-042).
+        if ((Label.Check(label) ?? Label.CheckRoom(Labels.Count)) is { } refused)
+        {
+            _error = refused.Message;
+            _text = label;
+            return;
+        }
+
+        _text = "";
+        _suggestions = [];
+        _active = -1;
+        await LabelsChanged.InvokeAsync([.. Labels, label]);
+    }
+
+    private Task RemoveAsync(string label) =>
+        LabelsChanged.InvokeAsync(Labels.Where(l => !l.Equals(label, StringComparison.OrdinalIgnoreCase)).ToList());
+}

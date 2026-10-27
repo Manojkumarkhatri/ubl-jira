@@ -1,0 +1,375 @@
+@page "/spaces/{Key}/backlog"
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Board
+@using Upms.Web.Components.Pages.Drawer
+@inject IBacklogService Backlog
+@inject ISprintService Sprints
+@inject IWorkItemService Items
+@inject ViewerToday ViewerToday
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject CreateWorkLauncher Launcher
+@implements IDisposable
+
+<PageTitle>@(_view?.ProjectName ?? Key) · Backlog · U-PMS</PageTitle>
+
+@* The Backlog view of a Scrum project (Phase 3 FR-021–FR-026, FR-028): the active sprint, the planned sprints, then the
+   backlog, all in the one order the board uses. Rows are dragged, or moved with their Move menu. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_view is null)
+{
+    <p aria-busy="true">Loading the backlog…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.Backlog" Template="ProjectTemplate.Scrum"
+                   CanManage="_view.CanManageSprints" CanRestoreDeleted="_view.CanRestoreDeleted">
+        @if (_view.CanManageSprints)
+        {
+            <button type="button" class="btn" data-testid="create-sprint" disabled="@_busy" @onclick="CreateSprintAsync">Create sprint</button>
+        }
+    </ProjectHeader>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">
+            @_error
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _error = null">Dismiss</button>
+        </div>
+    }
+
+    @if (_view.Active is null && _view.Planned.Count == 0)
+    {
+        <EmptyState Title="No sprints yet"
+                    Text="@(_view.CanManageSprints ? "Create a sprint, then move the top of the backlog into it." : "A Project Admin plans the sprints. The backlog below is in priority order.")" />
+    }
+
+    @foreach (var sprint in OpenSprints)
+    {
+        var target = (BacklogTarget)new BacklogTarget.Sprint(sprint.Id);
+        <section class="sprint-section @(sprint.State == SprintState.Active ? "active" : "")" data-testid="sprint-section" data-sprint="@sprint.Id"
+                 aria-labelledby="sprint-@sprint.Id-title" @key="sprint.Id">
+            <SprintHeader Sprint="sprint" Today="_today" CanManage="_view.CanManageSprints"
+                          OnEdit="s => _dialogs!.OpenEdit(s)" OnStart="s => _dialogs!.OpenStart(s, _today)"
+                          OnComplete="OpenComplete" OnDelete="s => _dialogs!.OpenDelete(s)" />
+            @if (sprint.Items.Count == 0)
+            {
+                <p class="hint empty-list">No items yet. @(_view.CanContribute ? "Drag items here, or use their Move menu." : "")</p>
+            }
+            <ol class="backlog-list" aria-label="Items in @sprint.Name">
+                @foreach (var row in sprint.Items)
+                {
+                    <BacklogItem @key="row.Key" Row="row" ProjectKey="@Key" CurrentList="target" Lists="Lists" CanContribute="_view.CanContribute"
+                                 IsDragging="@(_dragging?.Row.Key == row.Key)" OnDragStart="r => _dragging = (r, target)" OnDragEnd="() => _dragging = null"
+                                 OnDropBefore="r => DropBeforeAsync(r, target)" OnMove="MoveAsync" />
+                }
+            </ol>
+            <DropEnd Visible="_view.CanContribute" Dragging="_dragging is not null" OnDrop="() => DropAtEndAsync(target)" />
+        </section>
+    }
+
+    <section class="sprint-section backlog-section" data-testid="backlog-section" aria-labelledby="backlog-title">
+        <div class="sprint-head">
+            <h2 id="backlog-title">Backlog</h2>
+            <span class="hint" data-testid="backlog-count">@SprintHeader.ItemCount(_view.Backlog.TotalCount)</span>
+        </div>
+        @if (_backlogRows.Count == 0)
+        {
+            <p class="hint empty-list">The backlog is empty.@(_view.CanContribute ? " Add work with “What needs to be done?”." : "")</p>
+        }
+        <ol class="backlog-list" aria-label="Items in the backlog">
+            @foreach (var row in _backlogRows)
+            {
+                <BacklogItem @key="row.Key" Row="row" ProjectKey="@Key" CurrentList="BacklogTarget.ToBacklog" Lists="Lists" CanContribute="_view.CanContribute"
+                             IsDragging="@(_dragging?.Row.Key == row.Key)" OnDragStart="r => _dragging = (r, BacklogTarget.ToBacklog)" OnDragEnd="() => _dragging = null"
+                             OnDropBefore="r => DropBeforeAsync(r, BacklogTarget.ToBacklog)" OnMove="MoveAsync" />
+            }
+        </ol>
+        @if (_backlogRows.Count < _view.Backlog.TotalCount)
+        {
+            <button type="button" class="btn btn-sm btn-ghost show-more" data-testid="show-more" disabled="@_busy" @onclick="ShowMoreAsync">
+                Show more (@(_view.Backlog.TotalCount - _backlogRows.Count) more)
+            </button>
+        }
+        <DropEnd Visible="_view.CanContribute" Dragging="_dragging is not null" OnDrop="() => DropAtEndAsync(BacklogTarget.ToBacklog)" />
+        @if (_view.CanContribute)
+        {
+            <div class="list-create">
+                <InlineCreate ColumnName="the backlog" Types="CardTypes" DefaultType="DefaultCardType" OnCreate="CreateAsync" />
+            </div>
+        }
+    </section>
+
+    @if (_view.Completed.Count > 0)
+    {
+        <section class="past-sprints" data-testid="past-sprints" aria-labelledby="past-sprints-title">
+            <h2 id="past-sprints-title">Past sprints</h2>
+            <ul>
+                @foreach (var past in _view.Completed)
+                {
+                    <li><a href="spaces/@Key/sprints/@past.Number">@past.Name</a>@(past.EndDate is { } end ? $" · ended {end.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)}" : "")</li>
+                }
+            </ul>
+        </section>
+    }
+
+    <SprintDialogs @ref="_dialogs" OnDone="SprintChangedAsync" />
+
+    @if (!string.IsNullOrEmpty(TaskKey))
+    {
+        <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+    }
+}
+
+@code {
+    // The stories, tasks and bugs the space has turned on (Jira parity pass FR-017).
+    private IReadOnlyList<WorkItemType> CardTypes => new[] { WorkItemType.Story, WorkItemType.Task, WorkItemType.Bug }
+        .Where(t => _view is null || _view.WorkTypes.HasFlag(WorkTypeSets.FlagOf(t)))
+        .ToList();
+
+    private WorkItemType DefaultCardType => CardTypes.Contains(WorkItemType.Story) ? WorkItemType.Story : CardTypes[0];
+    private BacklogView? _view;
+    private List<BacklogRow> _backlogRows = [];
+    private int _backlogPage = 1;
+    private bool _notFound;
+    private string? _error;
+    private bool _busy;
+    private DateOnly _today;
+    private (BacklogRow Row, BacklogTarget From)? _dragging;
+    private string? _focusMoveKey;
+    private string? _focusRowKey;
+    private string? _loadedKey;
+    private SprintDialogs? _dialogs;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary><c>?task={KEY-N}</c> opens the item's details drawer over the backlog.</summary>
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    private IEnumerable<SprintSection> OpenSprints => new[] { _view!.Active }.OfType<SprintSection>().Concat(_view.Planned);
+
+    /// <summary>Every list a card can go to, as the Move menu names them.</summary>
+    private IReadOnlyList<(string Name, BacklogTarget Target)> Lists =>
+        [.. OpenSprints.Select(s => (s.Name, (BacklogTarget)new BacklogTarget.Sprint(s.Id))), ("backlog", BacklogTarget.ToBacklog)];
+
+    // Opening or closing the drawer changes only ?task: the backlog is not read again.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedKey != Key)
+        {
+            _loadedKey = Key;
+            _today = await ViewerToday.GetAsync();
+            await LoadAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (_focusMoveKey is { } moved)
+            {
+                // After a move, focus stays on the moved row (contracts/ui-routes.md, "Keyboard").
+                _focusMoveKey = null;
+                await JS.InvokeVoidAsync("upms.focusById", $"move-{moved}");
+            }
+            else if (_focusRowKey is { } key && string.IsNullOrEmpty(TaskKey))
+            {
+                _focusRowKey = null;
+                await JS.InvokeVoidAsync("upms.focusByIdIfLost", $"move-{key}");
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    /// <summary>Reads the sprints and the first page of the backlog again.</summary>
+    private async Task LoadAsync()
+    {
+        var result = await Backlog.GetAsync(Key, PageRequest.First, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            // Someone removed from the team meanwhile, or a project with no backlog, sees "not found" (Phase 2 FR-011).
+            _view = null;
+            _notFound = result.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
+            _error = _notFound ? null : result.Error.Message;
+            return;
+        }
+
+        _notFound = false;
+        _view = result.Value!;
+        _backlogRows = [.. _view.Backlog.Items];
+        _backlogPage = 1;
+    }
+
+    private async Task ShowMoreAsync()
+    {
+        var result = await Backlog.GetAsync(Key, new PageRequest(_backlogPage + 1), CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        var known = _backlogRows.Select(r => r.Key).ToHashSet(StringComparer.Ordinal);
+        _backlogRows.AddRange(result.Value!.Backlog.Items.Where(r => !known.Contains(r.Key)));
+        _backlogPage = result.Value.Backlog.PageNumber;
+    }
+
+    private Task DropBeforeAsync(BacklogRow target, BacklogTarget list)
+    {
+        var dragged = _dragging;
+        _dragging = null;
+        return dragged is { } drag && drag.Row.Key != target.Key
+            ? MoveAsync((drag.Row, list, new BacklogPlacement.Before(target.Key)))
+            : Task.CompletedTask;
+    }
+
+    private Task DropAtEndAsync(BacklogTarget list)
+    {
+        var dragged = _dragging;
+        _dragging = null;
+        return dragged is { } drag ? MoveAsync((drag.Row, list, BacklogPlacement.AtBottom)) : Task.CompletedTask;
+    }
+
+    /// <summary>One move at a time; afterwards the row keeps the focus and its new place is announced.</summary>
+    private async Task MoveAsync((BacklogRow Row, BacklogTarget Target, BacklogPlacement Placement) move)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var sameList = ListOf(move.Row.Key) == move.Target;
+            var result = await Backlog.MoveAsync(move.Row.Key, move.Target, move.Placement, move.Row.Version, CancellationToken.None);
+            await LoadAsync();
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                Announcer.Announce(result.Error.Message);
+                return;
+            }
+
+            _focusMoveKey = move.Row.Key;
+            Announcer.Announce(PlaceOf(move.Row.Key, move.Target, sameList));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>"MOB-7 moved to MOB Sprint 2, position 3 of 6.", or "MOB-7 moved to position 1 of 8 in the backlog." when it
+    /// stayed in its list.</summary>
+    private string PlaceOf(string key, BacklogTarget target, bool sameList)
+    {
+        var (name, rows, total) = target is BacklogTarget.Sprint sprint && OpenSprints.FirstOrDefault(s => s.Id == sprint.SprintId) is { } section
+            ? (section.Name, section.Items, section.Items.Count)
+            : ("the backlog", (IReadOnlyList<BacklogRow>)_backlogRows, _view?.Backlog.TotalCount ?? 0);
+        var index = rows.ToList().FindIndex(r => r.Key == key);
+        return index < 0 ? $"{key} moved to {name}."
+            : sameList ? $"{key} moved to position {index + 1} of {total} in {name}."
+            : $"{key} moved to {name}, position {index + 1} of {total}.";
+    }
+
+    /// <summary>The list the row is in now: an open sprint, or the backlog.</summary>
+    private BacklogTarget ListOf(string key) =>
+        OpenSprints.FirstOrDefault(s => s.Items.Any(r => r.Key == key)) is { } section ? new BacklogTarget.Sprint(section.Id) : BacklogTarget.ToBacklog;
+
+    private void OpenComplete(SprintSection sprint)
+    {
+        var done = sprint.Items.Count(r => r.Status.Category == StatusCategory.Done);
+        _dialogs!.OpenComplete(sprint.Id, sprint.Name, sprint.Version, done, sprint.Items.Count - done,
+            _view!.Planned.Select(p => new SprintOption(p.Id, p.Name)).ToList());
+    }
+
+    private async Task CreateSprintAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Sprints.CreateAsync(Key, CancellationToken.None);
+            await LoadAsync();
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            Announcer.Announce($"Created {result.Value!.Name}.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SprintChangedAsync(string message)
+    {
+        await LoadAsync();
+        Announcer.Announce(message);
+    }
+
+    /// <summary>A story, task or bug at the bottom of the backlog (FR-021, FR-027).</summary>
+    private async Task<string?> CreateAsync(string title, WorkItemType type)
+    {
+        var result = await Items.CreateAsync(Key, new NewWorkItem(type, title), CancellationToken.None);
+        if (result.Error is { Kind: ErrorKind.NotFound or ErrorKind.Forbidden })
+        {
+            await LoadAsync();
+            StateHasChanged();
+            return result.Error.Message;
+        }
+
+        if (!result.IsSuccess)
+        {
+            return result.Error!.MessageFor("Title");
+        }
+
+        Announcer.Announce($"Created {result.Value!.Key}: {result.Value.Title}, at the bottom of the backlog.");
+        await LoadAsync();
+        // Called through a plain delegate from the input box, so re-render explicitly.
+        StateHasChanged();
+        return null;
+    }
+
+    private void CloseDrawer()
+    {
+        _focusRowKey = TaskKey;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
+    }
+
+    // An item made with the Create form in this space shows at once (Jira parity pass FR-001).
+    protected override void OnInitialized() => Launcher.Created += OnCreated;
+
+    private void OnCreated(string spaceKey, string itemKey)
+    {
+        if (string.Equals(spaceKey, Key, StringComparison.OrdinalIgnoreCase))
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                StateHasChanged();
+            });
+        }
+    }
+
+    public void Dispose() => Launcher.Created -= OnCreated;
+}

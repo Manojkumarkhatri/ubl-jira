@@ -1,24 +1,32 @@
-@page "/projects/{Key}/deleted"
-@attribute [Authorize(Policy = AuthorizationPolicies.Administrator)]
+@page "/spaces/{Key}/archived"
+@page "/spaces/{Key}/deleted"
+@using Upms.Application.Projects
 @using Upms.Application.Work
 @inject IWorkItemService Items
+@inject ISpaceViewService SpaceViews
 @inject LiveAnnouncer Announcer
 
-<PageTitle>Deleted tasks · @Key · U-PMS</PageTitle>
+<PageTitle>Archived work items · @Key · U-PMS</PageTitle>
 
+@* The space's "Archived work items", as Jira's: work items deleted from the space are kept here. Everyone in the space can
+   see them; administrators restore them. *@
 @if (_notFound)
 {
     <NotFoundContent />
 }
+else if (_space is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
 else
 {
-    @* Only administrators reach this page, and they manage every project. *@
-    <ProjectHeader ProjectKey="@Key" Title="Deleted tasks" Current="ProjectPage.Deleted" CanManage="true" CanRestoreDeleted="true" />
+    <ProjectHeader ProjectKey="@Key" Title="@_space.SpaceName" Current="ProjectPage.Deleted" CanManage="_space.CanManage"
+                   CanRestoreDeleted="_space.IsAdministrator" Template="_space.Template" />
 
     @if (_restored is not null)
     {
         <div class="alert alert-success" role="status" data-testid="restored">
-            Restored <a href="projects/@Key/board?task=@_restored">@_restored</a>.
+            Restored <a href="spaces/@Key/board?task=@_restored">@_restored</a>.
         </div>
     }
     @if (_error is not null)
@@ -32,55 +40,91 @@ else
     }
     else if (_page.TotalCount == 0)
     {
-        <EmptyState Title="No deleted tasks" Text="Tasks deleted in this project appear here, and an administrator can restore them." />
+        <div class="empty-hero">
+            <svg class="empty-art" viewBox="0 0 300 200" aria-hidden="true" focusable="false">
+                <path d="M55 70c25-50 160-60 195-15 30 40 10 100-30 120-45 22-125 20-160-10C35 145 35 105 55 70z" fill="#e9f2ff" />
+                <rect x="95" y="60" width="110" height="26" rx="5" fill="#1868db" />
+                <path d="M103 86h94v66a6 6 0 01-6 6h-82a6 6 0 01-6-6z" fill="#fff" stroke="#dfe1e6" stroke-width="2" />
+                <rect x="132" y="104" width="36" height="8" rx="4" fill="#8590a2" />
+            </svg>
+            <h2>No archived work items</h2>
+            <p>Work items deleted from this space are kept here@(_space.IsAdministrator ? ", and you can restore them." : ". An administrator can restore them.")</p>
+        </div>
     }
     else
     {
+        <div class="cal-toolbar">
+            <div class="board-search">
+                <Icon Name="search" />
+                <input type="search" class="input" aria-label="Search archived work items" placeholder="Search archived work" @bind="_search" @bind:event="oninput" />
+            </div>
+            <span class="spacer"></span>
+            <span class="hint">@_page.TotalCount archived</span>
+        </div>
         <div class="table-wrap">
-            <table class="tbl">
-                <caption class="sr-only">Deleted tasks, page @_page.PageNumber of @Math.Max(1, _page.PageCount)</caption>
+            <table class="tbl arch-table">
+                <caption class="sr-only">Archived work items, page @_page.PageNumber of @Math.Max(1, _page.PageCount)</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Task</th>
-                        <th scope="col">Deleted</th>
-                        <th scope="col" class="hide-sm">Deleted by</th>
+                        <th scope="col">Work item</th>
+                        <th scope="col">Archived</th>
+                        <th scope="col" class="hide-sm">Archived by</th>
                         <th scope="col" class="hide-sm">Sub-tasks</th>
-                        <th scope="col"><span class="sr-only">Actions</span></th>
+                        @if (_space.IsAdministrator)
+                        {
+                            <th scope="col"><span class="sr-only">Actions</span></th>
+                        }
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in _page.Items)
+                    @foreach (var item in _page.Items.Where(Matches))
                     {
                         <tr @key="item.Key" data-testid="deleted-@item.Key">
-                            <td><span class="key">@item.Key</span> @item.Title</td>
+                            <td><TypeIcon Type="item.Type" /> <span class="key">@item.Key</span> @item.Title</td>
                             <td><LocalTime Value="item.DeletedAt" /></td>
                             <td class="hide-sm">@item.DeletedByName</td>
                             <td class="hide-sm">@item.SubtaskCount</td>
-                            <td class="actions">
-                                <button type="button" class="btn btn-sm" disabled="@_busy" aria-label="Restore @item.Key"
-                                        @onclick="() => RestoreAsync(item)">Restore</button>
-                            </td>
+                            @if (_space.IsAdministrator)
+                            {
+                                <td class="actions">
+                                    <button type="button" class="btn btn-sm" disabled="@_busy" aria-label="Restore @item.Key"
+                                            @onclick="() => RestoreAsync(item)">Restore</button>
+                                </td>
+                            }
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
-        <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Deleted task pages" OnPageChanged="GoToPageAsync" />
+        <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Archived work item pages" OnPageChanged="GoToPageAsync" />
     }
 }
 
 @code {
+    private SpaceViews? _space;
     private Page<DeletedItemView>? _page;
     private int _pageNumber = 1;
     private bool _notFound;
     private string? _restored;
     private string? _error;
+    private string _search = "";
     private bool _busy;
 
     [Parameter]
     public string Key { get; set; } = "";
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    protected override async Task OnParametersSetAsync()
+    {
+        var space = await SpaceViews.GetAsync(Key, CancellationToken.None);
+        if (!space.IsSuccess)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _space = space.Value!;
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -99,6 +143,11 @@ else
             await LoadAsync();
         }
     }
+
+    private bool Matches(DeletedItemView item) =>
+        string.IsNullOrWhiteSpace(_search)
+        || item.Title.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase)
+        || item.Key.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private async Task GoToPageAsync(int page)
     {

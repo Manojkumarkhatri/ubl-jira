@@ -83,7 +83,7 @@
             isPersistent: false, lockoutOnFailure: true);
         if (result.Succeeded)
         {
-            RedirectManager.RedirectTo(string.IsNullOrEmpty(ReturnUrl) ? "projects" : ReturnUrl);
+            RedirectManager.RedirectTo(string.IsNullOrEmpty(ReturnUrl) ? "" : ReturnUrl);
         }
         else if (result.IsLockedOut)
         {

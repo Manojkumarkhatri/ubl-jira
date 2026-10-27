@@ -6,15 +6,20 @@
     @if (!ReadOnly)
     {
         <div class="comment-new">
-            <label for="new-comment" class="sr-only">Add a comment</label>
-            <textarea id="new-comment" class="textarea comment-box" placeholder="Add a comment…" maxlength="32000"
-                      @bind="_newBody" @bind:event="oninput"
-                      aria-invalid="@(_newError is null ? "false" : "true")" aria-describedby="new-comment-error"></textarea>
-            <span id="new-comment-error" class="error-text" role="alert">@_newError</span>
-            <div class="form-actions">
-                <button type="button" class="btn btn-primary btn-sm" data-testid="post-comment" disabled="@_busy" @onclick="PostAsync">Comment</button>
-                <span class="saved" role="status">@_status</span>
-            </div>
+            @if (_composing)
+            {
+                @* Formatted text with "@" mentions (Phase 4 FR-001, FR-007); the box empties after posting. *@
+                <RichTextEditor Id="new-comment" Label="Add a comment" WorkItemKey="@WorkItemKey" SaveLabel="Comment"
+                                Placeholder="Add a comment… Type @@ to mention someone." ClearAfterSave="true" OnAttached="OnAttached"
+                                OnSave="PostAsync" OnCancel="() => _composing = false" />
+            }
+            else
+            {
+                <button type="button" class="comment-start" data-testid="start-comment" @onclick="() => _composing = true">
+                    Add a comment…
+                </button>
+            }
+            <span class="saved" role="status">@_status</span>
         </div>
     }
     @if (_items.Count == 0)
@@ -37,20 +42,13 @@
                     }
                     else if (_editingId == comment.Id)
                     {
-                        <label class="sr-only" for="edit-comment-@comment.Id">Edit your comment</label>
-                        <textarea id="edit-comment-@comment.Id" class="textarea comment-box" maxlength="32000"
-                                  @bind="_editBody" @bind:event="oninput"
-                                  aria-invalid="@(_editError is null ? "false" : "true")" aria-describedby="edit-comment-error"></textarea>
-                        <span id="edit-comment-error" class="error-text" role="alert">@_editError</span>
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-sm" data-testid="save-comment" disabled="@_busy"
-                                    @onclick="() => SaveEditAsync(comment)">Save</button>
-                            <button type="button" class="btn btn-sm" @onclick="CancelEdit">Cancel</button>
-                        </div>
+                        <RichTextEditor @key="@($"edit-{comment.Id}")" Id="@($"edit-comment-{comment.Id}")" Label="Edit your comment"
+                                        Initial="@comment.Body" WorkItemKey="@WorkItemKey" OnSave="save => SaveEditAsync(comment, save)"
+                                        OnCancel="CancelEdit" OnAttached="OnAttached" />
                     }
                     else
                     {
-                        <PlainText Text="@comment.Body" />
+                        <FormattedTextView Text="@comment.Body" Attachments="Attachments" Class="comment-body" />
                         @if (comment.IsMine && _confirmDeleteId == comment.Id)
                         {
                             <div class="form-actions" role="group" aria-label="Delete this comment?">
@@ -88,11 +86,8 @@
     private List<CommentView> _items = [];
     private int _total;
     private int _page = 1;
-    private string _newBody = "";
-    private string? _newError;
+    private bool _composing;
     private long? _editingId;
-    private string _editBody = "";
-    private string? _editError;
     private long? _confirmDeleteId;
     private (long Id, string Message)? _rowError;
     private string? _status;
@@ -109,6 +104,14 @@
     [Parameter]
     public EventCallback OnChanged { get; set; }
 
+    /// <summary>The item's files, for the images in comments (Phase 4 FR-023).</summary>
+    [Parameter]
+    public IReadOnlyList<AttachmentView>? Attachments { get; set; }
+
+    /// <summary>An image was pasted or dropped into a comment.</summary>
+    [Parameter]
+    public EventCallback OnAttached { get; set; }
+
     /// <summary>True for Viewers: comments are shown, but none can be added, edited or deleted (Phase 2 FR-003).</summary>
     [Parameter]
     public bool ReadOnly { get; set; }
@@ -124,33 +127,25 @@
         }
     }
 
-    private async Task PostAsync()
+    private async Task PostAsync(RichTextEditor.EditorSave save)
     {
         if (_busy)
         {
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_newBody))
-        {
-            _newError = "Write a comment first.";
-            return;
-        }
-
         _busy = true;
         try
         {
-            var result = await Comments.AddAsync(WorkItemKey, _newBody, CancellationToken.None);
+            var result = await Comments.AddAsync(WorkItemKey, save.Document, CancellationToken.None);
             if (!result.IsSuccess)
             {
-                _newError = result.Error!.MessageFor("Body"); // the typed text stays in the box
+                save.Error = result.Error!.MessageFor("Body"); // the typed text stays in the editor
                 return;
             }
 
             _items.Add(result.Value!);
             _total++;
-            _newBody = "";
-            _newError = null;
             _status = "Comment added";
             await OnChanged.InvokeAsync();
         }
@@ -163,8 +158,6 @@
     private void StartEdit(CommentView comment)
     {
         _editingId = comment.Id;
-        _editBody = comment.Body ?? "";
-        _editError = null;
         _rowError = null;
         _confirmDeleteId = null;
     }
@@ -172,10 +165,9 @@
     private void CancelEdit()
     {
         _editingId = null;
-        _editError = null;
     }
 
-    private async Task SaveEditAsync(CommentView comment)
+    private async Task SaveEditAsync(CommentView comment, RichTextEditor.EditorSave save)
     {
         if (_busy)
         {
@@ -185,22 +177,22 @@
         _busy = true;
         try
         {
-            var result = await Comments.EditAsync(comment.Id, _editBody, comment.Version, CancellationToken.None);
+            var current = _items.FirstOrDefault(c => c.Id == comment.Id) ?? comment;
+            var result = await Comments.EditAsync(comment.Id, save.Document, current.Version, CancellationToken.None);
             if (!result.IsSuccess)
             {
                 var error = result.Error!;
-                _editError = error.MessageFor("Body");
                 if (error.Current is CommentView latest)
                 {
                     Replace(latest); // a second save applies the kept text to the latest version
                 }
 
+                save.Error = error.MessageFor("Body");
                 return;
             }
 
             Replace(result.Value!);
             _editingId = null;
-            _editError = null;
             _status = "Comment saved";
             await OnChanged.InvokeAsync();
         }
@@ -246,7 +238,7 @@
             var result = await Comments.ListAsync(WorkItemKey, new PageRequest(_page + 1), CancellationToken.None);
             if (!result.IsSuccess)
             {
-                _newError = result.Error!.Message;
+                _status = result.Error!.Message;
                 return;
             }
 

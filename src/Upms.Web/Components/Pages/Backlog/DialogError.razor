@@ -1,0 +1,7 @@
+@* Why a sprint change was refused, read out when it appears. *@
+<p class="error-text" role="alert" data-testid="sprint-dialog-error">@Message</p>
+
+@code {
+    [Parameter]
+    public string? Message { get; set; }
+}

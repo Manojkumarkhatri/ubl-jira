@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Upms.Application.Common;
 using Upms.Application.Common.Results;
 using Upms.Application.Identity.Contracts;
+using Upms.Domain.Common;
 using Upms.Domain.Identity;
 
 namespace Upms.Application.Identity;
@@ -24,7 +25,47 @@ internal sealed class AccountService(
         var defaultTimeZone = await db.OrganizationSettings.AsNoTracking()
             .Select(s => s.DefaultTimeZoneId).SingleAsync(ct);
         return new MyProfile(user.Id, user.UserName!, user.DisplayName, user.Email!, user.TimeZoneId,
-            user.TimeZoneId ?? defaultTimeZone, user.IsAdministrator);
+            user.TimeZoneId ?? defaultTimeZone, user.IsAdministrator, user.EmailNotifications, user.SidebarCollapsed)
+        {
+            Type = user.IsAdministrator ? UserType.Admin : user.UserType == UserType.Admin ? UserType.Member : user.UserType,
+        };
+    }
+
+    public async Task<Result<MyProfile>> SetEmailChoiceAsync(EmailChoice choice, CancellationToken ct)
+    {
+        if (!Enum.IsDefined(choice))
+        {
+            return AppError.Validation("EmailChoice", "Choose which emails you want.");
+        }
+
+        if (await LoadCallerAsync(ct) is not { } user)
+        {
+            return AppError.Forbidden();
+        }
+
+        user.EmailNotifications = choice;
+        var result = await userManager.UpdateAsync(user);
+        return result.Succeeded ? await GetProfileAsync(ct) : IdentityErrors.ToAppError(result);
+    }
+
+    public async Task<Result<MyProfile>> SetSidebarCollapsedAsync(bool collapsed, CancellationToken ct)
+    {
+        if (await LoadCallerAsync(ct) is not { } user)
+        {
+            return AppError.Forbidden();
+        }
+
+        if (user.SidebarCollapsed != collapsed)
+        {
+            user.SidebarCollapsed = collapsed;
+            var result = await userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+            {
+                return IdentityErrors.ToAppError(result);
+            }
+        }
+
+        return await GetProfileAsync(ct);
     }
 
     public async Task<Result> UpdateProfileAsync(string displayName, string? timeZoneId, CancellationToken ct)

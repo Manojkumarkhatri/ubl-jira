@@ -19,6 +19,7 @@ public sealed class FakeUserAdminService : IUserAdminService
     {
         var user = new UserSummary(id ?? Guid.NewGuid(), userName, $"{userName} Tester", $"{userName}@example.com", role, isActive,
             IsLockedOut: false, CreatedAt: new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero), LastSignInAt: null);
+        user = user with { Rights = Upms.Domain.Common.RightsCatalog.Defaults(user.Type) };
         Users.Add(user);
         return user;
     }
@@ -28,6 +29,30 @@ public sealed class FakeUserAdminService : IUserAdminService
 
     public Task<Result<CreatedUser>> AddUserAsync(string userName, string displayName, string email, CancellationToken ct) =>
         throw new NotSupportedException();
+
+    public Task<Result<CreatedUser>> AddPersonAsync(NewPerson person, CancellationToken ct) => throw new NotSupportedException();
+
+    public Task<Result> UpdateAccessAsync(Guid userId, AccessChange change, CancellationToken ct)
+    {
+        Calls.Add($"access {Users.Single(u => u.Id == userId).UserName} {change.Type}");
+        if (NextError is { } error)
+        {
+            NextError = null;
+            return Task.FromResult(Result.Fail(error));
+        }
+
+        var index = Users.FindIndex(u => u.Id == userId);
+        Users[index] = Users[index] with
+        {
+            Type = change.Type,
+            DepartmentId = change.DepartmentId,
+            Rights = (Upms.Domain.Common.RightsCatalog.Defaults(change.Type) | change.Granted) & ~change.Denied,
+        };
+        return Task.FromResult(Result.Ok());
+    }
+
+    public Task<PeopleRights> RightsAsync(CancellationToken ct) =>
+        Task.FromResult(new PeopleRights(true, true, true, true, null, Upms.Domain.Common.UserTypes.Ordered, Upms.Domain.Common.Rights.All));
 
     public Task<Result<string>> ResetPasswordAsync(Guid userId, CancellationToken ct) => throw new NotSupportedException();
 

@@ -41,6 +41,8 @@ public sealed partial class UpmsWebApplicationFactory(string connectionString) :
             DisplayName = userName,
             MustChangePassword = mustChangePassword,
             OrganizationRole = role,
+            // Before the five user types anyone could create spaces, export and approve gates: a Portfolio lead's ticks.
+            UserType = role == OrganizationRole.Administrator ? Upms.Domain.Common.UserType.Admin : Upms.Domain.Common.UserType.PortfolioLead,
             CreatedAt = DateTimeOffset.UtcNow,
         };
         var result = await userManager.CreateAsync(user, password);

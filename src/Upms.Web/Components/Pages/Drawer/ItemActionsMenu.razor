@@ -1,0 +1,433 @@
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@inject IOrganizationAdminService Organization
+@* Jira's "⋯" menu on a work item: a menu button with a list of actions. Arrow keys, Home and End move between them,
+   Escape closes the menu and gives focus back to its button. "Select cover" opens the colours and images in the same
+   popover, as Jira's submenu does. Print and the exports are links, opened in a new tab or downloaded. *@
+<div class="item-menu">
+    <button type="button" id="@ButtonId" class="icon-btn head-action" data-testid="item-actions" title="More actions"
+            aria-label="More actions for @Details.Key" aria-haspopup="menu" aria-expanded="@(_open ? "true" : "false")"
+            aria-controls="@(_open ? ListId : null)" @onclick="Toggle"><Icon Name="more" /></button>
+    @if (_open)
+    {
+        <div class="menu-backdrop" @onclick="() => Close(giveFocusBack: false)"></div>
+        @if (_panel == Panel.Cover)
+        {
+            @* Jira's "Select a cover": solid colours in four shades, gradients, or an image attached to the item. *@
+            <div id="@ListId" class="item-menu-list cover-panel" data-escape-local role="dialog" aria-label="Select a cover" @onkeydown="PanelKeyDown">
+                <div class="cover-head">
+                    <h3>Select a cover</h3>
+                    <button type="button" id="cover-close" class="icon-btn" aria-label="Close" title="Close" @onclick="() => Close()"><Icon Name="close" Size="14" /></button>
+                </div>
+                <div class="cover-tabs" role="tablist" aria-label="Kinds of cover">
+                    <button type="button" role="tab" id="cover-tab-colours" aria-selected="@(_coverTab == CoverTab.Colours ? "true" : "false")"
+                            @onclick="() => _coverTab = CoverTab.Colours">Colours</button>
+                    <button type="button" role="tab" id="cover-tab-images" aria-selected="@(_coverTab == CoverTab.Images ? "true" : "false")"
+                            @onclick="() => _coverTab = CoverTab.Images">Images</button>
+                </div>
+                @if (_coverTab == CoverTab.Colours)
+                {
+                    <div role="tabpanel" aria-labelledby="cover-tab-colours">
+                        <p class="cover-heading" id="cover-solid-label">Solid colours</p>
+                        @Swatches(CoverColors.Solid, "solid", "cover-solid-label")
+                        <p class="cover-heading" id="cover-gradient-label">Gradients</p>
+                        @Swatches(CoverColors.Gradients, "gradient", "cover-gradient-label")
+                    </div>
+                }
+                else
+                {
+                    <div role="tabpanel" aria-labelledby="cover-tab-images" class="cover-images">
+                        @if (Images.Count == 0)
+                        {
+                            <p class="hint cover-none">Attach an image to the item to use it as the cover.</p>
+                        }
+                        @foreach (var image in Images)
+                        {
+                            <button type="button" role="radio" class="cover-image-choice" aria-checked="@(Details.CoverAttachmentId == image.Id ? "true" : "false")"
+                                    @onclick="() => ChooseCoverAsync(null, image.Id)">
+                                <img src="attachments/@image.Id/preview" alt="" loading="lazy" />
+                                <span>@image.FileName</span>
+                                @if (Details.CoverAttachmentId == image.Id)
+                                {
+                                    <Icon Name="check" Size="14" />
+                                }
+                            </button>
+                        }
+                    </div>
+                }
+                <div class="cover-foot">
+                    <button type="button" class="btn btn-ghost btn-sm" disabled="@(!HasCover)" @onclick="() => ChooseCoverAsync(null, null)">Remove cover</button>
+                </div>
+            </div>
+        }
+        else if (_panel == Panel.EpicColour && Details.Color is { } epicColor)
+        {
+            @* An epic's colour, for its tag on cards, in lists and on the timeline; each colour is named, not only shown. *@
+            <div id="@ListId" class="item-menu-list cover-panel epic-colour-panel" data-escape-local role="dialog" aria-label="Epic colour" @onkeydown="PanelKeyDown">
+                <div class="cover-head">
+                    <h3>Epic colour</h3>
+                    <button type="button" class="icon-btn" aria-label="Close" title="Close" @onclick="() => Close()"><Icon Name="close" Size="14" /></button>
+                </div>
+                <div role="radiogroup" aria-label="Epic colour" @onkeydown="e => GridKeyDown(e, EpicColours.Count, 1, EpicColourId)">
+                    @for (var i = 0; i < EpicColours.Count; i++)
+                    {
+                        var color = EpicColours[i];
+                        var name = color.ToString();
+                        <button type="button" role="radio" id="epic-colour-@i" class="item-menu-item epic-colour-choice" tabindex="@(color == epicColor ? 0 : -1)"
+                                aria-checked="@(color == epicColor ? "true" : "false")" @onclick="() => ChooseEpicColourAsync(color)">
+                            <span class="swatch epic-@name.ToLowerInvariant()" aria-hidden="true"></span>
+                            <span class="item-menu-label">@name</span>
+                            @if (color == epicColor)
+                            {
+                                <Icon Name="check" Size="14" />
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <ul id="@ListId" class="item-menu-list" data-escape-local role="menu" aria-label="Actions for @Details.Key" @onkeydown="KeyDown">
+                @for (var i = 0; i < Items.Count; i++)
+                {
+                    var index = i;
+                    var item = Items[i];
+                    @if (item.Separated)
+                    {
+                        <li role="separator" class="item-menu-separator"></li>
+                    }
+                    <li role="none">
+                        @if (item.Href is { } href)
+                        {
+                            <a id="@ItemId(index)" role="menuitem" tabindex="-1" class="item-menu-item" href="@href" data-testid="item-action-@item.Action.ToString().ToLowerInvariant()"
+                               target="@(item.NewTab ? "_blank" : null)" rel="@(item.NewTab ? "noopener" : null)" download="@(item.Download ? "" : null)"
+                               @onclick="() => Close(giveFocusBack: false)">
+                                <span class="item-menu-label">@item.Label</span>
+                            </a>
+                        }
+                        else
+                        {
+                            <button type="button" id="@ItemId(index)" role="menuitem" tabindex="-1" class="item-menu-item @(item.Action == ItemAction.Delete ? "is-danger" : "")"
+                                    data-testid="item-action-@item.Action.ToString().ToLowerInvariant()"
+                                    aria-disabled="@(item.Unavailable is null ? null : "true")"
+                                    aria-describedby="@(item.Unavailable is null ? null : $"{ItemId(index)}-why")"
+                                    @onclick="() => ChooseAsync(item)">
+                                <span class="item-menu-label">@item.Label</span>
+                                @if (item.Badge is { } badge)
+                                {
+                                    <span class="item-menu-badge">@badge</span>
+                                }
+                                @if (item.Shortcut is { } shortcut)
+                                {
+                                    <kbd class="item-menu-key">@shortcut</kbd>
+                                }
+                                @if (item.Action is ItemAction.Cover or ItemAction.EpicColour)
+                                {
+                                    <Icon Name="chevron-right" Size="14" />
+                                }
+                            </button>
+                            @if (item.Unavailable is { } why)
+                            {
+                                <span id="@($"{ItemId(index)}-why")" class="hint item-menu-why">@why</span>
+                            }
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    }
+</div>
+
+@code {
+    private bool _canExport;
+
+    protected override async Task OnInitializedAsync() =>
+        _canExport = (await Organization.MyAccessAsync(CancellationToken.None)).Can(Rights.Export);
+
+    private bool _open;
+    private enum Panel { None, Cover, EpicColour }
+
+    private enum CoverTab { Colours, Images }
+
+    private static readonly IReadOnlyList<EpicColor> EpicColours = Enum.GetValues<EpicColor>();
+
+    private Panel _panel;
+    private CoverTab _coverTab;
+    private int _focused;
+    private string? _focusId;
+
+    [Parameter, EditorRequired]
+    public WorkItemDetails Details { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<ItemAction> OnAction { get; set; }
+
+    /// <summary>A colour, an image attachment, or neither to remove the cover.</summary>
+    [Parameter]
+    public EventCallback<(string? Color, long? ImageId)> OnCover { get; set; }
+
+    /// <summary>An epic's new colour.</summary>
+    [Parameter]
+    public EventCallback<EpicColor> OnEpicColor { get; set; }
+
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
+
+    private string ButtonId => $"item-actions-{Details.Key}";
+
+    private string ListId => $"item-actions-{Details.Key}-list";
+
+    private string ItemId(int index) => $"item-action-{index}";
+
+    private static string EpicColourId(int index) => $"epic-colour-{index}";
+
+    private bool HasCover => Details.CoverColor is not null || Details.CoverAttachmentId is not null;
+
+    private IReadOnlyList<AttachmentView> Images =>
+        Details.Attachments.Where(a => a.IsImage && a.Status == AttachmentCheckStatus.Passed).ToList();
+
+
+    private sealed record MenuItem(ItemAction Action, string Label, string? Shortcut = null, string? Badge = null, string? Unavailable = null,
+        string? Href = null, bool Separated = false, bool NewTab = false, bool Download = false);
+
+    private IReadOnlyList<MenuItem> Items
+    {
+        get
+        {
+            var d = Details;
+            var timeTracked = d.Type is not (WorkItemType.Stage or WorkItemType.Milestone);
+            var readOnly = d.CanContribute ? null : "You can view this space but not change it.";
+            var exportBase = $"work-items/{Uri.EscapeDataString(d.Key)}";
+            var items = new List<MenuItem>();
+            if (timeTracked)
+            {
+                items.Add(new(ItemAction.LogWork, "Log work", "Q", Unavailable: readOnly));
+            }
+
+            items.Add(new(ItemAction.Palette, "Open command palette", "Ctrl K"));
+            items.Add(d.HasVoted
+                ? new(ItemAction.Vote, "Remove vote", Badge: d.Votes.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                : new(ItemAction.Vote, "Add vote", Badge: d.Votes > 0 ? d.Votes.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+                    Unavailable: d.VoteRefusal));
+            items.Add(new(ItemAction.Cover, "Select cover", Unavailable: readOnly));
+            if (d.Type == WorkItemType.Epic && d.Color is not null)
+            {
+                items.Add(new(ItemAction.EpicColour, "Epic colour", Unavailable: readOnly));
+            }
+            items.Add(new(ItemAction.Clone, "Clone", Unavailable: readOnly ?? (d.Type == WorkItemType.Stage ? "Add a new stage in Stages instead." : null)));
+            items.Add(new(ItemAction.Move, "Move", Unavailable: readOnly
+                ?? (d.Type is WorkItemType.Stage or WorkItemType.Milestone ? "Stages and milestones keep their place in the plan." : null)));
+            items.Add(new(ItemAction.Print, "Print", Href: $"{exportBase}/print", Separated: true, NewTab: true));
+            if (_canExport)
+            {
+                items.Add(new(ItemAction.ExportExcel, "Export Excel CSV", Href: $"{exportBase}/export/csv", Download: true));
+                items.Add(new(ItemAction.ExportWord, "Export Word", Href: $"{exportBase}/export/doc", Download: true));
+                items.Add(new(ItemAction.ExportXml, "Export XML", Href: $"{exportBase}/export/xml", Download: true));
+            }
+            if (d.CanManage)
+            {
+                items.Add(new(ItemAction.Configure, "Configure", Href: $"spaces/{d.ProjectKey}/settings/work-types/{d.Type.ToString().ToLowerInvariant()}", Separated: true));
+            }
+
+            // Delete comes last, in red, as in Jira. Deleted items go to "Archived work items", where an administrator restores them.
+            if (d.CanDelete)
+            {
+                items.Add(new(ItemAction.Delete, "Delete", Separated: true));
+            }
+
+            return items;
+        }
+    }
+
+    public void Open()
+    {
+        _open = true;
+        _panel = Panel.None;
+        _focused = 0;
+        _focusId = ItemId(0);
+        StateHasChanged();
+    }
+
+    private void Toggle()
+    {
+        if (_open)
+        {
+            Close();
+            return;
+        }
+
+        Open();
+    }
+
+    private void Close(bool giveFocusBack = true)
+    {
+        _open = false;
+        _panel = Panel.None;
+        if (giveFocusBack)
+        {
+            _focusId = ButtonId;
+        }
+    }
+
+    private void KeyDown(KeyboardEventArgs e)
+    {
+        if (Move(e, Items.Count) is { } index)
+        {
+            _focusId = ItemId(index);
+        }
+    }
+
+    private int? Move(KeyboardEventArgs e, int count)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                _focused = (_focused + 1) % count;
+                break;
+            case "ArrowUp":
+                _focused = (_focused - 1 + count) % count;
+                break;
+            case "Home":
+                _focused = 0;
+                break;
+            case "End":
+                _focused = count - 1;
+                break;
+            case "Escape":
+                Close();
+                return null;
+            case "Tab":
+                Close(giveFocusBack: false);
+                return null;
+            default:
+                return null;
+        }
+
+        return _focused;
+    }
+
+    private async Task ChooseAsync(MenuItem item)
+    {
+        if (item.Unavailable is not null)
+        {
+            return;
+        }
+
+        if (item.Action is ItemAction.Cover or ItemAction.EpicColour)
+        {
+            _panel = item.Action == ItemAction.Cover ? Panel.Cover : Panel.EpicColour;
+            _coverTab = Details.CoverAttachmentId is not null ? CoverTab.Images : CoverTab.Colours;
+            _gridFocus.Clear();
+            _focused = Math.Max(0, EpicColours.ToList().IndexOf(Details.Color ?? EpicColor.Purple));
+            _focusId = _panel == Panel.Cover ? "cover-tab-colours" : EpicColourId(_focused);
+            return;
+        }
+
+        Close(giveFocusBack: item.Action == ItemAction.Vote);
+        await OnAction.InvokeAsync(item.Action);
+    }
+
+    private async Task ChooseCoverAsync(string? color, long? imageId)
+    {
+        if (color is null && imageId is null && !HasCover)
+        {
+            return;
+        }
+
+        Close();
+        await OnCover.InvokeAsync((color, imageId));
+    }
+
+    /// <summary>"Blue, shade 2" or "Gradient 3": the swatch's name, so the choice never rests on colour alone.</summary>
+    private static string CoverName(string color)
+    {
+        var parts = color.Split('-');
+        return parts[0] == "gradient" ? $"Gradient {parts[1]}" : $"{char.ToUpperInvariant(parts[0][0])}{parts[0][1..]}, shade {parts[1]}";
+    }
+
+    private readonly Dictionary<string, int> _gridFocus = [];
+
+    /// <summary>A grid of colour swatches as a radio group: one tab stop, arrow keys move, Enter or Space chooses.</summary>
+    private RenderFragment Swatches(IReadOnlyList<string> colors, string prefix, string labelId) => __builder =>
+    {
+        var current = colors.ToList().IndexOf(Details.CoverColor ?? "");
+        var focus = _gridFocus.TryGetValue(prefix, out var moved) ? moved : Math.Max(current, 0);
+        string IdOf(int index) => $"{prefix}-{index}";
+        <div class="cover-grid" role="radiogroup" aria-labelledby="@labelId" @onkeydown="e => GridKeyDown(e, colors.Count, 10, IdOf, prefix)">
+            @for (var i = 0; i < colors.Count; i++)
+            {
+                var color = colors[i];
+                <button type="button" role="radio" id="@($"{prefix}-{i}")" class="cover-swatch cover-@color" tabindex="@(i == focus ? 0 : -1)"
+                        aria-checked="@(Details.CoverColor == color ? "true" : "false")" aria-label="@CoverName(color)" title="@CoverName(color)"
+                        @onclick="() => ChooseCoverAsync(color, null)">
+                    @if (Details.CoverColor == color)
+                    {
+                        <Icon Name="check" Size="14" />
+                    }
+                </button>
+            }
+        </div>
+    };
+
+    /// <summary>Arrow keys in a grid of <paramref name="columns"/> columns: left and right by one, up and down by a row.</summary>
+    private void GridKeyDown(KeyboardEventArgs e, int count, int columns, Func<int, string> idOf, string? key = null)
+    {
+        var at = key is not null && _gridFocus.TryGetValue(key, out var moved) ? moved : _focused;
+        var step = e.Key switch
+        {
+            "ArrowRight" => 1,
+            "ArrowLeft" => -1,
+            "ArrowDown" => columns,
+            "ArrowUp" => -columns,
+            _ => 0,
+        };
+        if (step == 0)
+        {
+            return;
+        }
+
+        at = Math.Clamp(at + step, 0, count - 1);
+        if (key is not null)
+        {
+            _gridFocus[key] = at;
+        }
+        else
+        {
+            _focused = at;
+        }
+
+        _focusId = idOf(at);
+    }
+
+    /// <summary>Escape in a panel goes back to the menu's button.</summary>
+    private void PanelKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            Close();
+        }
+    }
+
+    private async Task ChooseEpicColourAsync(EpicColor color)
+    {
+        Close();
+        await OnEpicColor.InvokeAsync(color);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is { } id)
+        {
+            _focusId = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+}

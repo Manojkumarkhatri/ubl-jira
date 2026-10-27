@@ -1,0 +1,532 @@
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@implements IDisposable
+@inject ICreateWorkService CreateWork
+@inject IWorkItemService Items
+@inject CreateWorkLauncher Launcher
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@* The Create form (Jira parity pass US1; contracts/ui-routes.md "Create dialog"): one form for every work type the space
+   offers, over the current page. Fields the chosen type does not have are not shown; a refusal keeps every value; closing
+   with typed text asks first; "Create another" keeps the space, type and parent. *@
+<ModalDialog @ref="_dialog" Title="Create" TestId="create-work" Class="@(_expanded ? "create-work is-expanded" : "create-work")" OnClosed="Closed" OnCloseRequested="CloseRequestedAsync">
+    <ChildContent>
+        @if (_confirmDiscard)
+        {
+            <div class="alert alert-warning discard-confirm" role="alertdialog" aria-labelledby="discard-title" data-testid="discard-confirm">
+                <p id="discard-title"><strong>Discard this work item?</strong></p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-danger" data-testid="discard" @onclick="DiscardAsync">Discard</button>
+                    <button type="button" class="btn" data-testid="keep-editing" @onclick="KeepEditing">Keep editing</button>
+                </div>
+            </div>
+        }
+        @if (_spaces is null)
+        {
+            <p class="hint" role="status">Loading…</p>
+        }
+        else if (_spaces.Spaces.Count == 0)
+        {
+            <p>You can't add work to any space. Ask a Space admin to make you a Member.</p>
+        }
+        else
+        {
+            @* Jira's compact Create: the space and work type as chips, a large summary, the description, and the common fields as
+               chips; "Show all fields" opens the rest. *@
+            <div class="create-form" data-testid="create-form">
+                <div class="create-top">
+                    <label class="chip-select space-chip" title="@(_spaces.Spaces.FirstOrDefault(s => s.Key == _spaceKey) is { } current ? $"Space: {current.Name}" : "Space")">
+                        <span class="sr-only">Space</span>
+                        <span class="space-icon space-icon-@Upms.Web.Components.Shared.ProjectHeader.SpaceColor(_spaceKey) chip-space-icon" aria-hidden="true">@(_spaceKey.Length > 0 ? _spaceKey[..1] : "?")</span>
+                        <select id="create-space" value="@_spaceKey" @onchange="SpaceChangedAsync">
+                            @foreach (var space in _spaces.Spaces)
+                            {
+                                <option value="@space.Key">@space.Key · @space.Name</option>
+                            }
+                        </select>
+                    </label>
+                    <span class="create-top-sep" aria-hidden="true"></span>
+                    @* The work type as Jira's menu: each type with its icon. *@
+                    <div class="type-menu" @onkeydown="TypeMenuKeyDown">
+                        <button type="button" id="create-type" class="chip-btn type-chip @(_typeMenuOpen ? "is-open" : "")" aria-haspopup="menu"
+                                aria-expanded="@(_typeMenuOpen ? "true" : "false")" aria-controls="@(_typeMenuOpen ? "create-type-list" : null)"
+                                aria-invalid="@Invalid("type")" aria-describedby="create-type-error" @onclick="() => _typeMenuOpen = !_typeMenuOpen">
+                            <span class="sr-only">Work type: </span><TypeIcon Type="_type" /> @WorkItemTypes.DisplayName(_type) <Icon Name="chevron-down" Size="14" />
+                        </button>
+                        @if (_typeMenuOpen)
+                        {
+                            <div id="create-type-list" class="type-list" role="menu" aria-label="Work type">
+                                @foreach (var type in Types)
+                                {
+                                    <button type="button" role="menuitemradio" aria-checked="@(type == _type ? "true" : "false")"
+                                            class="type-option @(type == _type ? "is-chosen" : "")" data-type="@type" @onclick="() => ChooseType(type)">
+                                        <TypeIcon Type="type" /> @WorkItemTypes.DisplayName(type)
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <span class="spacer"></span>
+                    <button type="button" class="icon-btn create-expand" aria-pressed="@(_expanded ? "true" : "false")" title="@(_expanded ? "Show fewer fields" : "Show all fields")"
+                            @onclick="() => _expanded = !_expanded"><Icon Name="@(_expanded ? "collapse" : "expand")" /><span class="sr-only">Show all fields</span></button>
+                </div>
+                <span id="create-type-error" class="error-text">@ErrorFor("type")</span>
+                @if (_error is not null && FieldOf(_error) is null)
+                {
+                    <div class="alert alert-error" role="alert">@ErrorText(_error)</div>
+                }
+                <label class="sr-only" for="create-summary">Summary (required)</label>
+                <input id="create-summary" class="create-summary" autofocus maxlength="200" autocomplete="off" required placeholder="Summary"
+                       @bind="_summary" @bind:event="oninput"
+                       aria-invalid="@Invalid("summary")" aria-describedby="create-summary-error" />
+                <span id="create-summary-error" class="error-text">@ErrorFor("summary")</span>
+                <div class="create-description">
+                    <span class="sr-only" id="create-description-label">Description</span>
+                    <RichTextEditor @ref="_description" Id="create-description" Label="Description" SpaceKey="@_spaceKey" Embedded="true"
+                                    AutoFocus="false" Placeholder="@DescriptionHint" />
+                </div>
+                @if (_options is { } options)
+                {
+                    @* The parent shows without "Show all fields", as in Jira: a sub-task's (required) or the epic or stage of
+                       a standard item. *@
+                    @if (ParentLabel is { } parentLabel)
+                    {
+                        <div class="field">
+                            <label for="create-parent">@parentLabel@(_type == WorkItemType.Subtask ? " *" : "")</label>
+                            <ParentPicker Id="create-parent" Label="@parentLabel" SpaceKey="@_spaceKey" Type="_type" @bind-Value="_parent" Error="@ErrorFor("parent")" />
+                        </div>
+                    }
+                    <div class="create-chips" role="group" aria-label="Fields">
+                        <label class="chip-select" title="Assignee">
+                            <span class="sr-only">Assignee</span>
+                            @if (options.Assignees.FirstOrDefault(a => a.UserId == _assigneeId) is { } chosen)
+                            {
+                                <Avatar UserId="chosen.UserId" Initials="@InitialsOf(chosen.DisplayName)" />
+                            }
+                            else
+                            {
+                                <span class="chip-person" aria-hidden="true"><Icon Name="person" Size="12" /></span>
+                            }
+                            <select id="create-assignee" value="@(_assigneeId?.ToString() ?? "")" @onchange="AssigneeChanged"
+                                    aria-invalid="@Invalid("assignee")" aria-describedby="create-assignee-error">
+                                <option value="">Unassigned</option>
+                                @foreach (var person in options.Assignees)
+                                {
+                                    <option value="@person.UserId">@person.DisplayName@(person.IsMe ? " (me)" : "")</option>
+                                }
+                            </select>
+                        </label>
+                        @if (_type == WorkItemType.Milestone)
+                        {
+                            <DateChip Id="create-due" Label="Date" @bind-Value="_due" />
+                        }
+                        else
+                        {
+                            <DateChip Id="create-due" Label="Due date" @bind-Value="_due" />
+                        }
+                        <label class="chip-select" title="Priority">
+                            <span class="sr-only">Priority</span>
+                            <Upms.Web.Components.Pages.Board.PriorityIcon Priority="_priority" />
+                            <select id="create-priority" value="@_priority" @onchange="e => _priority = Enum.Parse<Priority>(e.Value!.ToString()!)">
+                                @foreach (var priority in Enum.GetValues<Priority>())
+                                {
+                                    <option value="@priority">@priority</option>
+                                }
+                            </select>
+                        </label>
+                        <button type="button" class="chip-btn @(_labels.Count > 0 ? "has-value" : "")" aria-expanded="@(_labelsOpen ? "true" : "false")" aria-controls="create-labels-panel"
+                                @onclick="() => _labelsOpen = !_labelsOpen">
+                            <Icon Name="tag" /> @(_labels.Count == 0 ? "Labels" : string.Join(", ", _labels))
+                        </button>
+                        @if (_type != WorkItemType.Milestone)
+                        {
+                            <DateChip Id="create-start" Label="Start date" @bind-Value="_start" />
+                        }
+                    </div>
+                    <span id="create-assignee-error" class="error-text">@ErrorFor("assignee")</span>
+                    <span id="create-dates-error" class="error-text">@ErrorFor("dates")</span>
+                    @if (_labelsOpen)
+                    {
+                        <div id="create-labels-panel" class="field create-labels-panel">
+                            <label for="create-labels">Labels</label>
+                            <LabelPicker Id="create-labels" SpaceKey="@_spaceKey" @bind-Labels="_labels" Error="@ErrorFor("labels")" />
+                        </div>
+                    }
+                    @if (_expanded)
+                    {
+                        <div class="form-grid create-more">
+                            <div class="field">
+                                <label for="create-status">Status</label>
+                                <select id="create-status" class="select" value="@_statusId" @onchange="e => _statusId = long.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture)"
+                                        aria-invalid="@Invalid("status")" aria-describedby="create-status-error">
+                                    @foreach (var column in options.Columns)
+                                    {
+                                        <option value="@column.Id">@column.Name</option>
+                                    }
+                                </select>
+                                <span id="create-status-error" class="error-text">@ErrorFor("status")</span>
+                            </div>
+                            @if (HasSprint)
+                            {
+                                <div class="field">
+                                    <label for="create-sprint">Sprint</label>
+                                    <select id="create-sprint" class="select" value="@(_sprintId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")"
+                                            @onchange="e => _sprintId = long.TryParse(e.Value?.ToString(), out var id) ? id : null"
+                                            aria-invalid="@Invalid("sprint")" aria-describedby="create-sprint-error">
+                                        <option value="">Backlog</option>
+                                        @foreach (var sprint in options.Sprints)
+                                        {
+                                            <option value="@sprint.Id">@sprint.Name</option>
+                                        }
+                                    </select>
+                                    <span id="create-sprint-error" class="error-text">@ErrorFor("sprint")</span>
+                                </div>
+                            }
+                            @if (HasEstimate)
+                            {
+                                <div class="field">
+                                    <label for="create-estimate">Estimate</label>
+                                    <input id="create-estimate" class="input" type="number" min="0" max="999.9" step="0.1" inputmode="decimal"
+                                           @bind="_estimate" aria-invalid="@Invalid("estimate")" aria-describedby="create-estimate-error" />
+                                    <span id="create-estimate-error" class="error-text">@ErrorFor("estimate")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <span class="spacer"></span>
+        <label class="check create-another">
+            <input type="checkbox" data-testid="create-another" @bind="_createAnother" /> Create another
+        </label>
+        <button type="button" class="btn btn-primary" data-testid="create-submit" disabled="@(_busy || _options is null)" @onclick="CreateAsync">Create</button>
+    </Footer>
+</ModalDialog>
+
+@if (_created is { } created)
+{
+    <div class="create-toast" role="status" data-testid="created-toast">
+        <span>@created.Key created</span>
+        <a href="@ItemHref(created)" @onclick="() => _created = null">View @created.Key</a>
+        <button type="button" class="icon-btn" aria-label="Dismiss" @onclick="() => _created = null">×</button>
+    </div>
+}
+
+@code {
+    private const string DescriptionHint = "Describe the work. Type @ to mention someone.";
+
+    private ModalDialog _dialog = default!;
+    private RichTextEditor? _description;
+    private CreateSpaces? _spaces;
+    private CreateOptions? _options;
+    private string _spaceKey = "";
+    private int _optionsRequest;
+    private WorkItemType _type = WorkItemType.Task;
+    private string _summary = "";
+    private long _statusId;
+    private Guid? _assigneeId;
+    private Priority _priority = Priority.Medium;
+    private ParentOption? _parent;
+    private long? _sprintId;
+    private DateOnly? _start;
+    private DateOnly? _due;
+    private decimal? _estimate;
+    private IReadOnlyList<string> _labels = [];
+    private bool _createAnother;
+    private bool _busy;
+    private bool _confirmDiscard;
+    private AppError? _error;
+    private WorkItemDetails? _created;
+    private bool _focusSummary;
+
+    // Jira's compact form: more fields on demand, labels in a small panel.
+    private bool _expanded;
+    private bool _labelsOpen;
+
+    private static string InitialsOf(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
+
+    private IReadOnlyList<WorkItemType> Types => _options?.Types ?? _spaces?.Spaces.FirstOrDefault(s => s.Key == _spaceKey)?.Types ?? [];
+
+    private ProjectTemplate Template => _options?.Template ?? ProjectTemplate.Kanban;
+
+    /// <summary>"Epic" or "Stage" for standard items, "Parent" for sub-tasks; epics and stages have none (FR-005).</summary>
+    private string? ParentLabel => _type switch
+    {
+        WorkItemType.Subtask => "Parent",
+        WorkItemType.Epic or WorkItemType.Stage => null,
+        _ => Template == ProjectTemplate.StageGate ? "Stage" : "Epic",
+    };
+
+    private bool HasSprint => Template == ProjectTemplate.Scrum && WorkItemTypes.IsCard(_type);
+
+    private bool HasEstimate => WorkItemTypes.HasEstimate(_type, Template);
+
+    protected override void OnInitialized() => Launcher.Requested += OnRequested;
+
+    private void OnRequested(string? spaceKey, long? statusId, DateOnly? due) => _ = InvokeAsync(() => OpenAsync(spaceKey, statusId, due));
+
+    /// <summary>Opens on the given space, or the current page's space, or the default (FR-002); a board column's "+ Create"
+    /// also chooses its status.</summary>
+    public async Task OpenAsync(string? spaceKey = null, long? statusId = null, DateOnly? due = null)
+    {
+        if (_dialog.IsOpen)
+        {
+            return;
+        }
+
+        _created = null;
+        _confirmDiscard = false;
+        _error = null;
+        _spaces = null;
+        _options = null;
+        _dialog.Open();
+        var current = spaceKey ?? CreateWorkLauncher.SpaceKeyOf(Navigation.ToBaseRelativePath(Navigation.Uri));
+        var spaces = await CreateWork.SpacesAsync(current, CancellationToken.None);
+        _spaces = spaces.IsSuccess ? spaces.Value! : new CreateSpaces([], null);
+        StateHasChanged();
+        if (_spaces.DefaultKey is { } key)
+        {
+            await LoadOptionsAsync(key);
+            if (statusId is { } status && _options?.Columns.Any(c => c.Id == status) == true)
+            {
+                _statusId = status;
+            }
+        }
+
+        if (due is not null)
+        {
+            _due = due; // a calendar day's "+"
+        }
+
+        _typeMenuOpen = false;
+        _focusSummary = true; // the summary takes focus once the form shows (FR-001)
+        StateHasChanged(); // opened from the header, not by an event of this component
+    }
+
+    private async Task SpaceChangedAsync(ChangeEventArgs e) => await LoadOptionsAsync(e.Value?.ToString() ?? "");
+
+    /// <summary>The chosen space's fields; a late answer for a space no longer chosen is ignored.</summary>
+    private async Task LoadOptionsAsync(string spaceKey)
+    {
+        _spaceKey = spaceKey;
+        var request = ++_optionsRequest;
+        _options = null;
+        var options = await CreateWork.OptionsAsync(spaceKey, CancellationToken.None);
+        if (request != _optionsRequest)
+        {
+            return;
+        }
+
+        if (!options.IsSuccess)
+        {
+            _error = options.Error;
+            return;
+        }
+
+        _options = options.Value!;
+        if (!_options.Types.Contains(_type))
+        {
+            _type = _options.Types.Contains(WorkItemType.Task) ? WorkItemType.Task : _options.Types[0];
+        }
+
+        _statusId = _options.Columns.First(c => c.Category == StatusCategory.ToDo).Id;
+        _parent = null;
+        _sprintId = null;
+        if (_assigneeId is { } assignee && _options.Assignees.All(a => a.UserId != assignee))
+        {
+            _assigneeId = null;
+        }
+    }
+
+    private bool _typeMenuOpen;
+
+    private async Task ChooseType(WorkItemType type)
+    {
+        SetType(type);
+        _typeMenuOpen = false;
+        await FocusAsync("create-type");
+    }
+
+    private async Task TypeMenuKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _typeMenuOpen)
+        {
+            _typeMenuOpen = false;
+            await FocusAsync("create-type");
+        }
+    }
+
+    private async Task FocusAsync(string id)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("upms.focusById", id);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private void SetType(WorkItemType type)
+    {
+        if (ParentKindOf(type) != ParentKindOf(_type))
+        {
+            _parent = null; // an epic is no sub-task's parent, and the other way round
+        }
+
+        _type = type;
+        _error = null;
+    }
+
+    private static int ParentKindOf(WorkItemType type) => type == WorkItemType.Subtask ? 1 : WorkItemTypes.LevelOf(type) == WorkItemLevel.Standard ? 2 : 0;
+
+    private void AssigneeChanged(ChangeEventArgs e) => _assigneeId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+
+    private async Task CreateAsync()
+    {
+        if (_busy || _options is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var description = _description is null ? null : await _description.GetDocumentAsync();
+            var item = new NewWorkItem(_type, _summary, _type == WorkItemType.Subtask ? null : _parent?.Key)
+            {
+                ParentKey = _type == WorkItemType.Subtask ? _parent?.Key : null,
+                Description = description,
+                StatusId = _statusId,
+                AssigneeId = _assigneeId,
+                Priority = _priority,
+                Labels = _labels,
+                SprintId = HasSprint ? _sprintId : null,
+                StartDate = _type == WorkItemType.Milestone ? null : _start,
+                DueDate = _due,
+                Estimate = HasEstimate ? _estimate : null,
+            };
+            var created = await Items.CreateAsync(_spaceKey, item, CancellationToken.None);
+            if (!created.IsSuccess)
+            {
+                // Every value stays (constitution VI).
+                _error = created.Error;
+                _description?.ShowError(FieldOf(created.Error!) == "description" ? created.Error!.Message : null);
+                return;
+            }
+
+            _error = null;
+            _created = created.Value!;
+            Launcher.NotifyCreated(_spaceKey, _created.Key);
+            if (_createAnother)
+            {
+                // The same space, type and parent; a new summary and description (FR-007).
+                _summary = "";
+                if (_description is not null)
+                {
+                    await _description.ClearAsync();
+                }
+
+                _focusSummary = true;
+            }
+            else
+            {
+                await _dialog.CloseAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CloseRequestedAsync()
+    {
+        if (await IsDirtyAsync())
+        {
+            _confirmDiscard = true; // FR-008
+            return;
+        }
+
+        await _dialog.CloseAsync();
+    }
+
+    private async Task<bool> IsDirtyAsync() =>
+        _summary.Trim().Length > 0 || _labels.Count > 0 || (_description is not null && await _description.GetDocumentAsync() is not null);
+
+    private async Task DiscardAsync()
+    {
+        _confirmDiscard = false;
+        await _dialog.CloseAsync();
+    }
+
+    private void KeepEditing() => _confirmDiscard = false;
+
+    private void Closed()
+    {
+        _summary = "";
+        _labels = [];
+        _parent = null;
+        _sprintId = null;
+        _start = null;
+        _due = null;
+        _estimate = null;
+        _assigneeId = null;
+        _priority = Priority.Medium;
+        _createAnother = false;
+        _confirmDiscard = false;
+        _error = null;
+        _optionsRequest++;
+    }
+
+    private string ItemHref(WorkItemDetails item) => $"spaces/{item.ProjectKey}/board?task={Uri.EscapeDataString(item.Key)}";
+
+    /// <summary>Which field a refusal belongs to, or null for a message at the top.</summary>
+    private static string? FieldOf(AppError error)
+    {
+        var field = error.FieldErrors?.Keys.FirstOrDefault() switch
+        {
+            "Title" => "summary",
+            "Description" or "Body" => "description",
+            "StartDate" or "DueDate" => "dates",
+            "Estimate" => "estimate",
+            "Label" => "labels",
+            _ => null,
+        };
+        return field ?? error.Code switch
+        {
+            ErrorCodes.ParentRequired or ErrorCodes.InvalidParent or ErrorCodes.InvalidContainer => "parent",
+            ErrorCodes.NotAssignable => "assignee",
+            ErrorCodes.InvalidDates => "dates",
+            ErrorCodes.InvalidLabel or ErrorCodes.TooManyLabels => "labels",
+            ErrorCodes.TypeNotAllowed => "type",
+            ErrorCodes.StageLocked or ErrorCodes.GateNotApproved => "status",
+            ErrorCodes.UnsupportedFormatting or ErrorCodes.InvalidLink or ErrorCodes.TextTooLong => "description",
+            _ => null,
+        };
+    }
+
+    /// <summary>The message at the top: a right lost meanwhile reads as such (spec Edge Cases).</summary>
+    private static string ErrorText(AppError error) =>
+        error.Kind == ErrorKind.Forbidden ? "You can no longer add work to this space." : error.Message;
+
+    private string? ErrorFor(string field) => _error is not null && FieldOf(_error) == field ? _error.Message : null;
+
+    private string Invalid(string field) => ErrorFor(field) is null ? "false" : "true";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusSummary && _options is not null)
+        {
+            _focusSummary = false;
+            await JS.InvokeVoidAsync("upms.focusById", "create-summary");
+        }
+    }
+
+    public void Dispose() => Launcher.Requested -= OnRequested;
+}

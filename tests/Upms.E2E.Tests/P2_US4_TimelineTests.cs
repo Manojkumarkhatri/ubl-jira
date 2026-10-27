@@ -29,15 +29,16 @@ public sealed class P2_US4_TimelineTests(AppFixture app) : BrowserTest(app)
         var kamranPassword = await App.CreateUserAsync("kamran", "Kamran Akmal");
         var lubnaPassword = await App.CreateUserAsync("lubna", "Lubna Saeed");
         var kamran = await SignInAsync("kamran", kamranPassword);
-        await GotoAsync(kamran, "/projects");
-        await kamran.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(kamran, "/spaces");
+        await kamran.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = kamran.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync("Roadmap");
         // The suggested key appears first; typing over it before it arrives would mix the two.
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("RMP");
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await WaitForPathAsync(kamran, "/projects/RMP/board");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
+        await WaitForPathAsync(kamran, "/spaces/RMP/board");
         await App.AddMemberAsync("RMP", "lubna", Upms.Domain.Projects.ProjectRole.Viewer);
         var today = DateOnly.FromDateTime(DateTime.UtcNow); // the organization's time zone is UTC
         await App.AddScheduledTasksAsync("RMP",
@@ -51,9 +52,9 @@ public sealed class P2_US4_TimelineTests(AppFixture app) : BrowserTest(app)
         ]);
 
         // P2_US4_AS1 and AS2: four bars (one of them a one-day bar), a today line, and two unscheduled tasks.
-        await GotoAsync(kamran, "/projects/RMP/board");
+        await GotoAsync(kamran, "/spaces/RMP/board");
         await kamran.Locator("nav.project-nav").GetByRole(AriaRole.Link, new() { Name = "Timeline" }).ClickAsync();
-        await WaitForPathAsync(kamran, "/projects/RMP/timeline");
+        await WaitForPathAsync(kamran, "/spaces/RMP/timeline");
         await WaitForInteractivityAsync(kamran);
         await Assertions.Expect(kamran.Locator("button.tl-bar")).ToHaveCountAsync(4);
         await Assertions.Expect(kamran.Locator(".tl-today")).ToHaveCountAsync(1);
@@ -112,7 +113,7 @@ public sealed class P2_US4_TimelineTests(AppFixture app) : BrowserTest(app)
 
         // P2_US4_AS9: a Viewer reads the timeline but has nothing to drag or schedule.
         var lubna = await SignInAsync("lubna", lubnaPassword);
-        await GotoAsync(lubna, "/projects/RMP/timeline?scale=weeks");
+        await GotoAsync(lubna, "/spaces/RMP/timeline?scale=weeks");
         await Assertions.Expect(lubna.Locator("button.tl-bar")).ToHaveCountAsync(5);
         await Assertions.Expect(lubna.Locator(".tl-handle")).ToHaveCountAsync(0);
         await Assertions.Expect(lubna.Locator("button.schedule-btn")).ToHaveCountAsync(0);

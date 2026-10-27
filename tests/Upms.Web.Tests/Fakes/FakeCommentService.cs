@@ -15,22 +15,22 @@ public sealed class FakeCommentService(Guid me) : ICommentService
     public Task<Result<Page<CommentView>>> ListAsync(string workItemKey, PageRequest page, CancellationToken ct) =>
         Task.FromResult(Result<Page<CommentView>>.Ok(new Page<CommentView>(Comments.ToList(), Comments.Count, 1, 50)));
 
-    public Task<Result<CommentView>> AddAsync(string workItemKey, string body, CancellationToken ct)
+    public Task<Result<CommentView>> AddAsync(string workItemKey, string document, CancellationToken ct)
     {
         if (NextAddResult is { } next)
         {
-            return Task.FromResult(next(body));
+            return Task.FromResult(next(document));
         }
 
-        var comment = new CommentView(_nextId++, me, "Amina Khan", true, body.Trim(), DateTimeOffset.UtcNow, null, false, [1]);
+        var comment = new CommentView(_nextId++, me, "Amina Khan", true, Rich.FromDocument(document), DateTimeOffset.UtcNow, null, false, [1]);
         Comments.Add(comment);
         return Task.FromResult(Result<CommentView>.Ok(comment));
     }
 
-    public Task<Result<CommentView>> EditAsync(long commentId, string body, byte[] expectedVersion, CancellationToken ct)
+    public Task<Result<CommentView>> EditAsync(long commentId, string document, byte[] expectedVersion, CancellationToken ct)
     {
         var index = Comments.FindIndex(c => c.Id == commentId);
-        Comments[index] = Comments[index] with { Body = body, EditedAt = DateTimeOffset.UtcNow };
+        Comments[index] = Comments[index] with { Body = Rich.FromDocument(document), EditedAt = DateTimeOffset.UtcNow };
         return Task.FromResult(Result<CommentView>.Ok(Comments[index]));
     }
 

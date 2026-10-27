@@ -1,0 +1,18 @@
+@* The heading and tabs of "For you", as in Jira (Jira parity pass US4 scenario 8, FR-022a): Worked on, Viewed, Assigned
+   to me and Starred. The tabs are links, so each has its own address. *@
+<div class="page-head">
+    <h1 id="for-you-heading" tabindex="-1">For you</h1>
+</div>
+<nav class="project-nav space-tabs" aria-label="For you">
+    <a href="for-you" aria-current="@CurrentFor(ForYouTab.WorkedOn)">Worked on</a>
+    <a href="for-you/viewed" aria-current="@CurrentFor(ForYouTab.Viewed)">Viewed</a>
+    <a href="for-you/assigned" aria-current="@CurrentFor(ForYouTab.Assigned)">Assigned to me</a>
+    <a href="for-you/starred" aria-current="@CurrentFor(ForYouTab.Starred)">Starred</a>
+</nav>
+
+@code {
+    [Parameter]
+    public ForYouTab Current { get; set; }
+
+    private string? CurrentFor(ForYouTab tab) => tab == Current ? "page" : null;
+}

@@ -1,5 +1,9 @@
 # Contract: Permission Matrix (Phase 2)
 
+> **Superseded by Phase 3**: once Phase 3 is installed, the matrix in
+> `specs/004-templates-and-planning/contracts/permissions.md` applies; it adds templates, sprints, stage gates,
+> dependencies and the Approver column.
+
 **Feature**: [spec.md](../spec.md) | Implements FR-002–FR-011, FR-016, FR-025 and Phase 1's account rules
 through the single policy point `IProjectAccess` (research R2). This matrix supersedes the Phase 1 matrix
 (`specs/002-kanban-project-core/contracts/permissions.md`). Every cell is enforced in the application

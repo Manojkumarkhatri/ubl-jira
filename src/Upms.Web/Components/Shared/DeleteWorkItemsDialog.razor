@@ -1,0 +1,124 @@
+@using Upms.Application.Work
+@inject IWorkItemService Items
+@inject LiveAnnouncer Announcer
+@* Jira's "Delete" from a board card or the list's selection. It asks first, as the drawer does. Deleted items go to
+   "Archived work items", where an administrator restores them. *@
+<ModalDialog @ref="_dialog" Title="@DialogTitle" TestId="delete-items-confirm">
+    <ChildContent>
+        @if (_previews.Count == 1)
+        {
+            var preview = _previews[0];
+            <p><strong>@preview.Key</strong> @preview.Title</p>
+        }
+        else
+        {
+            <ul class="delete-items-list">
+                @foreach (var preview in _previews)
+                {
+                    <li><strong>@preview.Key</strong> @preview.Title</li>
+                }
+            </ul>
+        }
+        @if (SubtaskCount > 0)
+        {
+            <p>@(SubtaskCount == 1 ? "1 sub-task is" : $"{SubtaskCount} sub-tasks are") deleted with @(_previews.Count == 1 ? "it" : "them").</p>
+        }
+        @if (_refused.Count > 0)
+        {
+            <p class="hint">Not deleted: @string.Join(" ", _refused)</p>
+        }
+        <p class="hint">Deleted work items leave the board, lists and search. An administrator can restore them from Archived work items.</p>
+        <span class="error-text" role="alert">@_error</span>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-danger" data-testid="delete-items" disabled="@_busy" @onclick="DeleteAsync">Delete</button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _dialog;
+    private readonly List<DeletePreview> _previews = [];
+    private readonly List<string> _refused = [];
+    private string? _error;
+    private bool _busy;
+
+    /// <summary>After the items are deleted: the page reloads.</summary>
+    [Parameter]
+    public EventCallback OnDeleted { get; set; }
+
+    /// <summary>Nothing could be deleted, or some deletes failed: the page shows why.</summary>
+    [Parameter]
+    public EventCallback<string> OnProblem { get; set; }
+
+    private string DialogTitle => _previews.Count == 1 ? $"Delete {_previews[0].Key}?" : $"Delete {_previews.Count} work items?";
+
+    private int SubtaskCount => _previews.Sum(p => p.SubtaskCount);
+
+    /// <summary>Checks who may delete each item, then asks. Items the person cannot delete are listed, not deleted.</summary>
+    public async Task AskAsync(IReadOnlyCollection<string> keys)
+    {
+        _previews.Clear();
+        _refused.Clear();
+        _error = null;
+        foreach (var key in keys)
+        {
+            var preview = await Items.PreviewDeleteAsync(key, CancellationToken.None);
+            if (preview.IsSuccess)
+            {
+                _previews.Add(preview.Value!);
+            }
+            else
+            {
+                _refused.Add($"{key}: {preview.Error!.Message}");
+            }
+        }
+
+        if (_previews.Count == 0)
+        {
+            await OnProblem.InvokeAsync(string.Join(" ", _refused));
+            return;
+        }
+
+        // Called from the page, so render here first: the title is the dialog's parameter.
+        StateHasChanged();
+        _dialog!.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var failed = new List<string>();
+            foreach (var preview in _previews)
+            {
+                var result = await Items.DeleteAsync(preview.Key, CancellationToken.None);
+                if (!result.IsSuccess)
+                {
+                    failed.Add($"{preview.Key}: {result.Error!.Message}");
+                }
+            }
+
+            var deleted = _previews.Count - failed.Count;
+            await _dialog!.CloseAsync();
+            Announcer.Announce(deleted == 1 && failed.Count == 0
+                ? $"Deleted {_previews[0].Key}."
+                : $"Deleted {deleted} {(deleted == 1 ? "work item" : "work items")}.");
+            await OnDeleted.InvokeAsync();
+            if (failed.Count > 0)
+            {
+                await OnProblem.InvokeAsync(string.Join(" ", failed));
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

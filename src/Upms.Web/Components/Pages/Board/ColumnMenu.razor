@@ -1,0 +1,146 @@
+@using Upms.Application.Projects
+@using Upms.Domain.Common
+@inject IJSRuntime JS
+@* A column's menu on the board, for Space admins (Jira parity pass FR-011; contracts/ui-routes.md "Board"): a menu button
+   with a list of actions. Arrow keys, Home and End move between them, Escape closes the menu and gives focus back to its
+   button. An action that does not apply stays in the list, marked as unavailable, with the reason. *@
+<div class="column-menu">
+    <button type="button" id="@ButtonId" class="icon-btn column-menu-button" data-testid="column-menu-@Column.Id"
+            aria-label="Column actions for @Column.Name" aria-haspopup="menu" aria-expanded="@(_open ? "true" : "false")"
+            aria-controls="@(_open ? ListId : null)" @onclick="Toggle">⋯</button>
+    @if (_open)
+    {
+        @* A click anywhere else closes the menu, as in Jira. *@
+        <div class="menu-backdrop" @onclick="() => Close(giveFocusBack: false)"></div>
+        <ul id="@ListId" class="column-menu-list" role="menu" aria-label="Actions for @Column.Name" @onkeydown="KeyDown">
+            @for (var i = 0; i < Items.Count; i++)
+            {
+                var index = i;
+                var item = Items[i];
+                <li role="none">
+                    <button type="button" id="@ItemId(index)" role="menuitem" tabindex="-1" class="column-menu-item @(item.Danger ? "btn-danger" : "")"
+                            aria-disabled="@(item.Unavailable is null ? null : "true")"
+                            aria-describedby="@(item.Unavailable is null ? null : $"{ItemId(index)}-why")"
+                            @onclick="() => ChooseAsync(item)">@item.Label</button>
+                    @if (item.Unavailable is { } why)
+                    {
+                        <span id="@($"{ItemId(index)}-why")" class="hint column-menu-why">@why</span>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private bool _open;
+    private int _focused;
+    private string? _focusId;
+
+    [Parameter, EditorRequired]
+    public BoardColumnView Column { get; set; } = default!;
+
+    /// <summary>How many columns the board has, for "Move right".</summary>
+    [Parameter, EditorRequired]
+    public int ColumnCount { get; set; }
+
+    [Parameter]
+    public EventCallback<(ColumnAction Action, BoardColumnView Column)> OnAction { get; set; }
+
+    private string ButtonId => $"column-menu-button-{Column.Id}";
+
+    private string ListId => $"column-menu-{Column.Id}-list";
+
+    private string ItemId(int index) => $"column-{Column.Id}-action-{index}";
+
+    private IReadOnlyList<MenuItem> Items =>
+    [
+        new(ColumnAction.Rename, "Rename"),
+        new(ColumnAction.SetLimit, Column.WipLimit is null ? "Set limit" : "Change limit"),
+        .. Column.WipLimit is null ? Array.Empty<MenuItem>() : [new MenuItem(ColumnAction.ClearLimit, "Clear limit")],
+        new(ColumnAction.MoveLeft, "Move left", Column.Position == 0 ? "It is the first column." : null),
+        new(ColumnAction.MoveRight, "Move right", Column.Position == ColumnCount - 1 ? "It is the last column." : null),
+        new(ColumnAction.ChangeType, "Change status type", Column.IsEmpty ? null : "Only empty columns can change type."),
+        new(ColumnAction.Delete, "Delete", Danger: true),
+    ];
+
+    private void Toggle()
+    {
+        if (_open)
+        {
+            Close();
+            return;
+        }
+
+        _open = true;
+        _focused = 0;
+        _focusId = ItemId(0);
+    }
+
+    private void Close(bool giveFocusBack = true)
+    {
+        _open = false;
+        if (giveFocusBack)
+        {
+            _focusId = ButtonId;
+        }
+    }
+
+    private void KeyDown(KeyboardEventArgs e)
+    {
+        var count = Items.Count;
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                _focused = (_focused + 1) % count;
+                break;
+            case "ArrowUp":
+                _focused = (_focused - 1 + count) % count;
+                break;
+            case "Home":
+                _focused = 0;
+                break;
+            case "End":
+                _focused = count - 1;
+                break;
+            case "Escape":
+                Close();
+                return;
+            case "Tab":
+                Close(giveFocusBack: false);
+                return;
+            default:
+                return;
+        }
+
+        _focusId = ItemId(_focused);
+    }
+
+    private async Task ChooseAsync(MenuItem item)
+    {
+        if (item.Unavailable is not null)
+        {
+            return;
+        }
+
+        Close(giveFocusBack: item.Action is ColumnAction.ClearLimit or ColumnAction.MoveLeft or ColumnAction.MoveRight);
+        await OnAction.InvokeAsync((item.Action, Column));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is { } id)
+        {
+            _focusId = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private sealed record MenuItem(ColumnAction Action, string Label, string? Unavailable = null, bool Danger = false);
+}

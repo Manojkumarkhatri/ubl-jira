@@ -20,7 +20,8 @@ public sealed class ServiceHarness : IAsyncDisposable
 
     private readonly ServiceProvider _provider;
 
-    public ServiceHarness(string connectionString)
+    /// <param name="configure">Replaces services for a test class, for example a fake malware scanner.</param>
+    public ServiceHarness(string connectionString, Action<IServiceCollection>? configure = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -42,6 +43,7 @@ public sealed class ServiceHarness : IAsyncDisposable
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IHttpContextAccessor>(HttpContextAccessor);
         services.AddSingleton<IAuthenticationService, NoOpAuthenticationService>();
+        configure?.Invoke(services);
 
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         HttpContextAccessor.HttpContext = new DefaultHttpContext { RequestServices = _provider };

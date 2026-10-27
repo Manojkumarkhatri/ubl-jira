@@ -1,0 +1,30 @@
+@page "/projects"
+@page "/projects/{*Rest}"
+@page "/my-tasks"
+@inject NavigationManager Navigation
+
+@* Addresses from Phases 1 to 4 (bookmarks, old emails, shared links) lead to the same page at its new address, with the
+   rest of the path and the query string (Jira parity pass FR-020; research R2). During prerendering the navigation
+   becomes a redirect; in the app it replaces the history entry, so Back does not return to the old address. *@
+
+@code {
+    [Parameter]
+    public string? Rest { get; set; }
+
+    protected override void OnInitialized() => Navigation.NavigateTo(NewAddress(Navigation.ToBaseRelativePath(Navigation.Uri)), replace: true);
+
+    /// <summary>The new address for an old one: only the first segment changes.</summary>
+    public static string NewAddress(string oldRelative)
+    {
+        var slash = oldRelative.IndexOfAny(['/', '?', '#']);
+        var first = slash < 0 ? oldRelative : oldRelative[..slash];
+        var rest = slash < 0 ? "" : oldRelative[slash..];
+        var replaced = first.ToLowerInvariant() switch
+        {
+            "projects" => "spaces",
+            "my-tasks" => "for-you/assigned",
+            _ => first,
+        };
+        return replaced + rest;
+    }
+}

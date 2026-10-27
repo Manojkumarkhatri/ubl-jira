@@ -1,26 +1,60 @@
 @using System.Globalization
 @using Upms.Application.Work
 @using Upms.Domain.Common
+@using Upms.Domain.Work
 
-@* One task on the timeline (Phase 2 FR-034, FR-035, FR-038): a button named with the task, its dates, status type and
-   assignee; the visible text says the same, and the status type has a symbol, not only a colour. Contributors get
-   handles to drag either end (timeline.js). *@
-<button type="button" id="@IdFor(Item.Key)" class="tl-bar tl-@CategoryClass @(IsPending ? "is-pending" : "")" data-key="@Item.Key"
-        data-draggable="@(CanContribute ? "true" : "false")" style="left:@Px(Scale.Left(First));width:@Px(Scale.WidthOf(First, Last))"
-        aria-label="@Name" aria-describedby="tl-help" @onkeydown="e => OnKeyDown.InvokeAsync(e)" @onclick="() => OnActivate.InvokeAsync()">
-    @if (CanContribute)
+@* One item on the timeline, drawn as Jira draws it (Phase 2 FR-034, FR-035, FR-038): a solid bar from its first to its last date,
+   coloured by status type or by epic colour, with no words inside; its name, dates, status and assignee are its accessible
+   name and its tooltip. Contributors get handles to drag either end (timeline.js). A milestone is a diamond on its one date
+   (Phase 3 FR-043). A warning sign after the bar marks an item that starts before something it waits for is due (FR-051). *@
+@if (Item.Type == WorkItemType.Milestone)
+{
+    <button type="button" id="@IdFor(Item.Key)" class="tl-bar tl-milestone tl-@CategoryClass @(IsPending ? "is-pending" : "")" data-key="@Item.Key"
+            data-draggable="@(CanContribute ? "true" : "false")" style="left:@Px(Scale.Left(Last) - 8)"
+            aria-label="@Name" aria-describedby="tl-help" @onkeydown="e => OnKeyDown.InvokeAsync(e)" @onclick="() => OnActivate.InvokeAsync()">
+        <span class="tl-diamond" aria-hidden="true">◆</span>
+        <span class="tl-milestone-label" aria-hidden="true">@Item.Key @Item.Title</span>
+    </button>
+}
+else
+{
+    <button type="button" id="@IdFor(Item.Key)" class="tl-bar @ColorClass @(IsPending ? "is-pending" : "") @(IsContainer ? "tl-container" : "")" data-key="@Item.Key"
+            data-draggable="@(CanContribute ? "true" : "false")" style="left:@Px(Scale.Left(First));width:@Px(Scale.WidthOf(First, Last))"
+            title="@Tooltip" aria-label="@Name" aria-describedby="tl-help" @onkeydown="e => OnKeyDown.InvokeAsync(e)" @onclick="() => OnActivate.InvokeAsync()">
+        @if (CanContribute)
+        {
+            <span class="tl-handle tl-handle-start" data-drag="start" aria-hidden="true"></span>
+            <span class="tl-handle tl-handle-end" data-drag="end" aria-hidden="true"></span>
+        }
+    </button>
+    @if (Item.WaitsFor.Where(w => w.IsLate).Select(w => w.Key).ToList() is { Count: > 0 } late)
     {
-        <span class="tl-handle tl-handle-start" data-drag="start" aria-hidden="true"></span>
+        <span class="tl-warning" style="left:@Px(Scale.Left(Last) + Scale.PixelsPerDay + 4)" title="Starts before @string.Join(", ", late) @(late.Count == 1 ? "is" : "are") due"
+              aria-hidden="true"><Icon Name="warning" Size="14" /></span>
     }
-    <span class="tl-bar-text" aria-hidden="true"><span class="tl-symbol">@Symbol</span> @Item.Key @Item.Title · @StatusLabel(Item.Status.Category)@AssigneeText</span>
-    @if (CanContribute)
-    {
-        <span class="tl-handle tl-handle-end" data-drag="end" aria-hidden="true"></span>
-    }
-</button>
+}
 
 @code {
-    /// <summary>The task with the dates to show: its own, or a change still being made with the keyboard.</summary>
+    /// <summary>Jira's bar colours: by status type (grey, blue, green), or by epic colour, where an item takes its epic's
+    /// colour and items in no epic are purple (Jira parity pass FR-025).</summary>
+    private string ColorClass => ColorByEpic
+        ? (Item.Color ?? EpicColor) is { } color ? $"tl-c-epic tl-epic-{color.ToString().ToLowerInvariant()}" : "tl-c-epic tl-epic-purple"
+        : $"tl-c-{CategoryClass}";
+
+    /// <summary>Colour bars by epic colour rather than by status type (the timeline's view settings).</summary>
+    [Parameter]
+    public bool ColorByEpic { get; set; }
+
+    /// <summary>The colour of the epic the item is in, for colouring by epic.</summary>
+    [Parameter]
+    public EpicColor? EpicColor { get; set; }
+
+    private bool IsContainer => Item.Type is WorkItemType.Epic or WorkItemType.Stage;
+
+    private string Tooltip => $"{Item.Key} {Item.Title}\n{DatesText(Item.StartDate, Item.DueDate)} · {StatusLabel(Item.Status.Category)}"
+        + (Progress is { } p ? $" · {p.Percent}% done" : "") + AssigneeText + WaitsText;
+
+    /// <summary>The item with the dates to show: its own, or a change still being made with the keyboard.</summary>
     [Parameter, EditorRequired]
     public TimelineItem Item { get; set; } = default!;
 
@@ -33,10 +67,14 @@
     [Parameter]
     public bool IsPending { get; set; }
 
+    /// <summary>An epic's or stage's progress, shown in its bar (Phase 3 FR-042).</summary>
+    [Parameter]
+    public Progress? Progress { get; set; }
+
     [Parameter]
     public EventCallback<KeyboardEventArgs> OnKeyDown { get; set; }
 
-    /// <summary>A click, or Space: saves a pending change, otherwise opens the task.</summary>
+    /// <summary>A click, or Space: saves a pending change, otherwise opens the item.</summary>
     [Parameter]
     public EventCallback OnActivate { get; set; }
 
@@ -69,14 +107,12 @@
         _ => "done",
     };
 
-    private string Symbol => Item.Status.Category switch
-    {
-        StatusCategory.ToDo => "○",
-        StatusCategory.InProgress => "◐",
-        _ => "●",
-    };
-
     private string AssigneeText => Item.Assignee is { } assignee ? $" · {assignee.Initials}" : "";
+
+    /// <summary>" · waits for WEB-11 (late)": the arrows' meaning in words (FR-050, FR-051).</summary>
+    private string WaitsText => Item.WaitsFor.Count == 0
+        ? ""
+        : " · waits for " + string.Join(", ", Item.WaitsFor.Select(w => w.IsLate ? $"{w.Key} (late)" : w.Key));
 
     private string Name
     {
@@ -85,7 +121,9 @@
             var assignee = Item.Assignee is { } a
                 ? $"assigned to {a.DisplayName}{(a.CanWork ? "" : " (no longer on the project)")}"
                 : "unassigned";
-            return $"{Item.Key} {Item.Title}, {DatesText(Item.StartDate, Item.DueDate)}, {StatusLabel(Item.Status.Category)}, {assignee}";
+            var dates = Item.Type == WorkItemType.Milestone ? $"milestone on {Long(Last)}" : DatesText(Item.StartDate, Item.DueDate);
+            var progress = Progress is { } p ? $", {p.Percent}% done" : "";
+            return $"{Item.Key} {Item.Title}, {dates}{progress}, {StatusLabel(Item.Status.Category)}, {assignee}{WaitsText}";
         }
     }
 

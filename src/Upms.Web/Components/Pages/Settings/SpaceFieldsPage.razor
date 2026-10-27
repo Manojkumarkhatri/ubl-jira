@@ -1,0 +1,175 @@
+@page "/spaces/{Key}/settings/fields"
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@inject ISpaceFieldService Fields
+@inject LiveAnnouncer Announcer
+
+@* Jira's "Fields" page of a space: every field its work items can show, the built-in ones and the space's own, with a
+   search, a filter by kind and "Add field". Space admins and administrators only. *@
+<PageTitle>Fields · @Key · U-PMS</PageTitle>
+
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_list is not { } list)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@list.SpaceKey" Title="Space settings" Current="ProjectPage.Settings" CanManage="true" Template="list.Template" />
+    <SettingsTabs SpaceKey="@list.SpaceKey" Current="fields" />
+
+    <div class="fields-page">
+        <div class="fields-head">
+            <div>
+                <h2>Fields</h2>
+                <p class="hint">The fields work items in this space can show. Place them on a work type in <a href="spaces/@list.SpaceKey/settings/work-types">Work types</a>.</p>
+            </div>
+            <button type="button" class="btn btn-primary" data-testid="add-field" @onclick="() => _dialog!.Open()">Add field</button>
+        </div>
+        <div class="fields-toolbar">
+            <span class="search-field">
+                <Icon Name="search" />
+                <label class="sr-only" for="fields-search">Search fields</label>
+                <input id="fields-search" class="input" type="search" placeholder="Search" autocomplete="off" @bind="_search" @bind:event="oninput" />
+            </span>
+            <label class="sr-only" for="fields-category">Field category</label>
+            <select id="fields-category" class="select" @bind="_category">
+                <option value="">Field category: all</option>
+                <option value="system">System fields</option>
+                <option value="custom">Fields of this space</option>
+            </select>
+        </div>
+        <div class="table-wrap">
+            <table class="fields-table" data-testid="fields-table">
+                <caption class="sr-only">Fields of @list.SpaceName</caption>
+                <thead>
+                    <tr><th scope="col">Name</th><th scope="col">Field type</th><th scope="col">Description</th><th scope="col">Work types</th><th scope="col"><span class="sr-only">Actions</span></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var field in Shown)
+                    {
+                        <tr>
+                            <th scope="row">
+                                <span class="field-name"><Icon Name="@FieldIcons.For(field.Key, field.Type)" /> @field.Name</span>
+                                @if (field.IsSystem)
+                                {
+                                    <span class="locked-chip" title="A system field: it can't be renamed or deleted">System</span>
+                                }
+                            </th>
+                            <td>@field.TypeName</td>
+                            <td class="hint">@field.Description</td>
+                            <td class="hint">@(field.IsSystem ? "" : field.UsedIn.Count == 0 ? "None yet" : string.Join(", ", field.UsedIn.Select(WorkItemTypes.DisplayName)))</td>
+                            <td class="fields-actions">
+                                @if (!field.IsSystem)
+                                {
+                                    <button type="button" class="link-action" @onclick="() => _dialog!.OpenEdit(field)" aria-label="Edit @field.Name">Edit</button>
+                                    <button type="button" class="link-action danger" @onclick="() => AskDelete(field)" aria-label="Delete @field.Name">Delete</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (!Shown.Any())
+                    {
+                        <tr><td colspan="5" class="hint">No fields match.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <FieldDialog @ref="_dialog" SpaceKey="@list.SpaceKey" NumberFields="NumberFields" OnSaved="SavedAsync" />
+    <ModalDialog @ref="_deleteDialog" Title="@($"Delete {_deleting?.Name}?")" TestId="delete-field">
+        <ChildContent>
+            @if (_deleting is { } field)
+            {
+                <p>@field.Name leaves every work type@(field.UsedIn.Count > 0 ? $" ({string.Join(", ", field.UsedIn.Select(WorkItemTypes.DisplayName))})" : "").</p>
+                <p class="hint">The values already entered stay in each work item's history.</p>
+            }
+            <span class="error-text" role="alert">@_deleteError</span>
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete</button>
+        </Footer>
+    </ModalDialog>
+}
+
+@code {
+    private SpaceFieldList? _list;
+    private bool _notFound;
+    private string _search = "";
+    private string _category = "";
+    private FieldDialog? _dialog;
+    private ModalDialog? _deleteDialog;
+    private FieldRow? _deleting;
+    private string? _deleteError;
+    private bool _busy;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    private IEnumerable<FieldRow> Shown => _list!.Fields
+        .Where(f => _category switch { "system" => f.IsSystem, "custom" => !f.IsSystem, _ => true })
+        .Where(f => _search.Trim().Length == 0 || f.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private IReadOnlyList<string> NumberFields =>
+        [.. SystemFields.FormulaNumbers, .. _list?.Fields.Where(f => f.Type == FieldType.Number).Select(f => f.Name) ?? []];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await Fields.ListAsync(Key, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _list = result.Value!;
+    }
+
+    private async Task SavedAsync(FieldRow field)
+    {
+        await LoadAsync();
+        Announcer.Announce($"Saved {field.Name}.");
+    }
+
+    private void AskDelete(FieldRow field)
+    {
+        _deleting = field;
+        _deleteError = null;
+        _deleteDialog!.Open();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_deleting is not { FieldId: { } id } field || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Fields.DeleteAsync(id, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _deleteError = result.Error!.Message;
+                return;
+            }
+
+            await _deleteDialog!.CloseAsync();
+            await LoadAsync();
+            Announcer.Announce($"Deleted {field.Name}.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

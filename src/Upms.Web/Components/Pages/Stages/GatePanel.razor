@@ -1,0 +1,132 @@
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Work
+
+@* A stage's gate (Phase 3 FR-031, FR-035–FR-038): its state, approvers with their decisions, the approvals needed and the
+   requester exclusion, with the actions the viewer may take. *@
+<div class="gate-panel" data-testid="gate-panel">
+    <div class="gate-head">
+        <strong>Gate</strong>
+        <span class="gate-state state-@Gate.State.ToString().ToLowerInvariant()" data-testid="gate-state">@StateText(Gate.State)</span>
+        <span class="hint" data-testid="gate-needed">@NeededText</span>
+    </div>
+    @if (Gate.Approvers.Count > 0)
+    {
+        <ul class="gate-approvers" aria-label="Approvers">
+            @foreach (var approver in Gate.Approvers)
+            {
+                <li data-testid="gate-approver">@ApproverText(approver)</li>
+            }
+        </ul>
+        <p class="hint" data-testid="gate-exclusion">@(Gate.ExcludeRequester ? "The person who requests approval can't approve." : "The person who requests approval can also approve.")</p>
+    }
+    else
+    {
+        <p class="hint">No approvers yet.@(CanManage ? " Set up the gate to name them." : "")</p>
+    }
+    @if (Gate.CurrentRequest is { } request)
+    {
+        <p class="hint" data-testid="gate-request">
+            Requested by @request.RequestedBy on @request.RequestedAt.ToString("d MMM yyyy", CultureInfo.InvariantCulture) (request @request.Number)
+        </p>
+        @if (request.Decisions.Any(d => !string.IsNullOrEmpty(d.Note)))
+        {
+            <ul class="gate-notes">
+                @foreach (var decision in request.Decisions.Where(d => !string.IsNullOrEmpty(d.Note)))
+                {
+                    <li>@decision.ApproverName @(decision.Decision == GateDecisionKind.Approve ? "approved" : "sent it back"): “@decision.Note”</li>
+                }
+            </ul>
+        }
+        @if (Gate.State == GateState.SentBack && request.SentBackNote is { } note)
+        {
+            <p class="alert alert-warn" data-testid="gate-note">Sent back: @note</p>
+        }
+    }
+    <div class="gate-actions">
+        @if (Gate.CanDecide)
+        {
+            <button type="button" class="btn btn-sm btn-primary" data-testid="approve-gate" aria-label="Approve the @Stage.Title gate"
+                    @onclick="() => OnDecide.InvokeAsync(GateDecisionKind.Approve)">Approve</button>
+            <button type="button" class="btn btn-sm" data-testid="send-back-gate" aria-label="Send back the @Stage.Title gate"
+                    @onclick="() => OnDecide.InvokeAsync(GateDecisionKind.SendBack)">Send back</button>
+        }
+        @if (CanContribute && Stage.Place == StagePlace.Current && Gate.State is GateState.NotRequested or GateState.SentBack)
+        {
+            <button type="button" class="btn btn-sm" data-testid="request-approval" @onclick="() => OnRequest.InvokeAsync()">Request approval</button>
+        }
+        @if (CanContribute && Gate.State == GateState.AwaitingDecision)
+        {
+            <button type="button" class="btn btn-sm btn-ghost" data-testid="withdraw-request" @onclick="() => OnWithdraw.InvokeAsync()">Withdraw request</button>
+        }
+        @if (CanManage && Gate.State is GateState.NotRequested or GateState.SentBack)
+        {
+            <button type="button" class="btn btn-sm btn-ghost" data-testid="set-up-gate" aria-label="Set up the @Stage.Title gate"
+                    @onclick="() => OnSetUp.InvokeAsync()">Set up gate</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public StageView Stage { get; set; } = default!;
+
+    [Parameter]
+    public bool CanContribute { get; set; }
+
+    [Parameter]
+    public bool CanManage { get; set; }
+
+    [Parameter]
+    public EventCallback<GateDecisionKind> OnDecide { get; set; }
+
+    [Parameter]
+    public EventCallback OnRequest { get; set; }
+
+    [Parameter]
+    public EventCallback OnWithdraw { get; set; }
+
+    [Parameter]
+    public EventCallback OnSetUp { get; set; }
+
+    private GateView Gate => Stage.Gate;
+
+    public static string StateText(GateState state) => state switch
+    {
+        GateState.AwaitingDecision => "Awaiting decision",
+        GateState.Approved => "Approved",
+        GateState.SentBack => "Sent back",
+        _ => "Not requested",
+    };
+
+    /// <summary>"1 of 2 approvals".</summary>
+    private string NeededText
+    {
+        get
+        {
+            if (Gate.Approvers.Count == 0)
+            {
+                return "";
+            }
+
+            var approvals = Gate.State switch
+            {
+                GateState.Approved => Gate.ApprovalsNeeded,
+                GateState.AwaitingDecision => Gate.CurrentRequest?.Decisions.Count(d => d.Decision == GateDecisionKind.Approve) ?? 0,
+                _ => 0,
+            };
+            return $"{approvals} of {Gate.ApprovalsNeeded} approval{(Gate.ApprovalsNeeded == 1 ? "" : "s")}";
+        }
+    }
+
+    /// <summary>"Farah Khan · Approved", "Omar Ali · Waiting", with a mark for someone who can no longer decide.</summary>
+    private string ApproverText(ApproverView approver)
+    {
+        var decision = Gate.CurrentRequest?.Decisions.FirstOrDefault(d => d.ApproverId == approver.UserId);
+        var status = decision is not null
+            ? decision.Decision == GateDecisionKind.Approve ? "Approved" : "Sent back"
+            : Gate.State == GateState.AwaitingDecision ? "Waiting" : null;
+        var text = status is null ? approver.DisplayName : $"{approver.DisplayName} · {status}";
+        return approver.CanDecide ? text : $"{text} · can no longer decide";
+    }
+}

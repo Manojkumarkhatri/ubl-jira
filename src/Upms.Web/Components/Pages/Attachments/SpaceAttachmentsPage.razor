@@ -1,0 +1,326 @@
+@page "/spaces/{Key}/attachments"
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Drawer
+@inject IAttachmentService Attachments
+@inject NavigationManager Navigation
+
+<PageTitle>@(_files?.SpaceName ?? Key) · Attachments · U-PMS</PageTitle>
+
+@* The space's Attachments view, as Jira's: every file on the space's work items, newest first, as cards or a list. Files
+   download only once their malware check has passed; each opens its work item. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_files is null)
+{
+    <p aria-busy="true">Loading the attachments…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@_files.SpaceKey" Title="@_files.SpaceName" Current="ProjectPage.Attachments" Template="_files.Template"
+                   CanManage="_files.CanManage" CanRestoreDeleted="_files.CanRestoreDeleted" />
+
+    var shown = Shown().ToList();
+    <div class="cal-toolbar">
+        <div class="board-search">
+            <Icon Name="search" />
+            <input type="search" class="input" aria-label="Search attachments" placeholder="Search attachments" @bind="_search" @bind:event="oninput" />
+        </div>
+        <div class="tab-menu">
+            <button type="button" id="att-by-button" class="filter-btn @(_people.Count > 0 ? "is-active" : "")" aria-expanded="@Expanded(Menu.AddedBy)"
+                    @onclick="() => Toggle(Menu.AddedBy)"><Icon Name="person" /> Added by@(Badge(_people.Count))</button>
+            @if (_menu == Menu.AddedBy)
+            {
+                <div class="tab-popover filter-popover" role="group" aria-label="Added by" @onkeydown="MenuKeyDown">
+                    @foreach (var person in _files.Files.Select(f => f.File.UploadedBy).Distinct().Order())
+                    {
+                        <label class="filter-option"><input type="checkbox" checked="@_people.Contains(person)" @onchange="() => Flip(_people, person)" /> @person</label>
+                    }
+                    @if (_files.Files.Count == 0)
+                    {
+                        <p class="hint">No one has added a file yet.</p>
+                    }
+                </div>
+            }
+        </div>
+        <div class="tab-menu">
+            <button type="button" id="att-type-button" class="filter-btn @(_kinds.Count > 0 ? "is-active" : "")" aria-expanded="@Expanded(Menu.Type)"
+                    @onclick="() => Toggle(Menu.Type)"><Icon Name="docs" /> Attachment type@(Badge(_kinds.Count))</button>
+            @if (_menu == Menu.Type)
+            {
+                <div class="tab-popover filter-popover" role="group" aria-label="Attachment type" @onkeydown="MenuKeyDown">
+                    @foreach (var kind in Enum.GetValues<Kind>())
+                    {
+                        <label class="filter-option"><input type="checkbox" checked="@_kinds.Contains(kind)" @onchange="() => Flip(_kinds, kind)" /> @KindName(kind)</label>
+                    }
+                </div>
+            }
+        </div>
+        <div class="tab-menu">
+            <button type="button" id="att-date-button" class="filter-btn @(_within is null ? "" : "is-active")" aria-expanded="@Expanded(Menu.Date)"
+                    @onclick="() => Toggle(Menu.Date)"><Icon Name="calendar" /> @(_within is { } within ? DateName(within) : "Date added")</button>
+            @if (_menu == Menu.Date)
+            {
+                <div class="tab-popover filter-popover" role="radiogroup" aria-label="Date added" @onkeydown="MenuKeyDown">
+                    @foreach (var days in DateChoices)
+                    {
+                        <label class="filter-option"><input type="radio" name="att-date" checked="@(_within == days)" @onchange="() => { _within = days; _menu = Menu.None; }" /> @DateName(days)</label>
+                    }
+                </div>
+            }
+        </div>
+        @if (_people.Count + _kinds.Count > 0 || _within is not null)
+        {
+            <button type="button" class="btn btn-ghost btn-sm" @onclick="ClearFilters">Clear filters</button>
+        }
+        <span class="spacer"></span>
+        @if (_files.Files.Count > 0)
+        {
+            <span class="hint">@shown.Count @(shown.Count == 1 ? "file" : "files")</span>
+            <div class="seg" role="group" aria-label="Layout">
+                <button type="button" class="seg-btn" aria-pressed="@(_grid ? "true" : "false")" @onclick="() => _grid = true">Grid</button>
+                <button type="button" class="seg-btn" aria-pressed="@(_grid ? "false" : "true")" @onclick="() => _grid = false">List</button>
+            </div>
+        }
+    </div>
+
+    @if (_files.Files.Count == 0)
+    {
+        <div class="empty-hero">
+            <svg class="empty-art" viewBox="0 0 300 220" aria-hidden="true" focusable="false">
+                <path d="M60 60c30-48 150-55 190-20 35 30 20 95-10 125-35 35-120 50-165 15C40 150 35 100 60 60z" fill="#1868db" />
+                <rect x="70" y="40" width="160" height="140" rx="6" fill="#fff" stroke="#dfe1e6" />
+                <rect x="84" y="50" width="40" height="5" rx="2" fill="#dfe1e6" /><rect x="190" y="50" width="28" height="5" rx="2" fill="#dfe1e6" />
+                <rect x="84" y="64" width="40" height="38" rx="3" fill="#f8e6a0" /><rect x="84" y="94" width="40" height="8" fill="#fff" stroke="#dfe1e6" />
+                <rect x="130" y="64" width="40" height="38" rx="3" fill="#fff" stroke="#dfe1e6" /><rect x="134" y="70" width="32" height="6" rx="2" fill="#fca700" />
+                <rect x="176" y="64" width="40" height="38" rx="3" fill="#fff" stroke="#dfe1e6" /><rect x="176" y="64" width="40" height="6" fill="#1f845a" />
+                <rect x="84" y="110" width="40" height="38" rx="3" fill="#fff" stroke="#dfe1e6" /><rect x="90" y="117" width="12" height="12" rx="2" fill="#1868db" />
+                <rect x="130" y="110" width="40" height="38" rx="3" fill="#8270db" />
+                <rect x="176" y="110" width="40" height="38" rx="3" fill="#fff" stroke="#dfe1e6" /><circle cx="196" cy="127" r="7" fill="#292a2e" /><path d="M194 123.5v7l5-3.5z" fill="#fff" />
+            </svg>
+            <h2>There are no attachments</h2>
+            <p>Any attachments added to work items in this space will appear here.</p>
+        </div>
+    }
+    else if (shown.Count == 0)
+    {
+        <p class="hint">No files match.</p>
+    }
+    else if (_grid)
+    {
+        <ul class="file-grid" data-testid="space-attachments">
+            @foreach (var row in shown)
+            {
+                var file = row.File;
+                <li class="file-card">
+                    <div class="file-thumb">
+                        @if (file is { IsImage: true, Status: AttachmentCheckStatus.Passed })
+                        {
+                            <img src="@($"attachments/{file.Id}/preview")" alt="" loading="lazy" />
+                        }
+                        else
+                        {
+                            <span class="file-ext">@Extension(file.FileName)</span>
+                        }
+                    </div>
+                    <div class="file-card-body">
+                        @if (file.Status == AttachmentCheckStatus.Passed)
+                        {
+                            <a class="file-name" href="@($"attachments/{file.Id}")" download="@file.FileName" title="Download @file.FileName">@file.FileName</a>
+                        }
+                        else
+                        {
+                            <span class="file-name">@file.FileName</span>
+                        }
+                        <span class="hint">@AttachmentsSection.SizeText(file.Size) · <LocalTime Value="file.UploadedAt" /></span>
+                        @StateText(file)
+                        <a class="file-item" href="@ItemHref(row.ItemKey)"><TypeIcon Type="row.ItemType" /> <span class="key">@row.ItemKey</span> <span class="file-item-title">@row.ItemTitle</span></a>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+    else
+    {
+        <table class="table file-table" data-testid="space-attachments">
+            <caption class="sr-only">Files on this space's work items, newest first</caption>
+            <thead>
+                <tr><th scope="col">Name</th><th scope="col">Work item</th><th scope="col">Size</th><th scope="col">Added by</th><th scope="col">Added</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var row in shown)
+                {
+                    var file = row.File;
+                    <tr>
+                        <td>
+                            <span class="file-ext small" aria-hidden="true">@Extension(file.FileName)</span>
+                            @if (file.Status == AttachmentCheckStatus.Passed)
+                            {
+                                <a href="@($"attachments/{file.Id}")" download="@file.FileName">@file.FileName</a>
+                            }
+                            else
+                            {
+                                @file.FileName
+                            }
+                            @StateText(file)
+                        </td>
+                        <td><a href="@ItemHref(row.ItemKey)"><TypeIcon Type="row.ItemType" /> <span class="key">@row.ItemKey</span> @row.ItemTitle</a></td>
+                        <td>@AttachmentsSection.SizeText(file.Size)</td>
+                        <td>@file.UploadedBy</td>
+                        <td><LocalTime Value="file.UploadedAt" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (_files.Files.Count >= SpaceAttachments.MaxFiles)
+    {
+        <p class="hint">Showing the latest @SpaceAttachments.MaxFiles files.</p>
+    }
+
+    @if (!string.IsNullOrEmpty(TaskKey))
+    {
+        <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+    }
+}
+
+@code {
+    private enum Kind
+    {
+        Images,
+        Pdfs,
+        Documents,
+        Spreadsheets,
+        Presentations,
+        Archives,
+        Other,
+    }
+
+    private enum Menu
+    {
+        None,
+        AddedBy,
+        Type,
+        Date,
+    }
+
+    private static readonly int[] DateChoices = [1, 7, 30, 90];
+
+    private SpaceAttachments? _files;
+    private bool _notFound;
+    private string _search = "";
+    private readonly HashSet<string> _people = [];
+    private readonly HashSet<Kind> _kinds = [];
+    private int? _within;
+    private Menu _menu;
+    private bool _grid = true;
+    private string? _loadedFor;
+
+    [Inject]
+    private TimeProvider Time { get; set; } = default!;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary><c>?task={KEY-N}</c> opens the item's details over the page.</summary>
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor != Key)
+        {
+            _loadedFor = Key;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var loaded = await Attachments.ListForSpaceAsync(Key, CancellationToken.None);
+        _notFound = !loaded.IsSuccess;
+        _files = loaded.IsSuccess ? loaded.Value : null;
+    }
+
+    private IEnumerable<SpaceAttachment> Shown()
+    {
+        var since = _within is { } days ? Time.GetUtcNow().AddDays(-days) : DateTimeOffset.MinValue;
+        return _files!.Files.Where(row =>
+            (string.IsNullOrWhiteSpace(_search)
+                || row.File.FileName.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase)
+                || row.ItemKey.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase))
+            && (_people.Count == 0 || _people.Contains(row.File.UploadedBy))
+            && (_kinds.Count == 0 || _kinds.Contains(KindOf(row.File)))
+            && row.File.UploadedAt >= since);
+    }
+
+    private static Kind KindOf(AttachmentView file) => file.IsImage ? Kind.Images : Extension(file.FileName) switch
+    {
+        "PDF" => Kind.Pdfs,
+        "DOC" or "DOCX" or "ODT" or "RTF" or "TXT" or "MD" => Kind.Documents,
+        "XLS" or "XLSX" or "ODS" or "CSV" => Kind.Spreadsheets,
+        "PPT" or "PPTX" or "ODP" => Kind.Presentations,
+        "ZIP" or "7Z" or "RAR" or "GZ" or "TAR" => Kind.Archives,
+        _ => Kind.Other,
+    };
+
+    private static string KindName(Kind kind) => kind switch
+    {
+        Kind.Pdfs => "PDFs",
+        _ => kind.ToString(),
+    };
+
+    private static string DateName(int days) => days switch
+    {
+        1 => "Last 24 hours",
+        _ => $"Last {days} days",
+    };
+
+    private void Toggle(Menu menu) => _menu = _menu == menu ? Menu.None : menu;
+
+    private string Expanded(Menu menu) => _menu == menu ? "true" : "false";
+
+    private void MenuKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _menu = Menu.None;
+        }
+    }
+
+    private static void Flip<T>(HashSet<T> set, T value)
+    {
+        if (!set.Remove(value))
+        {
+            set.Add(value);
+        }
+    }
+
+    private static string Badge(int count) => count == 0 ? "" : $" ({count})";
+
+    private void ClearFilters()
+    {
+        _people.Clear();
+        _kinds.Clear();
+        _within = null;
+        _menu = Menu.None;
+    }
+
+
+    private static string Extension(string fileName) =>
+        Path.GetExtension(fileName).TrimStart('.') is { Length: > 0 and <= 5 } ext ? ext.ToUpperInvariant() : "FILE";
+
+    private static RenderFragment? StateText(AttachmentView file) => file.Status switch
+    {
+        AttachmentCheckStatus.Checking => @<span class="attachment-state">Being checked</span>,
+        AttachmentCheckStatus.Blocked => @<span class="attachment-state blocked">Blocked by the malware check</span>,
+        _ => null,
+    };
+
+    private string ItemHref(string key) => Navigation.GetUriWithQueryParameter("task", key);
+
+    private void CloseDrawer() => Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
+}

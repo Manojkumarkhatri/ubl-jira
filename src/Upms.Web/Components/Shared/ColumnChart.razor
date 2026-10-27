@@ -1,0 +1,92 @@
+@using System.Globalization
+@* A column chart with a value axis, as Jira's "Priority breakdown" and trend charts. The same numbers are in a table for
+   screen readers. *@
+<div class="colchart" style="--colchart-gap: @(Columns.Count > 12 ? "2px" : "6%")">
+    <div class="colchart-body" aria-hidden="true">
+        <div class="colchart-axis">
+            <span>@N(Top)</span><span>@N(Top / 2)</span><span>0</span>
+        </div>
+        <div class="colchart-plot">
+            @foreach (var column in Columns)
+            {
+                <div class="colchart-col" title="@column.Label: @column.Count">
+                    @if (column.Count > 0)
+                    {
+                        <span class="colchart-bar" style="height: @Pct(column.Count)%; background: @(column.Color ?? Color)"></span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+    <div class="colchart-labels" aria-hidden="true">
+        @for (var i = 0; i < Columns.Count; i++)
+        {
+            var column = Columns[i];
+            <div class="colchart-label">
+                @if (i % LabelEvery == 0)
+                {
+                    @if (LabelTemplate is not null)
+                    {
+                        @LabelTemplate(column)
+                    }
+                    else
+                    {
+                        @column.Label
+                    }
+                }
+            </div>
+        }
+    </div>
+    @if (AxisTitle is not null)
+    {
+        <p class="colchart-title" aria-hidden="true">@AxisTitle</p>
+    }
+    <table class="sr-only">
+        <caption>@Caption</caption>
+        <tbody>
+            @foreach (var column in Columns)
+            {
+                <tr><th scope="row">@column.Label</th><td>@N(column.Count)</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Column> Columns { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public string Caption { get; set; } = "";
+
+    [Parameter]
+    public string Color { get; set; } = "#1868db";
+
+    /// <summary>Shows every n-th label, for long series such as days.</summary>
+    [Parameter]
+    public int LabelEvery { get; set; } = 1;
+
+    [Parameter]
+    public RenderFragment<Column>? LabelTemplate { get; set; }
+
+    /// <summary>A line under the labels, such as "Work item creation date".</summary>
+    [Parameter]
+    public string? AxisTitle { get; set; }
+
+    /// <summary>The top of the axis: the highest value rounded up to an even number, at least 1.</summary>
+    private double Top
+    {
+        get
+        {
+            var highest = Columns.Select(c => c.Count).DefaultIfEmpty(0).Max();
+            return highest <= 1 ? 1 : Math.Ceiling(highest / 2) * 2;
+        }
+    }
+
+    private string Pct(double count) => Math.Round(100 * count / Top, 2).ToString(CultureInfo.InvariantCulture);
+
+    private static string N(double value) => value % 1 == 0 ? value.ToString("0", CultureInfo.CurrentCulture) : value.ToString("0.#", CultureInfo.CurrentCulture);
+
+    /// <param name="Tag">Anything the label template needs, such as a priority.</param>
+    public sealed record Column(string Label, double Count, string? Color = null, object? Tag = null);
+}

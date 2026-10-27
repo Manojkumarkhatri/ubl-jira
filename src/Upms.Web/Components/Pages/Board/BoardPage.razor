@@ -1,11 +1,17 @@
-@page "/projects/{Key}/board"
+@page "/spaces/{Key}/board"
+@page "/spaces/{Key}"
 @using Upms.Application.Work
+@using Upms.Domain.Work
 @using Upms.Web.Components.Pages.Drawer
 @inject IBoardService Boards
+@inject IAccountService Accounts
+@inject Upms.Application.Projects.IBoardColumnService ColumnService
 @inject ViewerToday ViewerToday
 @inject LiveAnnouncer Announcer
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject CreateWorkLauncher Launcher
+@implements IDisposable
 
 <PageTitle>@(_board?.ProjectName ?? Key) · Board · U-PMS</PageTitle>
 
@@ -19,23 +25,56 @@ else if (_board is null)
 }
 else
 {
-    <ProjectHeader ProjectKey="@_board.ProjectKey" Title="@_board.ProjectName" Current="ProjectPage.Board"
+    <ProjectHeader ProjectKey="@_board.ProjectKey" Title="@_board.ProjectName" Current="ProjectPage.Board" Template="_board.Template"
                    CanManage="_board.CanManageColumns" CanRestoreDeleted="_board.CanRestoreDeleted">
-        @if (_board.ShowingAllDone)
+        @* A Scrum board shows all of its sprint's done cards, so it has no 14-day window (Phase 3 FR-027). *@
+        @if (!IsScrum && _board.ShowingAllDone)
         {
-            <a class="btn" href="projects/@Key/board">Show recently completed only</a>
+            <a class="btn" href="spaces/@Key/board">Show recently completed only</a>
         }
-        else if (_board.HiddenDoneCount > 0)
+        else if (!IsScrum && _board.HiddenDoneCount > 0)
         {
-            <a class="btn" href="projects/@Key/board?done=all">Show all completed (@_board.HiddenDoneCount more)</a>
+            <a class="btn" href="spaces/@Key/board?done=all">Show all completed (@_board.HiddenDoneCount.ToString("N0", System.Globalization.CultureInfo.CurrentCulture) more)</a>
         }
     </ProjectHeader>
+
+    @if (IsScrum && _board.Sprint is { } sprint)
+    {
+        <div class="sprint-banner" data-testid="sprint-banner">
+            <h2>@sprint.Name</h2>
+            <span class="hint">@Upms.Web.Components.Pages.Backlog.SprintHeader.DateRange(sprint.StartDate, sprint.EndDate)</span>
+            @if (sprint.EndDate < _today)
+            {
+                <span class="overdue-label" data-testid="sprint-overdue">Overdue</span>
+            }
+            <span class="spacer"></span>
+            @if (_board.CanManageSprints)
+            {
+                <button type="button" class="btn" data-testid="complete-sprint" @onclick="OpenComplete">Complete sprint</button>
+            }
+        </div>
+        @if (!string.IsNullOrEmpty(sprint.Goal))
+        {
+            <p class="sprint-goal" data-testid="sprint-goal">@sprint.Goal</p>
+        }
+    }
+    @if (IsScrum && _board.CanManageSprints)
+    {
+        <Upms.Web.Components.Pages.Backlog.SprintDialogs @ref="_sprintDialogs" OnDone="SprintChangedAsync" />
+    }
 
     @if (_conflict is not null)
     {
         <div class="alert alert-warn" role="alert" data-testid="conflict">
             @_conflict
             <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _conflict = null">Dismiss</button>
+        </div>
+    }
+    @if (_columnsProblem is not null)
+    {
+        <div class="alert alert-warn" role="alert" data-testid="columns-conflict">
+            @_columnsProblem
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _columnsProblem = null">Dismiss</button>
         </div>
     }
     @if (_error is not null)
@@ -47,34 +86,237 @@ else
         <div class="alert alert-warn" role="status">@warning</div>
     }
 
-    @* Filters run over the cards already shown, so they apply at once (Phase 2 FR-022, research R10). *@
-    <div class="board-filters" role="group" aria-label="Filter cards">
-        <button type="button" class="btn btn-sm @(IsOnlyMine ? "active" : "")" aria-pressed="@(IsOnlyMine ? "true" : "false")"
-                data-testid="only-mine" @onclick="ToggleOnlyMine">Only my tasks</button>
-        <label for="assignee-filter">Assignee</label>
-        <select id="assignee-filter" class="select select-sm" value="@_assigneeFilter" @onchange="AssigneeFilterChanged">
-            <option value="">Anyone</option>
-            <option value="@MeFilter">@(MyName is { } name ? $"Me ({name})" : "Me")</option>
-            <option value="@UnassignedFilter">Unassigned</option>
-            @foreach (var person in _people)
+    @if (IsScrum && _board.Sprint is null)
+    {
+        <EmptyState Title="No active sprint" Text="A Scrum board shows the work of the active sprint. Plan and start one in the backlog.">
+            <a class="btn btn-primary" data-testid="plan-sprint" href="spaces/@Key/backlog">Plan a sprint in the backlog</a>
+        </EmptyState>
+    }
+    else
+    {
+    @* Jira's board toolbar: search the board, filter by person with the avatars, more filters under "Filter", and
+       swimlanes under "Group". Filters and grouping live in the address; the search is for this view only. *@
+    <div class="board-toolbar">
+        <div class="board-search">
+            <Icon Name="search" />
+            <label class="sr-only" for="board-search">Search board</label>
+            <input id="board-search" class="input" type="search" placeholder="Search board" autocomplete="off"
+                   @bind="_search" @bind:event="oninput" />
+        </div>
+        <div class="avatar-filter" role="group" aria-label="Filter by person">
+            <button type="button" class="avatar-toggle @(_filter.Assignee == BoardFilter.Unassigned ? "is-on" : "")"
+                    aria-pressed="@(_filter.Assignee == BoardFilter.Unassigned ? "true" : "false")" title="Unassigned"
+                    @onclick="() => ToggleAssignee(BoardFilter.Unassigned)">
+                <span class="avatar avatar-unassigned" aria-hidden="true"><Icon Name="person" Size="14" /></span>
+                <span class="sr-only">Unassigned</span>
+            </button>
+            @if (_myName is { } myName)
             {
-                <option value="@person.UserId">@person.DisplayName</option>
+                <button type="button" class="avatar-toggle @(IsOnlyMine ? "is-on" : "")" aria-pressed="@(IsOnlyMine ? "true" : "false")"
+                        title="@myName (you)" data-testid="only-mine" @onclick="ToggleOnlyMine">
+                    <Avatar UserId="_board.ViewerId" Initials="@Initials(myName)" />
+                    <span class="sr-only">Only my work</span>
+                </button>
             }
-        </select>
+            @foreach (var person in _people.Take(6))
+            {
+                var value = person.UserId.ToString();
+                var on = _filter.Assignee == value;
+                <button type="button" class="avatar-toggle @(on ? "is-on" : "")" aria-pressed="@(on ? "true" : "false")" title="@person.DisplayName"
+                        @onclick="() => ToggleAssignee(value)">
+                    <Avatar UserId="person.UserId" Initials="@person.Initials" />
+                    <span class="sr-only">@person.DisplayName</span>
+                </button>
+            }
+        </div>
+        <div class="toolbar-pop">
+            <button type="button" class="btn btn-sm toolbar-btn @(_filter.IsActive ? "is-on" : "")" aria-expanded="@(_filterOpen ? "true" : "false")"
+                    aria-controls="board-filter-panel" @onclick="() => { _filterOpen = !_filterOpen; _groupOpen = false; }">
+                <Icon Name="filter" /> Filter@(FilterCount > 0 ? $" ({FilterCount})" : "")
+            </button>
+            @if (_filterOpen)
+            {
+                <div class="menu-backdrop" @onclick="() => _filterOpen = false"></div>
+                <div id="board-filter-panel" class="toolbar-panel" role="group" aria-label="Filter cards">
+                    @if (KindChoices.Count > 1)
+                    {
+                        <p class="panel-heading">Work type</p>
+                        <div class="quick-filters" role="group" aria-label="Types">
+                            @foreach (var kind in KindChoices)
+                            {
+                                var pressed = _filter.Kinds.Contains(kind);
+                                <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                        data-testid="quick-kind-@kind.ToString().ToLowerInvariant()" @onclick="() => Go(Latest.ToggleKind(kind))">@WorkItemTypes.DisplayName(kind)</button>
+                            }
+                        </div>
+                    }
+                    @if (ContainerChoices.Count > 0)
+                    {
+                        <p class="panel-heading">@(_board.Template == ProjectTemplate.StageGate ? "Stage" : "Epic")</p>
+                        <div class="quick-filters" role="group" aria-label="@(_board.Template == ProjectTemplate.StageGate ? "Stages" : "Epics")">
+                            @foreach (var container in ContainerChoices)
+                            {
+                                var pressed = _filter.Containers.Contains(container.Key);
+                                <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                        data-testid="quick-container-@container.Key" @onclick="() => Go(Latest.ToggleContainer(container.Key))">@container.Title</button>
+                            }
+                        </div>
+                    }
+                    @if (LabelChoices.Count > 0)
+                    {
+                        <p class="panel-heading">Label</p>
+                        <div class="quick-filters" role="group" aria-label="Labels">
+                            @foreach (var label in LabelChoices)
+                            {
+                                var pressed = _filter.Has(label);
+                                <button type="button" class="btn btn-sm quick label-toggle @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                        data-testid="quick-label-@label" @onclick="() => Go(Latest.ToggleLabel(label))">@label</button>
+                            }
+                        </div>
+                    }
+                    <p class="panel-heading">Assignee</p>
+                    <label class="sr-only" for="assignee-filter">Assignee</label>
+                    <select id="assignee-filter" class="select select-sm" value="@_filter.Assignee" @onchange="AssigneeFilterChanged">
+                        <option value="">Anyone</option>
+                        <option value="@BoardFilter.Me">@(_myName is { } name ? $"Me ({name})" : "Me")</option>
+                        <option value="@BoardFilter.Unassigned">Unassigned</option>
+                        @foreach (var person in _people)
+                        {
+                            <option value="@person.UserId">@person.DisplayName</option>
+                        }
+                    </select>
+                    @if (_filter.IsActive)
+                    {
+                        <button type="button" class="btn btn-sm btn-ghost panel-clear" data-testid="clear-board-filters" @onclick="() => Go(BoardFilter.None.WithGroup(Latest.Group))">Clear filters</button>
+                    }
+                </div>
+            }
+        </div>
+        <div class="toolbar-pop">
+            <button type="button" class="btn btn-sm toolbar-btn @(_filter.Group != BoardGroup.None ? "is-on" : "")" aria-expanded="@(_groupOpen ? "true" : "false")"
+                    aria-controls="board-group-panel" @onclick="() => { _groupOpen = !_groupOpen; _filterOpen = false; }">
+                <Icon Name="group" /> Group@(_filter.Group != BoardGroup.None ? $": {GroupLabel(_filter.Group)}" : "")
+            </button>
+            @if (_groupOpen)
+            {
+                <div class="menu-backdrop" @onclick="() => _groupOpen = false"></div>
+                @* Jira's "Group" menu: the choices in name order, the current one marked, then "Clear selection". *@
+                <div id="board-group-panel" class="toolbar-panel group-menu" role="radiogroup" aria-label="Group by">
+                    @foreach (var group in GroupChoices)
+                    {
+                        <button type="button" role="radio" class="group-option @(_filter.Group == group ? "is-current" : "")"
+                                aria-checked="@(_filter.Group == group ? "true" : "false")" data-testid="group-@group.ToString().ToLowerInvariant()"
+                                @onclick="() => ChooseGroup(group)">@GroupLabel(group)</button>
+                    }
+                    <span class="group-separator" role="separator"></span>
+                    <button type="button" class="group-option" disabled="@(_filter.Group == BoardGroup.None)" @onclick="() => ChooseGroup(BoardGroup.None)">Clear selection</button>
+                </div>
+            }
+        </div>
+        @if (_board.Template == ProjectTemplate.Kanban)
+        {
+            <span class="spacer"></span>
+            <div class="tab-menu">
+                <button type="button" class="icon-btn tl-tool" aria-label="View settings" title="View settings" aria-expanded="@(_settingsOpen ? "true" : "false")"
+                        aria-controls="board-view-settings" @onclick="() => _settingsOpen = !_settingsOpen"><Icon Name="sliders" /></button>
+                @if (_settingsOpen)
+                {
+                    <div class="menu-backdrop" @onclick="() => _settingsOpen = false"></div>
+                    <div id="board-view-settings" class="tab-popover tl-settings" role="region" aria-label="View settings"
+                         @onkeydown="@(e => { if (e.Key == "Escape") { _settingsOpen = false; } })">
+                        <h2 class="popover-title">View settings</h2>
+                        <label class="tl-setting">
+                            <input type="checkbox" checked="@_showEpics" @onchange="ToggleEpicsAsync" />
+                            Show epics as cards
+                        </label>
+                    </div>
+                }
+            </div>
+        }
     </div>
 
-    <div class="board-wrap" role="region" aria-label="Board" tabindex="0">
+    }
+
+    @* A Scrum board without a sprint still shows its columns, so Space admins can change them there (FR-013). *@
+    @if (!NoSprint || _columnsView is not null)
+    {
+    <div class="board-wrap @(Grouped ? "is-grouped" : "")" role="region" aria-label="Board" tabindex="0">
+        @* Grouped, each lane shows its own column names and counts, as in Jira; the columns' own row is only for the board
+           without lanes. *@
+        @if (!Grouped)
+        {
         <div class="board">
             @foreach (var column in _board.Columns)
             {
-                <BoardColumn @key="column.Id" Column="column" ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
-                             CanContribute="_board.CanContribute" Filter="CardFilter" Today="_today"
+                <BoardColumn @key="column.Id" Column="column" HeaderOnly="false" ShowEmptyState="@(column.Id == _board.Columns[0].Id && !AllCards.Any())" ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
+                             CanContribute="_board.CanContribute && !NoSprint" Filter="CardFilter" FilterQuery="@_filter.QueryPrefix" Today="_today"
                              OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
-                             OnDropBefore="DropBeforeAsync" OnDropAtEnd="DropAtEndAsync" OnMove="MoveFromMenuAsync"
-                             OnCreate="CreateAsync" />
+                             OnDropBefore="target => DropBeforeAsync(target)" OnDropAtEnd="column => DropAtEndAsync(column)" OnMove="MoveFromMenuAsync" OnDelete="AskDeleteAsync" RevealKey="@_revealKey"
+                             CreateTypes="CardTypes" DefaultType="DefaultCardType" OnCreate="CreateAsync" OnRequestCreate="column => Launcher.Open(Key, column.Id)">
+                    <HeaderActions>
+                        @if (_columnsView?.Columns.FirstOrDefault(c => c.Id == column.Id) is { } managed)
+                        {
+                            <ColumnMenu Column="managed" ColumnCount="_columnsView.Columns.Count" OnAction="ColumnActionAsync" />
+                        }
+                    </HeaderActions>
+                </BoardColumn>
+            }
+            @if (_columnsView is not null)
+            {
+                <div class="add-column-slot">
+                    <button type="button" class="btn add-column-button" data-testid="add-column-button" aria-label="Add column" title="Add column"
+                            disabled="@(_columnsView.Columns.Count >= Upms.Application.Projects.BoardColumnsView.MaxColumns)" @onclick="() => _columnDialogs!.OpenAdd()">+</button>
+                </div>
             }
         </div>
+        }
+        else
+        {
+            var lanes = Lanes;
+            @if (lanes.Count == 0)
+            {
+                <p class="hint lanes-empty">@(_filter.IsActive ? "No cards match the filter." : "No cards yet.")</p>
+            }
+            @foreach (var lane in lanes)
+            {
+                var expanded = IsExpanded(lane);
+                <div @key="lane.Id" class="lane" role="group" data-testid="lane" aria-label="@lane.Title">
+                    <LaneHeader Lane="lane" Expanded="expanded" BodyId="@($"{lane.Id}-body")" OnToggle="() => ToggleLane(lane)" />
+                    <div id="@($"{lane.Id}-body")" class="board lane-body" hidden="@(!expanded)">
+                        @foreach (var column in _board.Columns)
+                        {
+                            <LaneCell @key="column.Id" Column="column" Lane="lane" Cards="lane.Cards.Where(c => c.ColumnId == column.Id).ToList()"
+                                      ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" FilterQuery="@_filter.QueryPrefix" MoveTargets="_moveTargets"
+                                      LanesFor="card => LanesFor(card, lane, lanes)" DraggingKey="@_dragging?.Key" CanContribute="_board.CanContribute && !NoSprint"
+                                      Today="_today" OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
+                                      OnDropBefore="target => DropBeforeAsync(target, lane)" OnDropAtEnd="() => DropAtEndAsync(column, lane)"
+                                      OnMove="MoveFromMenuAsync" OnDelete="AskDeleteAsync" RevealKey="@_revealKey"
+                                      OnRequestCreate="() => Launcher.Open(Key, column.Id)" />
+                        }
+                        @if (_columnsView is not null)
+                        {
+                            @* Jira's "+" for a new column sits at the end of the first lane; the others keep its place. *@
+                            <div class="add-column-slot" aria-hidden="@(lane == lanes[0] ? null : "true")">
+                                @if (lane == lanes[0])
+                                {
+                                    <button type="button" class="btn add-column-button" data-testid="add-column-button" aria-label="Add column" title="Add column"
+                                            disabled="@(_columnsView.Columns.Count >= Upms.Application.Projects.BoardColumnsView.MaxColumns)" @onclick="() => _columnDialogs!.OpenAdd()">+</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
     </div>
+    }
+
+    @if (_columnsView is not null)
+    {
+        <BoardColumnDialogs @ref="_columnDialogs" SpaceKey="@Key" Columns="_columnsView" OnChanged="ColumnsChangedAsync" OnProblem="ColumnProblemAsync" />
+    }
+
+    <DeleteWorkItemsDialog @ref="_deleteDialog" OnDeleted="LoadAsync" OnProblem="problem => _error = problem" />
 
     @if (!string.IsNullOrEmpty(TaskKey))
     {
@@ -83,20 +325,36 @@ else
 }
 
 @code {
-    private const string MeFilter = "me";
-    private const string UnassignedFilter = "unassigned";
     private BoardView? _board;
+    private Upms.Application.Projects.BoardColumnsView? _columnsView;
+    private BoardColumnDialogs? _columnDialogs;
+    private string? _columnsProblem;
     private DateOnly _today;
-    private string _assigneeFilter = "";
+    private BoardFilter _filter = BoardFilter.None;
+
+    // A new address reaches the page only after a round trip through the browser: a filter chosen meanwhile builds on the
+    // one asked for last, not on the address still shown.
+    private BoardFilter? _requested;
     private IReadOnlyList<AssigneeRef> _people = [];
     private bool _notFound;
     private string? _conflict;
     private string? _error;
+    private DeleteWorkItemsDialog? _deleteDialog;
+
+    /// <summary>The card menu's "Delete" (Jira's "⋯" on a card): asks first, then the board reloads.</summary>
+    private Task AskDeleteAsync(CardView card)
+    {
+        _error = null;
+        return _deleteDialog!.AskAsync([card.Key]);
+    }
     private IReadOnlyList<string> _warnings = [];
     private CardView? _dragging;
     private IReadOnlyList<ColumnOption> _moveTargets = [];
     private (string Key, string? Done)? _loaded;
     private string? _focusCardKey;
+
+    /// <summary>The card just moved or created: its column shows it even past its first 50 cards.</summary>
+    private string? _revealKey;
 
     [Parameter]
     public string Key { get; set; } = "";
@@ -109,12 +367,55 @@ else
     [SupplyParameterFromQuery(Name = "task")]
     public string? TaskKey { get; set; }
 
-    // Opening or closing the drawer changes only the query string: the board is not loaded again.
-    protected override Task OnParametersSetAsync() =>
-        _loaded == (Key, Done) ? Task.CompletedTask : LoadAsync();
+    /// <summary>The quick filters and the assignee filter (Phase 4 FR-047; contracts/ui-routes.md).</summary>
+    [SupplyParameterFromQuery(Name = "labels")]
+    public string? LabelsParameter { get; set; }
+
+    [SupplyParameterFromQuery(Name = "kinds")]
+    public string? KindsParameter { get; set; }
+
+    [SupplyParameterFromQuery(Name = "containers")]
+    public string? ContainersParameter { get; set; }
+
+    [SupplyParameterFromQuery(Name = "assignee")]
+    public string? AssigneeParameter { get; set; }
+
+    /// <summary><c>?group=epic|assignee|subtasks</c>: the swimlanes (Jira parity pass FR-026).</summary>
+    [SupplyParameterFromQuery(Name = "group")]
+    public string? GroupParameter { get; set; }
+
+    private BoardFilter Latest => _requested ?? _filter;
+
+    // Opening or closing the drawer, or filtering, changes only the query string: the board is not loaded again.
+    protected override Task OnParametersSetAsync()
+    {
+        _filter = BoardFilter.Parse(LabelsParameter, KindsParameter, ContainersParameter, AssigneeParameter, GroupParameter);
+        if (_requested?.Address == _filter.Address)
+        {
+            _requested = null;
+        }
+
+        return _loaded == (Key, Done) ? Task.CompletedTask : LoadAsync();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            try
+            {
+                if (await JS.InvokeAsync<string?>("upms.store.get", EpicsKey) == "hide")
+                {
+                    _showEpics = false;
+                    await LoadAsync();
+                    StateHasChanged();
+                }
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
         if (_focusCardKey is { } key && string.IsNullOrEmpty(TaskKey))
         {
             // Focus returns to the card whose drawer was closed or that was just moved, wherever it is now.
@@ -132,7 +433,7 @@ else
     private async Task LoadAsync()
     {
         _loaded = (Key, Done);
-        var result = await Boards.GetAsync(Key, Done == "all", CancellationToken.None);
+        var result = await Boards.GetAsync(Key, new BoardRead(Done == "all", _showEpics), CancellationToken.None);
         if (!result.IsSuccess)
         {
             _board = null;
@@ -143,7 +444,12 @@ else
 
         _notFound = false;
         _board = result.Value!;
+        // Space admins change the columns on the board itself (Jira parity pass FR-010, FR-011).
+        _columnsView = _board.CanManageColumns && await ColumnService.GetAsync(Key, CancellationToken.None) is { IsSuccess: true } columns
+            ? columns.Value
+            : null;
         _today = await ViewerToday.GetAsync();
+        _myName ??= (await Accounts.GetProfileAsync(CancellationToken.None)).Value?.DisplayName;
         _moveTargets = _board.Columns.Select(c => new ColumnOption(c.Id, c.Name)).ToList();
         // Everyone the cards are assigned to, apart from the viewer (offered as "Me").
         _people = _board.Columns.SelectMany(c => c.Cards)
@@ -155,82 +461,207 @@ else
             .ToList();
     }
 
-    private bool IsOnlyMine => _assigneeFilter == MeFilter;
-
-    private string? MyName => _board?.Columns.SelectMany(c => c.Cards)
-        .Select(c => c.Assignee)
-        .FirstOrDefault(a => a?.UserId == _board.ViewerId)?.DisplayName;
-
     /// <summary>"Only my tasks" is a shortcut for the assignee filter's "Me".</summary>
-    private Func<CardView, bool>? CardFilter => _assigneeFilter switch
+    private bool IsOnlyMine => _filter.Assignee == BoardFilter.Me;
+
+    // Jira's toolbar: the search box, and the "Filter" and "Group" panels.
+    private string _search = "";
+    private bool _filterOpen;
+    private bool _groupOpen;
+    private bool _settingsOpen;
+
+    // Epics as cards (a view option per viewer, on by default): Jira's team-managed boards never show them, and people missed them.
+    private const string EpicsKey = "upms.board.epics";
+    private bool _showEpics = true;
+    private string? _myName;
+
+    /// <summary>The filters from the address, and the search box's words in a card's key or title.</summary>
+    private Func<CardView, bool>? CardFilter
     {
-        MeFilter => card => card.Assignee?.UserId == _board!.ViewerId,
-        UnassignedFilter => card => card.Assignee is null,
-        var id when Guid.TryParse(id, out var userId) => card => card.Assignee?.UserId == userId,
-        _ => null,
+        get
+        {
+            var words = _search.Trim();
+            if (!_filter.IsActive && words.Length == 0)
+            {
+                return null;
+            }
+
+            return card => (!_filter.IsActive || _filter.Matches(card, _board!.ViewerId))
+                && (words.Length == 0 || card.Title.Contains(words, StringComparison.CurrentCultureIgnoreCase)
+                    || card.Key.Contains(words, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private int FilterCount => _filter.Kinds.Count + _filter.Containers.Count + _filter.Labels.Count;
+
+    private async Task ToggleEpicsAsync()
+    {
+        _showEpics = !_showEpics;
+        try
+        {
+            await JS.InvokeVoidAsync("upms.store.set", EpicsKey, _showEpics ? "show" : "hide");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        await LoadAsync();
+    }
+
+    private void ToggleAssignee(string value) => Go(Latest.WithAssignee(Latest.Assignee == value ? "" : value));
+
+    private string GroupLabel(BoardGroup group) => group switch
+    {
+        BoardGroup.Epic => _board?.Template == ProjectTemplate.StageGate ? "Stage" : "Epic",
+        BoardGroup.Assignee => "Assignee",
+        BoardGroup.Subtasks => "Sub-task",
+        BoardGroup.Labels => "Labels",
+        BoardGroup.Priority => "Priority",
+        _ => "None",
     };
 
-    private void ToggleOnlyMine() => ApplyFilter(IsOnlyMine ? "" : MeFilter);
+    private static string Initials(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
 
-    private void AssigneeFilterChanged(ChangeEventArgs e) => ApplyFilter(e.Value?.ToString() ?? "");
+    private IEnumerable<CardView> AllCards => _board?.Columns.SelectMany(c => c.Cards) ?? [];
 
-    private void ApplyFilter(string filter)
+    /// <summary>The types a quick filter offers: those the board can hold, and Sub-task while it shows sub-tasks (Jira parity
+    /// pass FR-027a), when there is more than one.</summary>
+    private IReadOnlyList<WorkItemType> KindChoices =>
+    [
+        .. AllCards.Any(c => c.Type == WorkItemType.Epic) ? [WorkItemType.Epic] : Array.Empty<WorkItemType>(),
+        .. CardTypes,
+        .. AllCards.Any(c => c.Type == WorkItemType.Subtask) ? [WorkItemType.Subtask] : Array.Empty<WorkItemType>(),
+    ];
+
+    private bool Grouped => _filter.Group != BoardGroup.None;
+
+    // Lanes whose header was used: an open lane closed, or one past the first 20 opened (research R16).
+    private readonly HashSet<string> _toggledLanes = [];
+
+    /// <summary>The filtered cards in their lanes (the quick filters apply first).</summary>
+    private IReadOnlyList<BoardLane> Lanes => BoardLanes.Group(AllCards.Where(c => (CardFilter?.Invoke(c) ?? true)
+            && !(_filter.Group == BoardGroup.Epic && c.Type == WorkItemType.Epic)).ToList(), _filter.Group,
+        _board!.Template);
+
+    private bool IsExpanded(BoardLane lane) => lane.StartsCollapsed == _toggledLanes.Contains(lane.Id);
+
+    private void ToggleLane(BoardLane lane)
     {
-        _assigneeFilter = filter;
-        var cards = _board?.Columns.SelectMany(c => c.Cards).ToList() ?? [];
-        Announcer.Announce(CardFilter is { } matches
-            ? $"Showing {cards.Count(matches)} of {cards.Count} cards."
+        if (!_toggledLanes.Remove(lane.Id))
+        {
+            _toggledLanes.Add(lane.Id);
+        }
+    }
+
+    /// <summary>"Move to › Lane": the other epic, stage or person lanes; none in Sub-tasks lanes, and a sub-task keeps its
+    /// parent's epic or stage (Jira parity pass FR-027).</summary>
+    private static IReadOnlyList<LaneOption> LanesFor(CardView card, BoardLane own, IReadOnlyList<BoardLane> lanes) =>
+        own.Change is null || (own.Change is LaneChange.Container && card.ParentKey is not null)
+            ? []
+            : lanes.Where(l => l.Id != own.Id && l.Change is not null).Select(l => new LaneOption(l.Title, l.Change!)).ToList();
+
+    /// <summary>The lane change a card dropped in <paramref name="lane"/> makes: none in its own lane or in Sub-tasks lanes.</summary>
+    private static LaneChange? ChangeFor(CardView card, BoardLane? lane) =>
+        lane is { Change: { } change } && !lane.Cards.Any(c => c.Key == card.Key) ? change : null;
+
+    /// <summary>The "Group" choices in name order, as Jira lists them.</summary>
+    private IReadOnlyList<BoardGroup> GroupChoices =>
+        new[] { BoardGroup.Assignee, BoardGroup.Epic, BoardGroup.Labels, BoardGroup.Priority, BoardGroup.Subtasks }
+            .OrderBy(GroupLabel, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    private void ChooseGroup(BoardGroup group)
+    {
+        _requested = Latest.WithGroup(group);
+        _groupOpen = false;
+        Announcer.Announce(group == BoardGroup.None ? "Showing the board without lanes." : $"Grouped by {GroupName(group)}.");
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(_requested.ToParameters()));
+    }
+
+    private string GroupName(BoardGroup group) => group switch
+    {
+        BoardGroup.Epic => _board?.Template == ProjectTemplate.StageGate ? "stage" : "epic",
+        BoardGroup.Assignee => "assignee",
+        BoardGroup.Labels => "labels",
+        BoardGroup.Priority => "priority",
+        _ => "sub-tasks",
+    };
+
+    /// <summary>The epics (stages on Stage-gate boards) that cards on the board are in.</summary>
+    private IReadOnlyList<ContainerView> ContainerChoices => AllCards.Select(c => c.Container).OfType<ContainerView>()
+        .DistinctBy(c => c.Key).OrderBy(c => c.Title, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    /// <summary>The labels on the board's cards.</summary>
+    private IReadOnlyList<string> LabelChoices => AllCards.SelectMany(c => c.Labels)
+        .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private void ToggleOnlyMine() => Go(Latest.WithAssignee(Latest.Assignee == BoardFilter.Me ? "" : BoardFilter.Me));
+
+    private void AssigneeFilterChanged(ChangeEventArgs e) => Go(Latest.WithAssignee(e.Value?.ToString() ?? ""));
+
+    private void Go(BoardFilter filter)
+    {
+        _requested = filter;
+        var cards = AllCards.ToList();
+        Announcer.Announce(filter.IsActive
+            ? $"Showing {cards.Count(c => filter.Matches(c, _board!.ViewerId))} of {cards.Count} cards."
             : $"Showing all {cards.Count} cards.");
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(filter.ToParameters()));
     }
 
     private void CloseDrawer()
     {
         _focusCardKey = TaskKey;
+        _revealKey = TaskKey;
         Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
     }
 
-    private async Task DropBeforeAsync(CardView target)
+    private async Task DropBeforeAsync(CardView target, BoardLane? lane = null)
     {
         var dragged = _dragging;
         _dragging = null;
         if (dragged is not null && dragged.Key != target.Key)
         {
-            await MoveAsync(dragged, target.ColumnId, new CardPlacement.Before(target.Key));
+            await MoveAsync(dragged, target.ColumnId, new CardPlacement.Before(target.Key), ChangeFor(dragged, lane), lane?.Title);
         }
     }
 
-    private async Task DropAtEndAsync(ColumnView column)
+    private async Task DropAtEndAsync(ColumnView column, BoardLane? lane = null)
     {
         var dragged = _dragging;
         _dragging = null;
         if (dragged is not null)
         {
-            await MoveAsync(dragged, column.Id, CardPlacement.AtEnd);
+            await MoveAsync(dragged, column.Id, CardPlacement.AtEnd, ChangeFor(dragged, lane), lane?.Title);
         }
     }
 
     // The keyboard "Move to" menu issues the same call as a drop (FR-019); focus follows the card to its new place.
     private async Task MoveFromMenuAsync((CardView Card, MoveRequest Request) move)
     {
-        await MoveAsync(move.Card, move.Request.ColumnId, move.Request.Placement);
+        var lane = move.Request.Lane is { } change ? Lanes.FirstOrDefault(l => l.Change == change)?.Title : null;
+        await MoveAsync(move.Card, move.Request.ColumnId, move.Request.Placement, move.Request.Lane, lane);
         _focusCardKey = move.Card.Key;
     }
 
-    private async Task MoveAsync(CardView card, long columnId, CardPlacement placement)
+    private async Task MoveAsync(CardView card, long columnId, CardPlacement placement, LaneChange? lane = null, string? laneTitle = null)
     {
         _error = null;
-        var result = await Boards.MoveCardAsync(card.Key, columnId, placement, card.Version, CancellationToken.None);
+        var result = await Boards.MoveCardAsync(card.Key, columnId, placement, card.Version, lane, CancellationToken.None);
         if (result.IsSuccess)
         {
             _conflict = null;
             _warnings = result.Warnings;
+            _revealKey = card.Key;
             var column = _board?.Columns.FirstOrDefault(c => c.Id == columnId)?.Name ?? "the column";
-            Announcer.Announce(placement switch
-            {
-                CardPlacement.Top => $"Moved {card.Key} to the top of {column}.",
-                CardPlacement.Before before => $"Moved {card.Key} above {before.WorkItemKey} in {column}.",
-                _ => $"Moved {card.Key} to {column}.",
-            });
+            Announcer.Announce(lane is not null
+                ? $"Moved {card.Key} to {laneTitle ?? "another lane"}, {column}."
+                : placement switch
+                {
+                    CardPlacement.Top => $"Moved {card.Key} to the top of {column}.",
+                    CardPlacement.Before before => $"Moved {card.Key} above {before.WorkItemKey} in {column}.",
+                    _ => $"Moved {card.Key} to {column}.",
+                });
         }
         else if (result.Error!.Kind == ErrorKind.Conflict)
         {
@@ -245,9 +676,38 @@ else
         await LoadAsync();
     }
 
-    private async Task<string?> CreateAsync(long columnId, string title)
+    /// <summary>The cards a board creates: the stories, tasks and bugs an agile space has turned on, tasks in Stage-gate
+    /// spaces (Phase 3 FR-010; Jira parity pass FR-017).</summary>
+    private IReadOnlyList<WorkItemType> CardTypes => new[] { WorkItemType.Story, WorkItemType.Task, WorkItemType.Bug }
+        .Where(t => WorkItemTypes.IsOffered(t, _board!.Template, _board.WorkTypes))
+        .ToList();
+
+    private WorkItemType DefaultCardType => _board!.Template == ProjectTemplate.Scrum && CardTypes.Contains(WorkItemType.Story)
+        ? WorkItemType.Story
+        : CardTypes.Contains(WorkItemType.Task) ? WorkItemType.Task : CardTypes[0];
+
+    private Upms.Web.Components.Pages.Backlog.SprintDialogs? _sprintDialogs;
+
+    private bool IsScrum => _board?.Template == ProjectTemplate.Scrum;
+
+    /// <summary>Done cards stay in the completed sprint; the dialog asks where the open ones go (Phase 3 FR-028).</summary>
+    private void OpenComplete()
     {
-        var result = await Boards.CreateInlineAsync(Key, columnId, title, CancellationToken.None);
+        var sprint = _board!.Sprint!;
+        var done = _board.Columns.Where(c => c.Category == StatusCategory.Done).Sum(c => c.Cards.Count);
+        var all = _board.Columns.Sum(c => c.Cards.Count);
+        _sprintDialogs!.OpenComplete(sprint.Id, sprint.Name, sprint.Version, done, all - done, sprint.Destinations);
+    }
+
+    private async Task SprintChangedAsync(string message)
+    {
+        await LoadAsync();
+        Announcer.Announce(message);
+    }
+
+    private async Task<string?> CreateAsync(long columnId, string title, WorkItemType type)
+    {
+        var result = await Boards.CreateInlineAsync(Key, columnId, title, type, CancellationToken.None);
         if (result.Error is { Kind: ErrorKind.NotFound or ErrorKind.Forbidden })
         {
             // The caller was removed from the project or made a Viewer meanwhile (Phase 2 FR-011): show what they may
@@ -264,10 +724,52 @@ else
                 : result.Error.Message;
         }
 
+        _revealKey = result.Value!.Key;
         Announcer.Announce($"Created {result.Value!.Key}: {result.Value.Title}.");
         await LoadAsync();
         // Called through a plain delegate from the column's input box, so re-render explicitly.
         StateHasChanged();
         return null;
     }
+
+    private bool NoSprint => IsScrum && _board?.Sprint is null;
+
+    private Task ColumnActionAsync((ColumnAction Action, Upms.Application.Projects.BoardColumnView Column) chosen) =>
+        _columnDialogs is null ? Task.CompletedTask : _columnDialogs.RunAsync(chosen.Action, chosen.Column);
+
+    /// <summary>A column change was saved: the board shows it (Jira parity pass FR-012).</summary>
+    private async Task ColumnsChangedAsync(Upms.Application.Projects.BoardColumnsView columns)
+    {
+        _columnsProblem = null;
+        _columnsView = columns;
+        await LoadAsync();
+    }
+
+    /// <summary>A change made meanwhile shows the current columns with the message; another refusal shows its reason.</summary>
+    private async Task ColumnProblemAsync((string Message, Upms.Application.Projects.BoardColumnsView? Current, bool IsConflict) problem)
+    {
+        _columnsProblem = problem.Message;
+        if (problem.IsConflict)
+        {
+            await LoadAsync();
+        }
+    }
+
+    // An item made with the Create form in this space shows at once (Jira parity pass FR-001).
+    protected override void OnInitialized() => Launcher.Created += OnCreated;
+
+    private void OnCreated(string spaceKey, string itemKey)
+    {
+        if (string.Equals(spaceKey, Key, StringComparison.OrdinalIgnoreCase))
+        {
+            _revealKey = itemKey;
+            _ = InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                StateHasChanged();
+            });
+        }
+    }
+
+    public void Dispose() => Launcher.Created -= OnCreated;
 }

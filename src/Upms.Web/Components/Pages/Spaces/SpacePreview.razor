@@ -1,0 +1,80 @@
+@using Upms.Application.Projects
+@* The live preview beside "Name your space", as in Jira: the space's name, its tabs and its board, filled in as the person
+   types. Decorative for screen readers: the form says everything. *@
+<div class="space-preview" aria-hidden="true">
+    <div class="preview-window">
+        <p class="preview-kind">Team-managed space</p>
+        <p class="preview-name">@(string.IsNullOrWhiteSpace(Name) ? "My space" : Name.Trim())</p>
+        <div class="preview-tabs">
+            @foreach (var (icon, label) in Tabs)
+            {
+                <span class="@(label == "Board" ? "is-current" : "")"><Icon Name="@icon" /> @label</span>
+            }
+        </div>
+        <span class="preview-avatar"><Icon Name="person" Size="14" /></span>
+        <div class="preview-board">
+            @for (var i = 0; i < Columns.Count; i++)
+            {
+                <div class="preview-col">
+                    @if (ShowColumnNames)
+                    {
+                        <span class="preview-col-name">@Columns[i].ToUpperInvariant()</span>
+                    }
+                    else
+                    {
+                        <svg class="squiggle" viewBox="0 0 80 14" aria-hidden="true"><path d="M2 10 C 8 2, 12 2, 16 9 S 26 12, 32 7 S 50 6, 78 8" /></svg>
+                    }
+                    @if (i == 0)
+                    {
+                        <div class="preview-card">
+                            <svg class="squiggle squiggle-lg" viewBox="0 0 110 26" aria-hidden="true"><path d="M3 22 C 6 8, 12 4, 16 18 C 20 26, 26 6, 34 12 S 60 16, 106 14" /></svg>
+                            <div class="preview-card-foot">
+                                <span class="preview-key"><Icon Name="check-square" Size="14" Class="key-icon" /> @(string.IsNullOrWhiteSpace(Key) ? "KEY" : Key)-1</span>
+                                <span class="preview-avatar preview-avatar-sm"><Icon Name="person" Size="11" /></span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string? Name { get; set; }
+
+    [Parameter]
+    public string? Key { get; set; }
+
+    [Parameter]
+    public SpaceTemplate Template { get; set; } = SpaceTemplate.Blank;
+
+    /// <summary>The board's column names, from left to right.</summary>
+    [Parameter]
+    public IReadOnlyList<string> Columns { get; set; } = ["To Do", "In Progress", "Done"];
+
+    /// <summary>Step 2 shows the columns' names; step 1 shows placeholders, as Jira does.</summary>
+    [Parameter]
+    public bool ShowColumnNames { get; set; }
+
+    private IEnumerable<(string Icon, string Label)> Tabs
+    {
+        get
+        {
+            yield return ("summary", "Summary");
+            if (Template == SpaceTemplate.Scrum)
+            {
+                yield return ("backlog", "Backlog");
+            }
+
+            yield return ("board", "Board");
+            yield return ("list", "List");
+            yield return ("timeline", "Timeline");
+            if (Template == SpaceTemplate.StageGate)
+            {
+                yield return ("stages", "Stages");
+            }
+        }
+    }
+}

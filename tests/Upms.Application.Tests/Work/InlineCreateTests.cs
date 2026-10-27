@@ -29,7 +29,7 @@ public sealed class InlineCreateTests(SqlServerFixture fixture) : BoardTestBase(
     [InlineData("   ")]
     public async Task An_empty_title_creates_nothing(string title)
     {
-        var result = await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", ToDo, title, Ct));
+        var result = await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", ToDo, title, WorkItemType.Task, Ct));
 
         Assert.Equal(ErrorKind.Validation, result.Error!.Kind);
         Assert.Empty(await KeysInAsync(ToDo));
@@ -39,7 +39,7 @@ public sealed class InlineCreateTests(SqlServerFixture fixture) : BoardTestBase(
     public async Task A_title_over_255_characters_is_refused()
     {
         var result = await CallAsync<IBoardService, Result<CardView>>(s =>
-            s.CreateInlineAsync("WEB", ToDo, new string('x', 256), Ct));
+            s.CreateInlineAsync("WEB", ToDo, new string('x', 256), WorkItemType.Task, Ct));
 
         Assert.Equal(ErrorKind.Validation, result.Error!.Kind);
         Assert.Contains("Title", result.Error.FieldErrors!.Keys);
@@ -49,7 +49,7 @@ public sealed class InlineCreateTests(SqlServerFixture fixture) : BoardTestBase(
     public async Task Fifty_simultaneous_creations_get_fifty_unique_consecutive_keys()
     {
         var results = await Task.WhenAll(Enumerable.Range(1, 50).Select(i =>
-            CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", ToDo, $"Task {i}", Ct))));
+            CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", ToDo, $"Task {i}", WorkItemType.Task, Ct))));
 
         Assert.All(results, r => Assert.True(r.IsSuccess, r.Error?.Message));
         var numbers = results.Select(r => int.Parse(r.Value!.Key["WEB-".Length..], System.Globalization.CultureInfo.InvariantCulture))
@@ -60,11 +60,54 @@ public sealed class InlineCreateTests(SqlServerFixture fixture) : BoardTestBase(
     [Fact]
     public async Task A_column_of_another_project_is_not_found()
     {
-        await CallAsync<Upms.Application.Projects.IProjectService, Result<string>>(s => s.CreateAsync("Mobile App", "MOB", null, Ct));
+        await CallAsync<Upms.Application.Projects.IProjectService, Result<string>>(s => s.CreateAsync("Mobile App", "MOB", null, Upms.Domain.Common.ProjectTemplate.Kanban, Ct));
         var mobileToDo = (await CallAsync<IBoardService, Result<BoardView>>(s => s.GetAsync("MOB", false, Ct))).Value!.Columns[0].Id;
 
-        var result = await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", mobileToDo, "Sneaky", Ct));
+        var result = await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", mobileToDo, "Sneaky", WorkItemType.Task, Ct));
 
         Assert.Equal(ErrorKind.NotFound, result.Error!.Kind);
+    }
+
+    [Theory]
+    [InlineData(WorkItemType.Story)]
+    [InlineData(WorkItemType.Task)]
+    [InlineData(WorkItemType.Bug)]
+    public async Task P3_FR010_The_board_creates_stories_tasks_and_bugs(WorkItemType type)
+    {
+        var card = await AddAsync(ToDo, "Something", type);
+
+        Assert.Equal(type, card.Type);
+        Assert.Equal([card.Key], await KeysInAsync(ToDo));
+    }
+
+    [Theory]
+    [InlineData(WorkItemType.Epic)]
+    [InlineData(WorkItemType.Milestone)]
+    [InlineData(WorkItemType.Stage)]
+    [InlineData(WorkItemType.Subtask)]
+    public async Task P3_FR010_The_board_offers_only_cards(WorkItemType type)
+    {
+        var result = await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", ToDo, "Something", type, Ct));
+
+        Assert.Equal(ErrorCodes.TypeNotAllowed, result.Error!.Code);
+        Assert.Empty(await KeysInAsync(ToDo));
+    }
+}
+
+/// <summary>A Stage-gate board creates tasks only (Phase 3 FR-010).</summary>
+public sealed class StageGateInlineCreateTests(SqlServerFixture fixture) : BoardTestBase(fixture)
+{
+    protected override Upms.Domain.Common.ProjectTemplate Template => Upms.Domain.Common.ProjectTemplate.StageGate;
+
+    [Fact]
+    public async Task P3_FR010_A_Stage_gate_board_creates_tasks_but_not_stories_or_bugs()
+    {
+        Assert.Equal(WorkItemType.Task, (await AddAsync(ToDo, "Collect quotes")).Type);
+
+        foreach (var type in new[] { WorkItemType.Story, WorkItemType.Bug })
+        {
+            var result = await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", ToDo, "Something", type, Ct));
+            Assert.Equal(ErrorCodes.TypeNotAllowed, result.Error!.Code);
+        }
     }
 }

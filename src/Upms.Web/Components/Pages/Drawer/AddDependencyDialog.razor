@@ -1,0 +1,132 @@
+@using Upms.Application.Work
+@inject IDependencyService Dependencies
+
+@* Adding a dependency (Phase 3 FR-047, FR-048): the other item is found by key or title, from the drawer or from a
+   timeline row's Actions menu. A refused link is explained and the search stays, so another item can be chosen. *@
+<ModalDialog @ref="_dialog" Title="@($"Add a dependency to {ItemKey}")" TestId="dependency-dialog" OnClosed="ClosedAsync">
+    <ChildContent>
+        <div class="field">
+            <label for="dependency-direction">This item</label>
+            <select id="dependency-direction" class="select" value="@_direction" @onchange="e => _direction = e.Value?.ToString() ?? WaitsFor">
+                <option value="@WaitsFor">waits for…</option>
+                <option value="@Blocks">blocks…</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="dependency-search">Find the other item</label>
+            <input id="dependency-search" class="input" type="search" autocomplete="off" maxlength="100" placeholder="Key or words in the title"
+                   @bind="_term" @bind:event="oninput" @bind:after="SearchAsync" aria-describedby="dependency-error" />
+        </div>
+        @if (_found.Count > 0)
+        {
+            <ul class="person-results" aria-label="Items found">
+                @foreach (var option in _found.Where(o => o.Key != ItemKey))
+                {
+                    <li>
+                        <button type="button" class="btn btn-sm btn-ghost" data-testid="dependency-result" disabled="@_busy"
+                                @onclick="() => AddAsync(option)">@option.Key @option.Title</button>
+                    </li>
+                }
+            </ul>
+        }
+        <p id="dependency-error" class="error-text" role="alert" data-testid="dependency-error">@_error</p>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Close</button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private const string WaitsFor = "waits";
+    private const string Blocks = "blocks";
+    private ModalDialog? _dialog;
+    private string _direction = WaitsFor;
+    private string _term = "";
+    private IReadOnlyList<ItemOption> _found = [];
+    private string? _error;
+    private bool _busy;
+    private bool _openPending;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    /// <summary>The item the dependency is added to.</summary>
+    [Parameter, EditorRequired]
+    public string ItemKey { get; set; } = "";
+
+    /// <summary>Opens as soon as it is shown, for a dialog rendered only when asked for (the timeline).</summary>
+    [Parameter]
+    public bool OpenOnRender { get; set; }
+
+    /// <summary>Called with the message to announce after a dependency was added.</summary>
+    [Parameter]
+    public EventCallback<string> OnAdded { get; set; }
+
+    [Parameter]
+    public EventCallback OnClosed { get; set; }
+
+    protected override void OnInitialized() => _openPending = OpenOnRender;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_openPending)
+        {
+            _openPending = false;
+            Open();
+        }
+    }
+
+    public void Open()
+    {
+        _direction = WaitsFor;
+        _term = "";
+        _found = [];
+        _error = null;
+        _dialog!.Open();
+    }
+
+    // @bind keeps characters typed while an answer is on its way; value= with @oninput would put back an older value.
+    private async Task SearchAsync()
+    {
+        var term = _term;
+        var result = await Dependencies.FindItemsAsync(ProjectKey, term, CancellationToken.None);
+        if (term == _term)
+        {
+            _found = result.Value ?? []; // an answer for an older search is ignored
+        }
+    }
+
+    private async Task AddAsync(ItemOption other)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var (waiting, waitedFor) = _direction == WaitsFor ? (ItemKey, other.Key) : (other.Key, ItemKey);
+            var result = await Dependencies.AddAsync(waiting, waitedFor, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            await _dialog!.CloseAsync();
+            await OnAdded.InvokeAsync($"{waiting} now waits for {waitedFor}.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ClosedAsync()
+    {
+        _error = null;
+        await OnClosed.InvokeAsync();
+    }
+}

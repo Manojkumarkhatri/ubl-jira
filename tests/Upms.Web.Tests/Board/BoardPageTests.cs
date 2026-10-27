@@ -1,9 +1,9 @@
 using Bunit;
-using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Upms.Application.Common.Results;
 using Upms.Application.Work;
 using Upms.Domain.Work;
+using Upms.Web.Components.Layout;
 using Upms.Web.Components.Pages.Board;
 using Upms.Web.Components.Shared;
 using Upms.Web.Tests.Fakes;
@@ -14,10 +14,12 @@ namespace Upms.Web.Tests.Board;
 public sealed class BoardPageTests : BunitTestBase
 {
     private readonly FakeBoardService _board = new();
+    private readonly FakeSprintService _sprints = new();
 
     public BoardPageTests()
     {
         Services.AddSingleton<IBoardService>(_board);
+        Services.AddSingleton<ISprintService>(_sprints);
         Services.AddScoped<LiveAnnouncer>();
         Services.AddScoped<ViewerTimeZone>();
         Services.AddScoped<ViewerToday>();
@@ -25,6 +27,62 @@ public sealed class BoardPageTests : BunitTestBase
     }
 
     private IRenderedComponent<BoardPage> RenderBoard() => Render<BoardPage>(p => p.Add(x => x.Key, "WEB"));
+
+    private static readonly ActiveSprintInfo ActiveSprint = new(11, 1, "WEB Sprint 1", "Ship the home page", new DateOnly(2026, 9, 21),
+        new DateOnly(2026, 10, 5), [4, 2], [new SprintOption(12, "WEB Sprint 2")]);
+
+    [Fact]
+    public void P3_US2_AS5_A_Scrum_board_shows_its_sprint_and_Project_Admins_complete_it()
+    {
+        _board.Board = _board.Board with { Template = Upms.Domain.Common.ProjectTemplate.Scrum, Sprint = ActiveSprint, CanManageSprints = true };
+
+        var cut = RenderBoard();
+
+        var banner = cut.Find("[data-testid=sprint-banner]");
+        Assert.Equal("WEB Sprint 1", banner.QuerySelector("h2")!.TextContent.Trim());
+        Assert.Contains("21 Sep – 5 Oct 2026", banner.TextContent, StringComparison.Ordinal);
+        Assert.Equal("Ship the home page", cut.Find("[data-testid=sprint-goal]").TextContent.Trim());
+        Assert.Empty(cut.FindAll("a[href*='done=']"));
+
+        cut.Find("[data-testid=complete-sprint]").Click();
+        Assert.Contains("0 items are done and 3 are open.", cut.Find("[data-testid=complete-sprint-dialog]").TextContent, StringComparison.Ordinal);
+        cut.FindAll("[data-testid=complete-sprint-dialog] button").Single(b => b.TextContent.Trim() == "Complete sprint").Click();
+
+        Assert.Equal((11L, (long?)null), Assert.Single(_sprints.Completions));
+    }
+
+    [Fact]
+    public void P3_US2_AS10_Members_of_a_Scrum_project_see_the_sprint_but_cannot_complete_it()
+    {
+        _board.Board = _board.Board with { Template = Upms.Domain.Common.ProjectTemplate.Scrum, Sprint = ActiveSprint, CanManageSprints = false };
+
+        var cut = RenderBoard();
+
+        Assert.NotEmpty(cut.FindAll("[data-testid=sprint-banner]"));
+        Assert.Empty(cut.FindAll("[data-testid=complete-sprint]"));
+    }
+
+    [Fact]
+    public void P3_US2_AS9_Without_an_active_sprint_a_Scrum_board_says_so_and_links_to_the_backlog()
+    {
+        _board.Board = _board.Board with
+        {
+            Template = Upms.Domain.Common.ProjectTemplate.Scrum,
+            Columns = _board.Board.Columns.Select(c => c with { Cards = [], CardCount = 0 }).ToList(),
+        };
+
+        var cut = RenderBoard();
+
+        Assert.Contains("No active sprint", cut.Markup, StringComparison.Ordinal);
+        Assert.Equal("spaces/WEB/backlog", cut.Find("[data-testid=plan-sprint]").GetAttribute("href"));
+        // Space admins still see the columns, empty, to change them there (Jira parity pass FR-013); nobody adds cards there.
+        Assert.Equal(3, cut.FindAll("[data-testid=column]").Count);
+        Assert.Empty(cut.FindAll("[data-testid=column] article.bcard"));
+        Assert.Empty(cut.FindAll("[data-testid=column-drop-end]"));
+
+        _board.Board = _board.Board with { CanManageColumns = false };
+        Assert.Empty(RenderBoard().FindAll("[data-testid=column]"));
+    }
 
     [Fact]
     public void Columns_show_their_name_and_card_count_and_cards_show_key_title_and_priority()
@@ -54,7 +112,7 @@ public sealed class BoardPageTests : BunitTestBase
         Assert.Empty(cut.FindAll("[data-testid=column-drop-end]"));
         Assert.Empty(cut.FindAll(".move-btn"));
         Assert.All(cut.FindAll("article.bcard"), card => Assert.Equal("false", card.GetAttribute("draggable")));
-        Assert.Equal("projects/WEB/board?task=WEB-1", cut.Find("#card-WEB-1-title").GetAttribute("href"));
+        Assert.Equal("spaces/WEB/board?task=WEB-1", cut.Find("#card-WEB-1-title").GetAttribute("href"));
     }
 
     [Fact]
@@ -112,17 +170,26 @@ public sealed class BoardPageTests : BunitTestBase
         Assert.True(_board.Loads > loadsBefore);
     }
 
-    [Fact]
-    public void US1_AS5_Typing_in_a_column_creates_a_task_there()
+    /// <summary>The Create form's requests: a column's "+ Create" opens it in that column.</summary>
+    private List<(string? Space, long? Status)> CreateRequests()
     {
+        var requests = new List<(string? Space, long? Status)>();
+        Services.GetRequiredService<CreateWorkLauncher>().Requested += (space, status, _) => requests.Add((space, status));
+        return requests;
+    }
+
+    [Fact]
+    public void US1_AS5_A_column_s_Create_opens_the_Create_form_in_that_column_and_the_new_item_shows()
+    {
+        var requests = CreateRequests();
         var cut = RenderBoard();
 
-        var input = cut.FindAll("[data-testid=column]")[1].QuerySelector("input")!;
-        input.Input("Build the header");
-        input.KeyDown(new KeyboardEventArgs { Key = "Enter" });
+        cut.FindAll("[data-testid=column]")[1].QuerySelector(".col-add")!.Click();
 
-        Assert.Equal([(FakeBoardService.InProgress, "Build the header")], _board.Created);
-        Assert.True(_board.Loads >= 2, "the board reloads after a task is created");
+        Assert.Equal([("WEB", (long?)FakeBoardService.InProgress)], requests);
+        var loads = _board.Loads;
+        cut.InvokeAsync(() => Services.GetRequiredService<CreateWorkLauncher>().NotifyCreated("WEB", "WEB-9"));
+        cut.WaitForAssertion(() => Assert.True(_board.Loads > loads, "the board reloads after an item is created in its space"));
     }
 
     [Fact]
@@ -131,5 +198,63 @@ public sealed class BoardPageTests : BunitTestBase
         var cut = Render<BoardPage>(p => p.Add(x => x.Key, "NOPE"));
 
         Assert.Contains("Not found", cut.Find("h1").TextContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void P3_FR009_Cards_show_their_type_as_a_symbol_with_its_name_and_their_estimate()
+    {
+        _board.Board = _board.Board with
+        {
+            Columns =
+            [
+                _board.Board.Columns[0] with
+                {
+                    Cards =
+                    [
+                        FakeBoardService.Card("WEB-1", "Refund to card", Priority.Medium, FakeBoardService.ToDo, type: WorkItemType.Story, estimate: 2.5m),
+                        FakeBoardService.Card("WEB-2", "Refund shows twice", Priority.Medium, FakeBoardService.ToDo, type: WorkItemType.Bug),
+                    ],
+                },
+                .. _board.Board.Columns.Skip(1),
+            ],
+        };
+
+        var cut = RenderBoard();
+
+        var story = cut.Find("[data-testid='card-WEB-1']");
+        Assert.Equal("Story", story.QuerySelector(".type-icon .sr-only")!.TextContent.Trim());
+        Assert.Contains("2.5", story.QuerySelector("[data-testid=card-estimate]")!.TextContent, StringComparison.Ordinal);
+        var bug = cut.Find("[data-testid='card-WEB-2']");
+        Assert.Equal("Bug", bug.QuerySelector(".type-icon .sr-only")!.TextContent.Trim());
+        Assert.Null(bug.QuerySelector("[data-testid=card-estimate]"));
+    }
+
+    [Theory]
+    [InlineData(Upms.Domain.Common.ProjectTemplate.Kanban)]
+    [InlineData(Upms.Domain.Common.ProjectTemplate.Scrum)]
+    [InlineData(Upms.Domain.Common.ProjectTemplate.StageGate)]
+    public void P3_FR010_Every_column_creates_through_the_Create_form_where_the_type_is_chosen(Upms.Domain.Common.ProjectTemplate template)
+    {
+        // A Scrum board shows its columns while a sprint is active (Phase 3 FR-027). The form offers the space's types.
+        _board.Board = _board.Board with { Template = template, Sprint = template == Upms.Domain.Common.ProjectTemplate.Scrum ? ActiveSprint : null };
+        var requests = CreateRequests();
+
+        var cut = RenderBoard();
+
+        Assert.Empty(cut.FindAll("select.type-choice"));
+        Assert.Equal(["Create a work item in To Do", "Create a work item in In Progress", "Create a work item in Done"],
+            cut.FindAll("[data-testid=column] .col-add").Select(b => b.GetAttribute("aria-label")));
+        cut.FindAll("[data-testid=column]")[0].QuerySelector(".col-add")!.Click();
+        Assert.Equal([("WEB", (long?)FakeBoardService.ToDo)], requests);
+    }
+
+    [Fact]
+    public void P3_FR006_The_header_names_the_template()
+    {
+        _board.Board = _board.Board with { Template = Upms.Domain.Common.ProjectTemplate.Scrum };
+
+        var cut = RenderBoard();
+
+        Assert.Equal(", Scrum space", cut.Find(".space-title-row h1 + .sr-only").TextContent);
     }
 }

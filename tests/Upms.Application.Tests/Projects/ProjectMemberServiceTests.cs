@@ -149,7 +149,7 @@ public sealed class ProjectMemberServiceTests(SqlServerFixture fixture) : Integr
         Assert.Equal(ErrorCodes.AccountDeactivated, (await AddAsync(gone, ProjectRole.Member)).Error!.Code);
         var duplicate = (await AddAsync(_bilal, ProjectRole.Member)).Error!;
         Assert.Equal(ErrorCodes.DuplicateMember, duplicate.Code);
-        Assert.Contains("Viewer", duplicate.Message, StringComparison.Ordinal);
+        Assert.Contains("looks only", duplicate.Message, StringComparison.Ordinal);
         Assert.Equal(ErrorKind.NotFound, (await CallAsync<IProjectMemberService, Result<TeamView>>(async s =>
             await s.AddAsync("WEB", Guid.NewGuid(), ProjectRole.Member, await VersionAsync(), Ct))).Error!.Kind);
     }

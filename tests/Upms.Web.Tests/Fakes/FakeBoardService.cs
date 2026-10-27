@@ -36,7 +36,13 @@ public sealed class FakeBoardService : IBoardService
 
     public List<(string Key, long ColumnId, CardPlacement Placement, byte[] Version)> Moves { get; } = [];
 
+    /// <summary>The lane change sent with each move, in order (Jira parity pass FR-027).</summary>
+    public List<LaneChange?> Lanes { get; } = [];
+
     public List<(long ColumnId, string Title)> Created { get; } = [];
+
+    /// <summary>The type of each card created, in order (Phase 3 FR-010).</summary>
+    public List<WorkItemType> CreatedTypes { get; } = [];
 
     public Func<Result<CardView>>? NextMoveResult { get; set; }
 
@@ -45,8 +51,11 @@ public sealed class FakeBoardService : IBoardService
     public int Loads { get; private set; }
 
     public static CardView Card(string key, string title, Priority priority, long columnId, AssigneeRef? assignee = null,
-        DateOnly? dueDate = null) =>
-        new(key, title, priority, columnId, 0, 0, [1, 2, 3], assignee, dueDate);
+        DateOnly? dueDate = null, WorkItemType type = WorkItemType.Task, decimal? estimate = null) =>
+        new(key, title, priority, columnId, 0, 0, [1, 2, 3], assignee, dueDate, type, estimate);
+
+    public Task<Result<BoardView>> GetAsync(string projectKey, BoardRead read, CancellationToken ct) =>
+        GetAsync(projectKey, read.ShowAllDone, ct);
 
     public Task<Result<BoardView>> GetAsync(string projectKey, bool showAllDone, CancellationToken ct)
     {
@@ -56,16 +65,18 @@ public sealed class FakeBoardService : IBoardService
             : Result<BoardView>.Fail(AppError.NotFound("project")));
     }
 
-    public Task<Result<CardView>> CreateInlineAsync(string projectKey, long columnId, string title, CancellationToken ct)
+    public Task<Result<CardView>> CreateInlineAsync(string projectKey, long columnId, string title, WorkItemType type, CancellationToken ct)
     {
         Created.Add((columnId, title));
-        return Task.FromResult(NextCreateResult?.Invoke() ?? Result<CardView>.Ok(Card("WEB-9", title, Priority.Medium, columnId)));
+        CreatedTypes.Add(type);
+        return Task.FromResult(NextCreateResult?.Invoke() ?? Result<CardView>.Ok(Card("WEB-9", title, Priority.Medium, columnId, type: type)));
     }
 
     public Task<Result<CardView>> MoveCardAsync(string workItemKey, long toColumnId, CardPlacement placement,
-        byte[] expectedVersion, CancellationToken ct)
+        byte[] expectedVersion, LaneChange? lane, CancellationToken ct)
     {
         Moves.Add((workItemKey, toColumnId, placement, expectedVersion));
+        Lanes.Add(lane);
         return Task.FromResult(NextMoveResult?.Invoke()
             ?? Result<CardView>.Ok(Card(workItemKey, "moved", Priority.Medium, toColumnId)));
     }

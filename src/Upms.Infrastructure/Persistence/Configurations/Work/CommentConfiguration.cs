@@ -11,6 +11,8 @@ internal sealed class CommentConfiguration : IEntityTypeConfiguration<Comment>
     {
         builder.ToTable("Comments");
         builder.Property(c => c.Body).IsRequired();
+        builder.Property(c => c.BodyFormat).HasConversion<byte>();
+        builder.Property(c => c.BodyText).IsRequired();
         builder.Property(c => c.RowVersion).IsRowVersion();
         builder.HasOne<WorkItem>().WithMany().HasForeignKey(c => c.WorkItemId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(c => c.AuthorId).OnDelete(DeleteBehavior.Restrict);

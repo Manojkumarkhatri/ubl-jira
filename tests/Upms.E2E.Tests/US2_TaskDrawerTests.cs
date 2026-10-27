@@ -11,17 +11,26 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
 
     private static ILocator Drawer(IPage page) => page.GetByTestId("drawer");
 
+    /// <summary>Opens the description's editor and types a new description over an empty one.</summary>
+    private static async Task WriteDescriptionAsync(IPage page, string text)
+    {
+        await Drawer(page).GetByTestId("edit-description").ClickAsync();
+        await Assertions.Expect(Drawer(page).Locator("#drawer-description .rte-editable")).ToBeFocusedAsync();
+        await page.Keyboard.TypeAsync(text);
+    }
+
     private static async Task CreateProjectAsync(IPage page, string name, string key)
     {
-        await GotoAsync(page, "/projects");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(page, "/spaces");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync(name);
         // The suggested key appears first; typing over it before it arrives would mix the two.
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync(key);
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await WaitForPathAsync(page, $"/projects/{key}/board");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
+        await WaitForPathAsync(page, $"/spaces/{key}/board");
         await WaitForInteractivityAsync(page);
     }
 
@@ -72,13 +81,17 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await Assertions.Expect(Drawer(page).GetByTestId("drawer-saved")).ToContainTextAsync("Title saved");
         await Assertions.Expect(page.GetByTestId("card-MOB-1")).ToContainTextAsync("Design the sign-in screen");
 
-        // US2_AS3: line breaks are kept and web links open in a new tab.
+        // US2_AS3: paragraphs are kept and web links open in a new tab (formatted text since Phase 4).
         await Drawer(page).GetByTestId("edit-description").ClickAsync();
-        await Drawer(page).Locator("#drawer-description-input").FillAsync("Two fields and a button.\nSee https://example.com/spec for the flow.");
-        await Drawer(page).GetByTestId("save-description").ClickAsync();
+        var editor = Drawer(page).Locator("#drawer-description .rte-editable");
+        await Assertions.Expect(editor).ToBeFocusedAsync();
+        await page.Keyboard.TypeAsync("Two fields and a button.");
+        await page.Keyboard.PressAsync("Enter");
+        await page.Keyboard.TypeAsync("See https://example.com/spec for the flow.");
+        await Drawer(page).GetByTestId("drawer-description-save").ClickAsync();
         await Assertions.Expect(Drawer(page).GetByTestId("drawer-saved")).ToContainTextAsync("Description saved");
-        var description = Drawer(page).GetByTestId("drawer-description").Locator(".plain-text");
-        await Assertions.Expect(description).ToHaveTextAsync("Two fields and a button.\nSee https://example.com/spec for the flow.");
+        var description = Drawer(page).GetByTestId("drawer-description").Locator(".formatted-text");
+        await Assertions.Expect(description.Locator("p")).ToHaveTextAsync(["Two fields and a button.", "See https://example.com/spec for the flow."]);
         await Assertions.Expect(description.GetByRole(AriaRole.Link)).ToHaveAttributeAsync("href", "https://example.com/spec");
         await Assertions.Expect(description.GetByRole(AriaRole.Link)).ToHaveAttributeAsync("target", "_blank");
 
@@ -100,18 +113,25 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await Assertions.Expect(Drawer(page).GetByText("1 of 3 done")).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByTestId("card-MOB-1").GetByTestId("subtask-progress")).ToContainTextAsync("1/3");
 
-        // US2_AS8: two comments, one edited.
+        // US2_AS8: two comments, one edited (formatted text since Phase 4; the box stays open after posting).
+        await Drawer(page).GetByTestId("start-comment").ClickAsync();
         foreach (var body in new[] { "Keep the logo small.", "Use the brand blue for the button." })
         {
-            await Drawer(page).Locator("#new-comment").FillAsync(body);
-            await Drawer(page).GetByTestId("post-comment").ClickAsync();
+            var box = Drawer(page).Locator("#new-comment .rte-editable");
+            await box.ClickAsync();
+            await Assertions.Expect(box).ToBeFocusedAsync();
+            await page.Keyboard.TypeAsync(body);
+            await Drawer(page).GetByTestId("new-comment-save").ClickAsync();
             await Assertions.Expect(Drawer(page).GetByTestId("comment").Filter(new() { HasText = body })).ToBeVisibleAsync();
         }
 
         var first = Drawer(page).GetByTestId("comment").First;
         await first.GetByRole(AriaRole.Button, new() { Name = "Edit" }).ClickAsync();
-        await Drawer(page).GetByLabel("Edit your comment").FillAsync("Keep the logo small and centred.");
-        await Drawer(page).GetByTestId("save-comment").ClickAsync();
+        var edit = Drawer(page).GetByRole(AriaRole.Textbox, new() { Name = "Edit your comment" });
+        await edit.ClickAsync();
+        await page.Keyboard.PressAsync("Control+A");
+        await page.Keyboard.TypeAsync("Keep the logo small and centred.");
+        await first.Locator("[data-testid$='-save']").ClickAsync();
         await Assertions.Expect(first).ToContainTextAsync("Keep the logo small and centred.");
         await Assertions.Expect(first).ToContainTextAsync("(edited)");
         await Assertions.Expect(first).ToContainTextAsync("Carla Diaz");
@@ -137,13 +157,14 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await Assertions.Expect(history.Nth(9)).ToContainTextAsync("edited a comment");
         await page.AssertNoAccessibilityViolationsAsync();
 
-        // US2_AS7: a sub-task opens in the same drawer with a link back; sub-tasks are never board cards.
+        // US2_AS7: a sub-task opens in the same drawer with a link back. Since the Jira parity pass (FR-027a) each sub-task is
+        // also a card of its own, naming its parent.
         await Drawer(page).GetByRole(AriaRole.Link, new() { Name = "MOB-3 Error messages" }).ClickAsync();
         await Assertions.Expect(Drawer(page).GetByTestId("drawer-key")).ToHaveTextAsync("MOB-3");
         await Assertions.Expect(page.Locator("#drawer-heading")).ToBeFocusedAsync();
         await Drawer(page).GetByRole(AriaRole.Link, new() { Name = "MOB-1 Design the sign-in screen" }).ClickAsync();
         await Assertions.Expect(Drawer(page).GetByTestId("drawer-key")).ToHaveTextAsync("MOB-1");
-        await Assertions.Expect(page.Locator("[data-testid^='card-MOB-']")).ToHaveCountAsync(1);
+        await Assertions.Expect(page.GetByTestId("card-MOB-3").GetByTestId("card-parent")).ToHaveTextAsync("Sub-task of MOB-1");
 
         // US2_AS5: Done moves the card to the Done column, with a warning about the open sub-tasks.
         await Drawer(page).Locator("#drawer-status").SelectOptionAsync("Done");
@@ -153,7 +174,7 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         // FR-023: another member opens the task from its link.
         await App.AddMemberAsync("MOB", "daniyal");
         var daniyal = await SignInAsync("daniyal", daniyalPassword);
-        await GotoAsync(daniyal, "/projects/MOB/board?task=MOB-1");
+        await GotoAsync(daniyal, "/spaces/MOB/board?task=MOB-1");
         await Assertions.Expect(Drawer(daniyal).GetByTestId("drawer-title")).ToHaveTextAsync("Design the sign-in screen");
         await Assertions.Expect(Drawer(daniyal).GetByTestId("comment")).ToHaveCountAsync(2);
         // US2_AS8: nobody can edit or delete another person's comment.
@@ -170,26 +191,24 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await AddTaskAsync(karim, "Survey the branches");
         await App.AddMemberAsync("BRN", "laila");
         var laila = await SignInAsync("laila", lailaPassword);
-        await GotoAsync(laila, "/projects/BRN/board?task=BRN-1");
+        await GotoAsync(laila, "/spaces/BRN/board?task=BRN-1");
         await Assertions.Expect(Drawer(laila).GetByTestId("drawer-title")).ToBeVisibleAsync();
 
         await OpenCardAsync(karim, "BRN-1");
-        await Drawer(karim).GetByTestId("edit-description").ClickAsync();
-        await Drawer(karim).Locator("#drawer-description-input").FillAsync("Karim's plan: visit ten branches.");
-        await Drawer(karim).GetByTestId("save-description").ClickAsync();
+        await WriteDescriptionAsync(karim, "Karim's plan: visit ten branches.");
+        await Drawer(karim).GetByTestId("drawer-description-save").ClickAsync();
         await Assertions.Expect(Drawer(karim).GetByTestId("drawer-saved")).ToContainTextAsync("Description saved");
 
-        await Drawer(laila).GetByTestId("edit-description").ClickAsync();
-        await Drawer(laila).Locator("#drawer-description-input").FillAsync("Laila's plan: send a questionnaire.");
-        await Drawer(laila).GetByTestId("save-description").ClickAsync();
+        await WriteDescriptionAsync(laila, "Laila's plan: send a questionnaire.");
+        await Drawer(laila).GetByTestId("drawer-description-save").ClickAsync();
 
         var conflict = Drawer(laila).GetByTestId("conflict");
         await Assertions.Expect(conflict).ToContainTextAsync("was changed by someone else");
         await Assertions.Expect(conflict).ToContainTextAsync("Karim's plan: visit ten branches.");
-        await Assertions.Expect(Drawer(laila).Locator("#drawer-description-input")).ToHaveValueAsync("Laila's plan: send a questionnaire.");
+        await Assertions.Expect(Drawer(laila).Locator("#drawer-description .rte-editable")).ToHaveTextAsync("Laila's plan: send a questionnaire.");
 
         // Saving again, after seeing the latest version, keeps Laila's text.
-        await Drawer(laila).GetByTestId("save-description").ClickAsync();
+        await Drawer(laila).GetByTestId("drawer-description-save").ClickAsync();
         await Assertions.Expect(Drawer(laila).GetByTestId("drawer-saved")).ToContainTextAsync("Description saved");
         await Assertions.Expect(Drawer(laila).GetByTestId("drawer-description")).ToContainTextAsync("Laila's plan");
     }
@@ -214,12 +233,14 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
 
         await Assertions.Expect(Drawer(omar)).ToBeHiddenAsync();
         await Assertions.Expect(omar.GetByTestId("card-CRD-1")).ToHaveCountAsync(0);
-        await Assertions.Expect(omar.GetByRole(AriaRole.Link, new() { Name = "Deleted tasks" })).ToHaveCountAsync(0);
+        await omar.GetByTestId("space-more").ClickAsync();
+        await Assertions.Expect(omar.GetByRole(AriaRole.Menuitem, new() { Name = "Deleted items" })).ToHaveCountAsync(0);
 
         var admin = await SignInAsync(AppFixture.AdminUserName, AppFixture.AdminPassword);
-        await GotoAsync(admin, "/projects/CRD/board");
-        await admin.GetByRole(AriaRole.Link, new() { Name = "Deleted tasks" }).ClickAsync();
-        await Assertions.Expect(admin.GetByRole(AriaRole.Heading, new() { Name = "Deleted tasks" })).ToBeVisibleAsync();
+        await GotoAsync(admin, "/spaces/CRD/board");
+        await admin.GetByTestId("space-more").ClickAsync();
+        await admin.GetByRole(AriaRole.Menuitem, new() { Name = "Deleted items" }).ClickAsync();
+        await Assertions.Expect(admin.GetByRole(AriaRole.Heading, new() { Name = "Deleted items" })).ToBeVisibleAsync();
         var row = admin.GetByTestId("deleted-CRD-1");
         await Assertions.Expect(row).ToContainTextAsync("Replace the card printer");
         await Assertions.Expect(row).ToContainTextAsync("Omar Farooq");
@@ -227,7 +248,7 @@ public sealed partial class US2_TaskDrawerTests(AppFixture app) : BrowserTest(ap
         await row.GetByRole(AriaRole.Button, new() { Name = "Restore CRD-1" }).ClickAsync();
         await Assertions.Expect(admin.GetByTestId("restored")).ToContainTextAsync("Restored CRD-1");
 
-        await GotoAsync(omar, "/projects/CRD/board");
+        await GotoAsync(omar, "/spaces/CRD/board");
         await Assertions.Expect(omar.GetByTestId("card-CRD-1").GetByTestId("subtask-progress")).ToContainTextAsync("0/1");
     }
 

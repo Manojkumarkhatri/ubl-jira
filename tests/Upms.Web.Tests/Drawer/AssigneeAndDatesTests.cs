@@ -92,7 +92,7 @@ public sealed class AssigneeAndDatesTests : BunitTestBase
 
         Assert.Equal(gone.ToString(), cut.Find("#drawer-assignee").GetAttribute("value"));
         var current = cut.Find($"#drawer-assignee option[value='{gone}']");
-        Assert.Equal("Gone Away (no longer on the project)", current.TextContent.Trim());
+        Assert.Equal("Gone Away (no longer in the space)", current.TextContent.Trim());
         Assert.True(current.HasAttribute("disabled"));
     }
 
@@ -146,7 +146,7 @@ public sealed class AssigneeAndDatesTests : BunitTestBase
 
         Assert.Empty(_items.Edits);
         Assert.Equal("0002-10-10", cut.Find("#drawer-due").GetAttribute("value"));
-        Assert.Equal("", cut.Find("#drawer-dates-error").TextContent.Trim());
+        Assert.Equal("", cut.Find("#drawer-due-error").TextContent.Trim());
         cut.Find("#drawer-due").Change("2026-10-10");
         Assert.Single(_items.Edits);
     }
@@ -161,7 +161,7 @@ public sealed class AssigneeAndDatesTests : BunitTestBase
 
         cut.Find("#drawer-due").Change("2026-10-11");
 
-        Assert.Equal("The due date cannot be before the start date.", cut.Find("#drawer-dates-error").TextContent.Trim());
+        Assert.Equal("The due date cannot be before the start date.", cut.Find("#drawer-due-error").TextContent.Trim());
         Assert.Equal("2026-10-11", cut.Find("#drawer-due").GetAttribute("value"));
         Assert.Equal("true", cut.Find("#drawer-due").GetAttribute("aria-invalid"));
     }
@@ -247,7 +247,7 @@ public sealed class AssigneeAndDatesTests : BunitTestBase
             ], 6, 1, 50),
         };
 
-        var cut = Open();
+        var cut = Open().ShowHistory();
 
         Assert.Equal(
         [

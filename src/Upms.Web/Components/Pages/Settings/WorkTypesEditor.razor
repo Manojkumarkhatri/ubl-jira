@@ -1,0 +1,100 @@
+@using Upms.Application.Projects
+@inject IProjectService Projects
+@inject LiveAnnouncer Announcer
+@* Work types (Jira parity pass FR-017; contracts/ui-routes.md "/spaces/{key}/settings"): a Space admin turns Epic, Story,
+   Task and Bug on and off; each shows how many items use it, and a type in use cannot be turned off. *@
+<section class="card form-card" aria-labelledby="work-types-heading" data-testid="work-types">
+    <h2 id="work-types-heading">Work types</h2>
+    <p class="hint" id="work-types-hint">
+        The types people can create in this space. Keep at least one of Story, Task or Bug; sub-tasks are always available. A type
+        that items still use stays on.
+    </p>
+    <fieldset aria-describedby="work-types-hint work-types-error">
+        <legend class="sr-only">Work types</legend>
+        @foreach (var type in Types)
+        {
+            <label class="check" for="work-type-@type">
+                <input type="checkbox" id="work-type-@type" checked="@_chosen.HasFlag(type)" disabled="@_busy"
+                       @onchange="e => Toggle(type, e)" />
+                @type <span class="hint">(@ItemsText(type))</span>
+            </label>
+        }
+    </fieldset>
+    <span id="work-types-error" class="error-text" role="alert">@_error</span>
+    <div class="form-actions">
+        <button type="button" class="btn btn-primary" data-testid="save-work-types" disabled="@(_busy || _chosen == Details.WorkTypes)"
+                @onclick="SaveAsync">Save work types</button>
+        @if (_saved)
+        {
+            <span class="saved" role="status">Saved</span>
+        }
+    </div>
+</section>
+
+@code {
+    private static readonly WorkTypeSet[] Types = [WorkTypeSet.Epic, WorkTypeSet.Story, WorkTypeSet.Task, WorkTypeSet.Bug];
+    private WorkTypeSet _chosen;
+    private string? _error;
+    private bool _saved;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public ProjectDetails Details { get; set; } = default!;
+
+    /// <summary>The types were saved: the page shows the new details, with their version.</summary>
+    [Parameter]
+    public EventCallback<ProjectDetails> OnSaved { get; set; }
+
+    private ProjectDetails? _shown;
+
+    // Unsaved choices stay while the page re-renders for other reasons; new details (after a save) start again from them.
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_shown, Details))
+        {
+            _shown = Details;
+            _chosen = Details.WorkTypes;
+        }
+    }
+
+    private string ItemsText(WorkTypeSet type) => (Details.TypeCounts?.GetValueOrDefault(type) ?? 0) switch
+    {
+        0 => "not used",
+        1 => "1 item",
+        var n => $"{n} items",
+    };
+
+    private void Toggle(WorkTypeSet type, ChangeEventArgs e)
+    {
+        _chosen = e.Value is true ? _chosen | type : _chosen & ~type;
+        _saved = false;
+        _error = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Projects.SetWorkTypesAsync(Details.Key, _chosen, Details.DetailsVersion, CancellationToken.None);
+            if (!saved.IsSuccess)
+            {
+                _error = saved.Error!.Message;
+                return;
+            }
+
+            _saved = true;
+            Announcer.Announce("Work types saved.");
+            await OnSaved.InvokeAsync(saved.Value!);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

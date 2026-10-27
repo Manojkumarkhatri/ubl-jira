@@ -18,6 +18,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The editor's sources and npm packages build wwwroot/js/editor.js, which is committed (Phase 4 research R2); they
+         are not part of the app, and the .NET build never needs Node.js. -->
+    <Content Remove="Editor/**" />
+    <None Remove="Editor/**" />
+    <Compile Remove="Editor/**" />
+    <EmbeddedResource Remove="Editor/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Upms.Web.Tests" />
     <InternalsVisibleTo Include="Upms.E2E.Tests" />
     <InternalsVisibleTo Include="Upms.Architecture.Tests" />

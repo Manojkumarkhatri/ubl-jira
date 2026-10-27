@@ -1,16 +1,36 @@
 @inherits LayoutComponentBase
+@implements IDisposable
+@inject SidebarState SidebarState
+@inject NavigationManager Navigation
 
 <a class="skip" href="#main">Skip to main content</a>
 <Header />
-@* data-interactive tells browser tests (and styles) when the circuit has taken over from prerendering. *@
-<main id="main" tabindex="-1" data-interactive="@(RendererInfo.IsInteractive ? "true" : "false")">
-    @Body
-</main>
+<div class="shell @(SidebarState.Collapsed ? "sidebar-collapsed" : "")">
+    <AuthorizeView>
+        <Authorized>
+            @* Today's Jira Cloud layout (Jira parity pass FR-021; research R4, R5): the sidebar beside every page on wide
+               screens, kept collapsed if the person chose so; on phones the same list opens as a panel from the header. *@
+            <aside id="sidebar" class="sidebar" hidden="@SidebarState.Collapsed">
+                <Sidebar />
+            </aside>
+            <ModalDialog @ref="_panel" Title="Menu" Class="sidebar-panel" TestId="sidebar-panel" OnClosed="() => SidebarState.SetPanel(false)">
+                <ChildContent>
+                    <Sidebar />
+                </ChildContent>
+            </ModalDialog>
+        </Authorized>
+    </AuthorizeView>
+    @* data-interactive tells browser tests (and styles) when the circuit has taken over from prerendering. *@
+    <main id="main" tabindex="-1" data-interactive="@(RendererInfo.IsInteractive ? "true" : "false")">
+        @Body
+    </main>
+</div>
 <LiveRegion />
 <AuthorizeView>
     <Authorized>
         <IdleSessionWarning />
         <EnforcePasswordChange />
+        <CreateWorkDialog />
     </Authorized>
 </AuthorizeView>
 <form id="upms-logout-form" method="post" action="Account/Logout" hidden>
@@ -21,3 +41,40 @@
     Something went wrong. <a href="." class="reload">Reload the page</a>
     <button type="button" class="dismiss" aria-label="Dismiss">×</button>
 </div>
+
+@code {
+    private ModalDialog? _panel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await SidebarState.EnsureChoiceAsync();
+        SidebarState.Changed += OnSidebarChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnSidebarChanged() => _ = InvokeAsync(() =>
+    {
+        if (SidebarState.PanelOpen && _panel is { IsOpen: false })
+        {
+            _panel.Open();
+        }
+
+        StateHasChanged();
+    });
+
+    // Following a link in the phone panel closes it.
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        _ = InvokeAsync(async () =>
+        {
+            if (_panel is { IsOpen: true })
+            {
+                await _panel.CloseAsync();
+            }
+        });
+
+    public void Dispose()
+    {
+        SidebarState.Changed -= OnSidebarChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

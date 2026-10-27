@@ -27,8 +27,8 @@ public sealed class CommentThreadTests : BunitTestBase
 
     private IRenderedComponent<CommentThread> RenderThread()
     {
-        _comments.Comments.Add(new CommentView(1, Guid.NewGuid(), "Bilal Ahmed", false, "First!", Start, null, false, [1]));
-        _comments.Comments.Add(new CommentView(2, CurrentUser.UserId!.Value, "Amina Khan", true, "Mine, edited", Start.AddMinutes(1), Start.AddMinutes(2), false, [2]));
+        _comments.Comments.Add(new CommentView(1, Guid.NewGuid(), "Bilal Ahmed", false, Rich.Plain("First!"), Start, null, false, [1]));
+        _comments.Comments.Add(new CommentView(2, CurrentUser.UserId!.Value, "Amina Khan", true, Rich.Plain("Mine, edited"), Start.AddMinutes(1), Start.AddMinutes(2), false, [2]));
         _comments.Comments.Add(new CommentView(3, Guid.NewGuid(), "Carla Diaz", false, null, Start.AddMinutes(3), null, true, [3]));
         return Render<CommentThread>(p => p
             .Add(x => x.WorkItemKey, "WEB-1")
@@ -60,40 +60,59 @@ public sealed class CommentThreadTests : BunitTestBase
     }
 
     [Fact]
-    public void Posting_a_comment_adds_it_and_clears_the_box()
+    public void P4_US1_AS1_Posting_a_comment_sends_the_editors_document_and_empties_the_editor()
     {
+        JSInterop.Setup<string?>("upms.editor.getJson", _ => true).SetResult(Rich.Document("Ship it"));
         var cut = RenderThread();
 
-        cut.Find("#new-comment").Input("Ship it");
-        cut.Find("[data-testid=post-comment]").Click();
+        cut.Find("[data-testid=start-comment]").Click();
+        cut.Find("[data-testid=new-comment-save]").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(4, cut.FindAll("[data-testid=comment]").Count));
-        Assert.Equal("", cut.Find("#new-comment").GetAttribute("value") ?? cut.Find("#new-comment").TextContent);
+        Assert.Contains("Ship it", cut.FindAll("[data-testid=comment]")[3].TextContent, StringComparison.Ordinal);
+        Assert.Contains(JSInterop.Invocations, i => i.Identifier == "upms.editor.setContent");
         Assert.Equal(1, _changed);
     }
 
     [Fact]
-    public void A_refused_comment_keeps_the_text()
+    public void A_refused_comment_keeps_the_text_and_says_why()
     {
-        _comments.NextAddResult = _ => AppError.Validation("Body", "A comment can have at most 32,000 characters.");
+        JSInterop.Setup<string?>("upms.editor.getJson", _ => true).SetResult(Rich.Document("Something long"));
+        _comments.NextAddResult = _ => AppError.Validation("Body", "The text can have at most 32,000 characters.");
         var cut = RenderThread();
 
-        cut.Find("#new-comment").Input("Something long");
-        cut.Find("[data-testid=post-comment]").Click();
+        cut.Find("[data-testid=start-comment]").Click();
+        cut.Find("[data-testid=new-comment-save]").Click();
 
-        Assert.Equal("Something long", cut.Find("#new-comment").GetAttribute("value") ?? cut.Find("#new-comment").TextContent);
-        Assert.Contains("32,000", cut.Find("#new-comment-error").TextContent, StringComparison.Ordinal);
+        cut.WaitForAssertion(() => Assert.Contains("32,000", cut.Find("#new-comment-error").TextContent, StringComparison.Ordinal));
+        Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "upms.editor.setContent");
+        Assert.Equal(3, cut.FindAll("[data-testid=comment]").Count);
     }
 
     [Fact]
     public void Editing_your_comment_saves_the_new_text()
     {
+        JSInterop.Setup<string?>("upms.editor.getJson", _ => true).SetResult(Rich.Document("Better wording"));
         var cut = RenderThread();
 
         cut.FindAll("[data-testid=comment]")[1].QuerySelectorAll("button")[0].Click();
-        cut.Find("#edit-comment-2").Input("Better wording");
-        cut.Find("[data-testid=save-comment]").Click();
+        cut.Find("[data-testid=edit-comment-2-save]").Click();
 
         cut.WaitForAssertion(() => Assert.Contains("Better wording", cut.FindAll("[data-testid=comment]")[1].TextContent, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Viewers_see_formatted_comments_without_a_comment_box()
+    {
+        _comments.Comments.Add(new CommentView(4, Guid.NewGuid(), "Omar Ali", false,
+            Rich.FromDocument("""{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Ready","marks":[{"type":"bold"}]}]}]}"""),
+            Start, null, false, [4]));
+        var cut = Render<CommentThread>(p => p
+            .Add(x => x.WorkItemKey, "WEB-1")
+            .Add(x => x.Initial, new Page<CommentView>(_comments.Comments.ToList(), 1, 1, 50))
+            .Add(x => x.ReadOnly, true));
+
+        Assert.Equal("Ready", cut.Find("[data-testid=comment] .formatted-text strong").TextContent);
+        Assert.Empty(cut.FindAll("[data-testid=start-comment]"));
     }
 }

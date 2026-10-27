@@ -62,6 +62,9 @@ public sealed class FakeProjectMemberService(Guid me) : IProjectMemberService
             People.Remove(person);
         });
 
+    public Task<Result<TeamView>> AddPersonAsync(string projectKey, Guid userId, int expectedMembersVersion, CancellationToken ct) =>
+        AddAsync(projectKey, userId, ProjectRole.Member, expectedMembersVersion, ct);
+
     public Task<Result<TeamView>> ChangeRoleAsync(string projectKey, Guid userId, ProjectRole role, int expectedMembersVersion,
         CancellationToken ct) =>
         Apply($"role {NameOf(userId)} {role} v{expectedMembersVersion}", () =>

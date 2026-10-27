@@ -1,0 +1,473 @@
+@page "/spaces/{Key}/settings/work-types/{TypeSlug}"
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@inject ISpaceFieldService Fields
+@inject LiveAnnouncer Announcer
+
+@* Jira's work type configuration ("Configure" in an item's "⋯" menu): the fields the type shows in the main column and
+   the details panel, and those shown only when filled in. Fields are dragged into place, or moved with each field's
+   menu; the panel lists the fields not on the layout and creates new ones. Nothing changes until "Save changes". *@
+<PageTitle>@TypeName fields · @Key · U-PMS</PageTitle>
+
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_layout is not { } view)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@view.SpaceKey" Title="Space settings" Current="ProjectPage.Settings" CanManage="true" Template="view.Template" />
+    <SettingsTabs SpaceKey="@view.SpaceKey" Current="work-types" />
+
+    <div class="layout-page" data-testid="type-layout">
+        <div class="layout-main">
+            <nav class="crumbs layout-crumbs" aria-label="Breadcrumb">
+                <a href="spaces/@view.SpaceKey/settings">Space settings</a> /
+                <a href="spaces/@view.SpaceKey/settings/work-types">Work types</a> /
+                <span aria-current="page">@TypeName</span>
+            </nav>
+            <div class="layout-title">
+                <TypeIcon Type="view.Type" />
+                <h2>@TypeName</h2>
+                <span class="spacer"></span>
+                <a class="btn btn-sm" href="spaces/@view.SpaceKey/settings#columns-heading" title="The statuses are the board's columns">
+                    <Icon Name="workflow" /> Edit workflow
+                </a>
+            </div>
+            <p class="layout-description">@view.TypeDescription</p>
+
+            @if (_error is not null)
+            {
+                <div class="alert alert-error" role="alert">@_error</div>
+            }
+            @if (_notice is not null)
+            {
+                <div class="alert alert-info" role="status">@_notice</div>
+            }
+
+            <section class="layout-section" aria-labelledby="layout-description-heading">
+                <h3 id="layout-description-heading">Description fields
+                    <span class="info-dot" title="Long text shown in the main column, under the summary." aria-hidden="true"><Icon Name="info" Size="14" /></span>
+                </h3>
+                @SectionList(FieldSection.Description, "Description fields")
+            </section>
+
+            <section class="layout-section" aria-labelledby="layout-context-heading">
+                <h3 id="layout-context-heading">Context fields
+                    <span class="info-dot" title="Shown in the details panel beside the description." aria-hidden="true"><Icon Name="info" Size="14" /></span>
+                </h3>
+                <span class="layout-fixed" title="Every work item shows its status at the top of the details"><Icon Name="arrow-right" /> Status</span>
+                @SectionList(FieldSection.Context, "Context fields")
+            </section>
+
+            <section class="layout-section" aria-labelledby="layout-hidden-heading">
+                <div class="layout-divider"><h3 id="layout-hidden-heading">Hide when empty</h3></div>
+                @SectionList(FieldSection.HiddenWhenEmpty, "Fields hidden when empty")
+            </section>
+
+            <div class="layout-actions">
+                <span class="hint" role="status">@(Dirty ? "You have unsaved changes." : _saved ? "Saved." : "")</span>
+                <button type="button" class="btn" disabled="@(!Dirty || _busy)" @onclick="Discard">Discard</button>
+                <button type="button" class="btn btn-primary" data-testid="save-layout" disabled="@(!Dirty || _busy)" @onclick="SaveAsync">Save changes</button>
+            </div>
+        </div>
+
+        <aside class="layout-panel" aria-labelledby="layout-panel-heading" @ondragover:preventDefault @ondrop="DropOnPanel">
+            <h3 id="layout-panel-heading">Fields
+                <span class="info-dot" title="Drag a field onto the layout, or use its Add button. Drag a field here to take it off." aria-hidden="true"><Icon Name="info" Size="14" /></span>
+            </h3>
+            <label class="panel-label" for="layout-search">Search fields in this space</label>
+            <span class="search-field">
+                <input id="layout-search" class="input" type="search" placeholder="Type to search all fields" autocomplete="off" @bind="_search" @bind:event="oninput" />
+                <Icon Name="search" />
+            </span>
+            @PanelList("Other fields", view.Fields.Where(f => !f.IsSystem))
+            @PanelList("System fields", view.Fields.Where(f => f.IsSystem))
+
+            <details class="create-field" open>
+                <summary>Create a field</summary>
+                <p class="hint">Drag a field type to one of the sections on the left, or choose one, to create a field for this space.</p>
+                <div class="field-tiles">
+                    @foreach (var type in FieldIcons.Types)
+                    {
+                        <button type="button" class="field-tile" draggable="true" data-drag-key="new-@type"
+                                @ondragstart="() => StartTypeDrag(type)" @ondragend="EndDrag" @onclick="() => CreateField(type, null)">
+                            <Icon Name="@FieldIcons.For(type)" Size="18" />
+                            <span>@SpaceField.TypeName(type)</span>
+                        </button>
+                    }
+                </div>
+            </details>
+            <div class="panel-foot">
+                <p>Need a field for other work types too?</p>
+                <a href="spaces/@view.SpaceKey/settings/fields">Go to the Fields page</a>
+            </div>
+        </aside>
+    </div>
+
+    <FieldDialog @ref="_dialog" SpaceKey="@view.SpaceKey" NumberFields="NumberFields" OnSaved="FieldSavedAsync" />
+}
+
+@code {
+    private TypeLayout? _layout;
+    private readonly Dictionary<FieldSection, List<string>> _sections = new()
+    {
+        [FieldSection.Description] = [],
+        [FieldSection.Context] = [],
+        [FieldSection.HiddenWhenEmpty] = [],
+    };
+
+    private WorkItemType _type;
+    private bool _notFound;
+    private string _search = "";
+    private string? _dragKey;
+    private FieldType? _dragType;
+    private string? _menuKey;
+    private string? _expandedKey;
+    private (FieldSection Section, int Index)? _pendingPlace;
+    private bool _creating;
+    private string? _error;
+    private string? _notice;
+    private bool _saved;
+    private bool _busy;
+    private FieldDialog? _dialog;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary>"task", "subtask"…</summary>
+    [Parameter]
+    public string TypeSlug { get; set; } = "";
+
+    private string TypeName => WorkItemTypes.DisplayName(_type);
+
+    private IReadOnlyList<FieldPlacement> Working =>
+        [.. _sections.SelectMany(s => s.Value.Select(key => new FieldPlacement(key, s.Key)))];
+
+    private bool Dirty => _layout is { } layout && !Working.SequenceEqual(layout.Placements);
+
+    private IReadOnlyList<string> NumberFields =>
+        [.. SystemFields.FormulaNumbers, .. _layout?.Fields.Where(f => f.Type == FieldType.Number).Select(f => f.Name) ?? []];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Enum.TryParse(TypeSlug, ignoreCase: true, out _type))
+        {
+            _notFound = true;
+            return;
+        }
+
+        var result = await Fields.GetLayoutAsync(Key, _type, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _notFound = true;
+            return;
+        }
+
+        Show(result.Value!);
+    }
+
+    private void Show(TypeLayout layout)
+    {
+        _layout = layout;
+        foreach (var section in _sections.Keys)
+        {
+            _sections[section] = layout.Placements.Where(p => p.Section == section).Select(p => p.Key).ToList();
+        }
+    }
+
+    private FieldRow? RowOf(string key) => _layout?.Fields.FirstOrDefault(f => f.Key == key);
+
+    private string NameOf(string key) => RowOf(key)?.Name ?? key;
+
+    private bool IsPlaced(string key) => _sections.Values.Any(list => list.Contains(key));
+
+    // ----- Rendering -----
+
+    private RenderFragment SectionList(FieldSection section, string label) => __builder =>
+    {
+        var keys = _sections[section];
+        <ul class="layout-list" aria-label="@label">
+            @for (var i = 0; i < keys.Count; i++)
+            {
+                var index = i;
+                var key = keys[i];
+                var row = RowOf(key);
+                var name = NameOf(key);
+                <li class="layout-row @(_dragKey == key ? "is-dragging" : "")" draggable="true" data-drag-key="@key"
+                    @ondragstart="() => StartDrag(key)" @ondragend="EndDrag" @ondragover:preventDefault
+                    @ondrop="() => DropAt(section, index)" @ondrop:stopPropagation>
+                    <span class="layout-grip" aria-hidden="true"><Icon Name="grip" /></span>
+                    <Icon Name="@FieldIcons.For(key, row?.Type)" />
+                    <span class="layout-name">@name</span>
+                    <span class="layout-row-actions">
+                        <button type="button" class="icon-btn" aria-label="Actions for @name" aria-expanded="@(_menuKey == key ? "true" : "false")"
+                                @onclick="() => _menuKey = _menuKey == key ? null : key"><Icon Name="more" /></button>
+                        <button type="button" class="icon-btn layout-chevron @(_expandedKey == key ? "is-open" : "")" aria-label="About @name"
+                                aria-expanded="@(_expandedKey == key ? "true" : "false")" @onclick="() => _expandedKey = _expandedKey == key ? null : key">
+                            <Icon Name="chevron-right" />
+                        </button>
+                    </span>
+                    @if (_menuKey == key)
+                    {
+                        <div class="menu-backdrop" @onclick="() => _menuKey = null"></div>
+                        <div class="item-menu-list layout-menu">
+                            @foreach (var (text, run, enabled) in RowActions(key, section, index, keys.Count))
+                            {
+                                <button type="button" class="item-menu-item" aria-disabled="@(enabled ? null : "true")"
+                                        @onclick="() => RunAction(run, enabled)">@text</button>
+                            }
+                        </div>
+                    }
+                    @if (_expandedKey == key && row is not null)
+                    {
+                        <div class="layout-detail">
+                            <p><strong>@row.TypeName</strong>@(row.IsSystem ? " · system field" : "")</p>
+                            <p class="hint">@(row.Description ?? "No description.")</p>
+                            @if (!row.IsSystem)
+                            {
+                                <button type="button" class="btn btn-sm" @onclick="() => _dialog!.OpenEdit(row)">Edit field</button>
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+        <div class="layout-drop @(keys.Count == 0 ? "is-empty" : "")" @ondragover:preventDefault @ondrop="() => DropAt(section, keys.Count)">
+            @if (keys.Count == 0)
+            {
+                @(section == FieldSection.HiddenWhenEmpty
+                    ? $"Drag fields here. A {TypeName.ToLowerInvariant()} shows them only when they have a value; empty ones sit under “More fields”."
+                    : "Drag fields here.")
+            }
+        </div>
+    };
+
+    private RenderFragment PanelList(string heading, IEnumerable<FieldRow> rows) => __builder =>
+    {
+        var shown = rows.Where(f => !IsPlaced(f.Key) && (_search.Trim().Length == 0 || f.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        <h4 class="panel-heading">@heading</h4>
+        @if (shown.Count == 0)
+        {
+            <p class="hint panel-empty">@(heading == "Other fields" ? "No other fields. Create one below." : "All are on the layout.")</p>
+        }
+        <ul class="panel-list" aria-label="@heading">
+            @foreach (var field in shown)
+            {
+                <li class="panel-field" draggable="true" data-drag-key="@field.Key" @ondragstart="() => StartDrag(field.Key)" @ondragend="EndDrag">
+                    <Icon Name="@FieldIcons.For(field.Key, field.Type)" />
+                    <span class="layout-name">@field.Name</span>
+                    <button type="button" class="btn btn-ghost btn-sm" aria-label="Add @field.Name to the layout" @onclick="() => Add(field)">Add</button>
+                </li>
+            }
+        </ul>
+    };
+
+    private IEnumerable<(string Text, Action Run, bool Enabled)> RowActions(string key, FieldSection section, int index, int count)
+    {
+        var type = RowOf(key)?.Type;
+        yield return ("Move up", () => Place(key, section, index - 1), index > 0);
+        yield return ("Move down", () => Place(key, section, index + 2), index < count - 1);
+        if (section != FieldSection.Description && SystemFields.CanGoIn(key, type, FieldSection.Description))
+        {
+            yield return ("Move to description fields", () => Place(key, FieldSection.Description, int.MaxValue), true);
+        }
+
+        if (section != FieldSection.Context && SystemFields.CanGoIn(key, type, FieldSection.Context))
+        {
+            yield return (section == FieldSection.HiddenWhenEmpty ? "Always show" : "Move to context fields",
+                () => Place(key, FieldSection.Context, int.MaxValue), true);
+        }
+
+        if (section != FieldSection.HiddenWhenEmpty && SystemFields.CanGoIn(key, type, FieldSection.HiddenWhenEmpty))
+        {
+            yield return ("Hide when empty", () => Place(key, FieldSection.HiddenWhenEmpty, int.MaxValue), true);
+        }
+
+        yield return ($"Remove from {TypeName.ToLowerInvariant()}s", () => Remove(key), true);
+    }
+
+    private void RunAction(Action run, bool enabled)
+    {
+        if (!enabled)
+        {
+            return;
+        }
+
+        _menuKey = null;
+        run();
+    }
+
+    // ----- Changing the layout -----
+
+    private void StartDrag(string key)
+    {
+        _dragKey = key;
+        _dragType = null;
+        _menuKey = null;
+    }
+
+    private void StartTypeDrag(FieldType type)
+    {
+        _dragType = type;
+        _dragKey = null;
+    }
+
+    private void EndDrag()
+    {
+        _dragKey = null;
+    }
+
+    private void DropAt(FieldSection section, int index)
+    {
+        if (_dragType is { } type)
+        {
+            _dragType = null;
+            CreateField(type, (section, index));
+            return;
+        }
+
+        if (_dragKey is { } key)
+        {
+            _dragKey = null;
+            Place(key, section, index);
+        }
+    }
+
+    private void DropOnPanel()
+    {
+        if (_dragKey is { } key && IsPlaced(key))
+        {
+            Remove(key);
+        }
+
+        _dragKey = null;
+        _dragType = null;
+    }
+
+    /// <summary>Puts the field before the <paramref name="index"/>th field of the section (at its end when past it).</summary>
+    private void Place(string key, FieldSection section, int index)
+    {
+        _error = null;
+        _saved = false;
+        if (!SystemFields.CanGoIn(key, RowOf(key)?.Type, section))
+        {
+            _error = key == SystemFields.Description
+                ? "The description stays with the description fields."
+                : $"{NameOf(key)} goes with the context fields: only the description and paragraph fields sit in the main column.";
+            return;
+        }
+
+        var target = _sections[section];
+        foreach (var list in _sections.Values)
+        {
+            var at = list.IndexOf(key);
+            if (at >= 0)
+            {
+                list.RemoveAt(at);
+                if (ReferenceEquals(list, target) && at < index)
+                {
+                    index--;
+                }
+            }
+        }
+
+        target.Insert(Math.Clamp(index, 0, target.Count), key);
+        Announcer.Announce($"{NameOf(key)} moved. Save changes to keep it.");
+    }
+
+    private void Add(FieldRow field) =>
+        Place(field.Key, field.Type == FieldType.Paragraph ? FieldSection.Description : FieldSection.Context, int.MaxValue);
+
+    private void Remove(string key)
+    {
+        _saved = false;
+        foreach (var list in _sections.Values)
+        {
+            list.Remove(key);
+        }
+
+        Announcer.Announce($"{NameOf(key)} taken off the layout. Save changes to keep it.");
+    }
+
+    private void Discard()
+    {
+        Show(_layout!);
+        _error = null;
+        _notice = null;
+    }
+
+    private void CreateField(FieldType type, (FieldSection Section, int Index)? place)
+    {
+        _creating = true;
+        _pendingPlace = place;
+        _dialog!.Open(type);
+    }
+
+    /// <summary>A field created here joins the layout where it was dropped (or at the end); an edited one shows its new name.</summary>
+    private async Task FieldSavedAsync(FieldRow field)
+    {
+        var working = _sections.ToDictionary(s => s.Key, s => s.Value.ToList());
+        var result = await Fields.GetLayoutAsync(Key, _type, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        _layout = result.Value!;
+        foreach (var (section, keys) in working)
+        {
+            _sections[section] = keys;
+        }
+
+        if (_creating)
+        {
+            _creating = false;
+            var (section, index) = _pendingPlace ?? (field.Type == FieldType.Paragraph ? FieldSection.Description : FieldSection.Context, int.MaxValue);
+            _pendingPlace = null;
+            Place(field.Key, section, index);
+            _notice = $"Created {field.Name}. Save changes to add it to {TypeName.ToLowerInvariant()}s.";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy || _layout is not { } layout)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _notice = null;
+        try
+        {
+            var result = await Fields.SaveLayoutAsync(Key, _type, Working, layout.Version, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                if (result.Error.Current is TypeLayout latest)
+                {
+                    Show(latest);
+                }
+
+                return;
+            }
+
+            Show(result.Value!);
+            _saved = true;
+            Announcer.Announce($"The {TypeName.ToLowerInvariant()} layout is saved.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

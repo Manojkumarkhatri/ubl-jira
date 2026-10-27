@@ -1,0 +1,140 @@
+@page "/mis"
+@using Upms.Application.Projects
+@using Upms.Application.Projects.Contracts
+@using Upms.Web.Endpoints
+@inject IPortfolioService Portfolios
+@inject ViewerToday ViewerToday
+
+<PageTitle>MIS reports · U-PMS</PageTitle>
+
+@* The MIS downloads (owner's decision of 2026-10-20): everything, a department, a portfolio or a space, as far as the
+   person's type and ticks allow, each as Excel or PDF. *@
+<div class="page-head">
+    <div>
+        <h1>MIS reports</h1>
+        <p class="hint">Status, progress, overdue work, milestones and workload, as Excel or PDF. You see the levels your rights allow.</p>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">@_error</div>
+}
+else if (_choices is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else if (!_choices.All && _choices.Departments.Count == 0 && _choices.Portfolios.Count == 0 && _choices.Spaces.Count == 0)
+{
+    <EmptyState Title="No MIS for you yet" Text="Your rights do not include downloading an MIS, or you are in no space yet." />
+}
+else
+{
+    <div class="mis-levels">
+        @if (_choices.All)
+        {
+            <section class="mis-card mis-all card" aria-labelledby="mis-all">
+                <div>
+                    <h2 id="mis-all">All departments</h2>
+                    <p class="hint">Every space in the organization, grouped by department and portfolio.</p>
+                </div>
+                @Downloads(MisLevel.All, null, null, "All departments")
+            </section>
+        }
+
+        @if (_choices.Departments.Count > 0)
+        {
+            <section aria-labelledby="mis-departments">
+                <h2 id="mis-departments" class="mis-level-title">Departments</h2>
+                <ul class="mis-list">
+                    @foreach (var choice in _choices.Departments)
+                    {
+                        <li class="mis-row card" @key="choice.Id">
+                            <span class="mis-name"><strong>@choice.Name</strong> <span class="muted">@SpacesText(choice.Spaces)</span></span>
+                            @Downloads(MisLevel.Department, null, choice.Id, choice.Name)
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        @if (_choices.Portfolios.Count > 0)
+        {
+            <section aria-labelledby="mis-portfolios">
+                <h2 id="mis-portfolios" class="mis-level-title">Portfolios</h2>
+                <ul class="mis-list">
+                    @foreach (var choice in _choices.Portfolios)
+                    {
+                        <li class="mis-row card" @key="choice.Id">
+                            <span class="mis-name"><strong>@choice.Name</strong> <span class="muted">@choice.Parent · @SpacesText(choice.Spaces)</span></span>
+                            @Downloads(MisLevel.Portfolio, null, choice.Id, choice.Name)
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        @if (_choices.Spaces.Count > 0)
+        {
+            <section aria-labelledby="mis-spaces">
+                <div class="mis-level-head">
+                    <h2 id="mis-spaces" class="mis-level-title">Spaces</h2>
+                    @if (_choices.Spaces.Count > 8)
+                    {
+                        <label for="mis-filter" class="sr-only">Filter spaces</label>
+                        <input id="mis-filter" type="search" class="input input-sm" placeholder="Filter spaces" @bind="_filter" @bind:event="oninput" />
+                    }
+                </div>
+                <ul class="mis-list">
+                    @foreach (var choice in _choices.Spaces.Where(Shown))
+                    {
+                        <li class="mis-row card" @key="choice.Key">
+                            <span class="mis-name"><span class="space-mark" aria-hidden="true">@choice.Key![..1]</span> <strong>@choice.Name</strong>
+                                <span class="muted">@choice.Key@(choice.Parent is null ? "" : $" · {choice.Parent}")</span></span>
+                            @Downloads(MisLevel.Space, choice.Key, null, choice.Name)
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private MisChoices? _choices;
+    private DateOnly _today;
+    private string? _error;
+    private string _filter = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = await ViewerToday.GetAsync();
+        var result = await Portfolios.MisChoicesAsync(CancellationToken.None);
+        if (result.IsSuccess)
+        {
+            _choices = result.Value;
+        }
+        else
+        {
+            _error = result.Error!.Message;
+        }
+    }
+
+    private bool Shown(MisChoice choice) => _filter.Trim().Length == 0
+        || choice.Name.Contains(_filter.Trim(), StringComparison.CurrentCultureIgnoreCase)
+        || (choice.Key ?? "").Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string SpacesText(int count) => count == 1 ? "1 space" : $"{count} spaces";
+
+    private RenderFragment Downloads(MisLevel level, string? key, long? id, string name) => __builder =>
+    {
+        <span class="mis-downloads">
+            <a class="btn btn-sm" href="@MisEndpoints.Url(level, "xlsx", key, id, _today)" download aria-label="Excel MIS of @name">
+                <Icon Name="download" /> Excel
+            </a>
+            <a class="btn btn-sm" href="@MisEndpoints.Url(level, "print", key, id, _today)" target="_blank" rel="noopener" aria-label="PDF MIS of @name">
+                <Icon Name="download" /> PDF
+            </a>
+        </span>
+    };
+}

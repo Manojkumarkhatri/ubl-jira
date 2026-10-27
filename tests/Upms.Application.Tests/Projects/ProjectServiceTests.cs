@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Upms.Application.Common;
 using Upms.Application.Common.Results;
 using Upms.Application.Projects;
@@ -21,8 +22,152 @@ public sealed class ProjectServiceTests(SqlServerFixture fixture) : IntegrationT
         ActAs(_amina);
     }
 
-    private Task<Result<string>> CreateAsync(string name, string key, string? description = null) =>
-        CallAsync<IProjectService, Result<string>>(s => s.CreateAsync(name, key, description, Ct));
+    private Task<Result<string>> CreateAsync(string name, string key, string? description = null,
+        ProjectTemplate template = ProjectTemplate.Kanban) =>
+        CallAsync<IProjectService, Result<string>>(s => s.CreateAsync(name, key, description, template, Ct));
+
+    private Task<Result<ProjectDetails>> DetailsAsync(string key) =>
+        CallAsync<IProjectService, Result<ProjectDetails>>(s => s.GetAsync(key, Ct));
+
+    private Task<Result<ProjectDetails>> SwitchAsync(string key, ProjectTemplate target, int? version = null) =>
+        CallAsync<IProjectService, Result<ProjectDetails>>(async s =>
+            await s.SwitchTemplateAsync(key, target, version ?? (await s.GetAsync(key, Ct)).Value!.DetailsVersion, Ct));
+
+    private Task<BoardView> BoardOfAsync(string key) =>
+        CallAsync<IBoardService, BoardView>(async s => (await s.GetAsync(key, false, Ct)).Value!);
+
+    private Task<string> AddCardAsync(string key, long columnId, string title) =>
+        CallAsync<IBoardService, string>(async s => (await s.CreateInlineAsync(key, columnId, title, Domain.Work.WorkItemType.Task, Ct)).Value!.Key);
+
+    /// <summary>The project's cards in rank order, deleted ones included (Phase 3 research R8).</summary>
+    private Task<List<string>> CardsByRankAsync(string key) =>
+        QueryAsync(db => db.WorkItems.IgnoreQueryFilters()
+            .Where(w => w.ParentId == null && db.Projects.Any(p => p.Id == w.ProjectId && p.Key == key))
+            .OrderBy(w => w.Rank).ThenBy(w => w.Id)
+            .Select(w => w.Key)
+            .ToListAsync(Ct));
+
+    /// <summary>Each column's cards in rank order, as a board would show them.</summary>
+    private async Task<List<(string Name, string Keys)>> ColumnsByRankAsync(string key)
+    {
+        var columns = await QueryAsync(db => db.ProjectStatuses.AsNoTracking()
+            .Where(s => db.Projects.Any(p => p.Id == s.ProjectId && p.Key == key))
+            .OrderBy(s => s.Position)
+            .Select(s => new { s.Id, s.Name })
+            .ToListAsync(Ct));
+        var cards = await QueryAsync(db => db.WorkItems.AsNoTracking()
+            .Where(w => w.ParentId == null && db.Projects.Any(p => p.Id == w.ProjectId && p.Key == key))
+            .OrderBy(w => w.Rank).ThenBy(w => w.Id)
+            .Select(w => new { w.Key, w.StatusId })
+            .ToListAsync(Ct));
+        return columns.ConvertAll(c => (c.Name, string.Join(",", cards.Where(w => w.StatusId == c.Id).Select(w => w.Key))));
+    }
+
+    [Theory]
+    [InlineData(ProjectTemplate.Kanban, new[] { "To Do", "In Progress", "Done" })]
+    [InlineData(ProjectTemplate.Scrum, new[] { "To Do", "In Progress", "In Review", "Done" })]
+    [InlineData(ProjectTemplate.StageGate, new[] { "Not Started", "In Progress", "On Hold", "Completed" })]
+    public async Task P3_US1_AS1_AS2_A_project_starts_with_its_templates_columns(ProjectTemplate template, string[] columns)
+    {
+        Assert.True((await CreateAsync("Mobile App", "MOB", template: template)).IsSuccess);
+
+        Assert.Equal(columns, (await BoardOfAsync("MOB")).Columns.Select(c => c.Name));
+        var details = (await DetailsAsync("MOB")).Value!;
+        Assert.Equal(template, details.Template);
+        var summary = Assert.Single((await CallAsync<IProjectService, Result<Page<ProjectSummary>>>(s => s.ListAsync(PageRequest.First, Ct))).Value!.Items);
+        Assert.Equal(template, summary.Template);
+    }
+
+    [Fact]
+    public async Task P3_US1_AS2_A_Stage_gate_project_starts_with_four_stages_in_order()
+    {
+        await CreateAsync("Core Banking Upgrade", "CBU", template: ProjectTemplate.StageGate);
+
+        var stages = await QueryAsync(db => db.WorkItems.AsNoTracking()
+            .Where(w => w.Key.StartsWith("CBU-"))
+            .OrderBy(w => w.Rank).ThenBy(w => w.Id)
+            .Select(w => new { w.Key, w.Type, w.Title, w.StatusId })
+            .ToListAsync(Ct));
+        var notStarted = (await BoardOfAsync("CBU")).Columns[0].Id;
+
+        Assert.Equal(["CBU-1", "CBU-2", "CBU-3", "CBU-4"], stages.Select(s => s.Key));
+        Assert.Equal(["Initiation", "Planning", "Execution", "Closure"], stages.Select(s => s.Title));
+        Assert.All(stages, s => Assert.Equal((Domain.Work.WorkItemType.Stage, notStarted), (s.Type, s.StatusId)));
+        Assert.All((await BoardOfAsync("CBU")).Columns, c => Assert.Empty(c.Cards));
+    }
+
+    [Fact]
+    public async Task P3_US1_AS9_Switching_to_Scrum_orders_the_cards_column_by_column_and_is_audited()
+    {
+        await CreateAsync("Website Revamp", "WEB");
+        var board = await BoardOfAsync("WEB");
+        var (toDo, inProgress, done) = (board.Columns[0].Id, board.Columns[1].Id, board.Columns[2].Id);
+        await AddCardAsync("WEB", inProgress, "Build the header");    // WEB-1
+        await AddCardAsync("WEB", toDo, "Pick the fonts");            // WEB-2
+        await AddCardAsync("WEB", done, "Set up hosting");            // WEB-3
+        await AddCardAsync("WEB", toDo, "Write the copy");            // WEB-4
+        await AddCardAsync("WEB", inProgress, "Draw the icons");      // WEB-5
+        var before = (await BoardOfAsync("WEB")).Columns.Select(c => (c.Name, string.Join(",", c.Cards.Select(x => x.Key)))).ToList();
+
+        var switched = await SwitchAsync("WEB", ProjectTemplate.Scrum);
+
+        Assert.True(switched.IsSuccess, switched.Error?.Message);
+        Assert.Equal(ProjectTemplate.Scrum, switched.Value!.Template);
+        Assert.Equal(["WEB-2", "WEB-4", "WEB-1", "WEB-5", "WEB-3"], await CardsByRankAsync("WEB"));
+        // No card moves: each column keeps its cards in their order (the Scrum board itself waits for a sprint).
+        Assert.Equal(before, await ColumnsByRankAsync("WEB"));
+        var audit = Assert.Single(await AuditEventsAsync(), e => e.EventType == AuditEventType.ProjectTemplateChanged);
+        Assert.Equal(("WEB", _amina.Id), (audit.Target, audit.ActorUserId));
+        Assert.Equal("{\"From\":\"Kanban\",\"To\":\"Scrum\"}", audit.Details);
+    }
+
+    [Fact]
+    public async Task P3_US1_AS9_No_project_switches_to_or_from_Stage_gate()
+    {
+        await CreateAsync("Website Revamp", "WEB");
+        await CreateAsync("Core Banking Upgrade", "CBU", template: ProjectTemplate.StageGate);
+
+        Assert.Equal(ErrorCodes.TemplateSwitchNotAllowed, (await SwitchAsync("WEB", ProjectTemplate.StageGate)).Error!.Code);
+        Assert.Equal(ErrorCodes.TemplateSwitchNotAllowed, (await SwitchAsync("CBU", ProjectTemplate.Kanban)).Error!.Code);
+        Assert.Equal(ProjectTemplate.Kanban, (await DetailsAsync("WEB")).Value!.Template);
+    }
+
+    [Fact]
+    public async Task P3_FR005_A_Scrum_project_switches_back_to_Kanban_only_without_planned_or_active_sprints()
+    {
+        await CreateAsync("Mobile App", "MOB", template: ProjectTemplate.Scrum);
+        var sprint = (await CallAsync<ISprintService, Result<SprintSection>>(s => s.CreateAsync("MOB", Ct))).ValueOrThrow();
+
+        Assert.Equal(ErrorCodes.SprintsOpen, (await SwitchAsync("MOB", ProjectTemplate.Kanban)).Error!.Code);
+
+        var active = (await CallAsync<ISprintService, Result<SprintSection>>(s =>
+            s.StartAsync(sprint.Id, new DateOnly(2026, 10, 5), null, null, sprint.Version, Ct))).ValueOrThrow();
+        Assert.Equal(ErrorCodes.SprintsOpen, (await SwitchAsync("MOB", ProjectTemplate.Kanban)).Error!.Code);
+
+        (await CallAsync<ISprintService, Result<SprintSection>>(s => s.CompleteAsync(active.Id, null, active.Version, Ct))).ValueOrThrow();
+        Assert.True((await SwitchAsync("MOB", ProjectTemplate.Kanban)).IsSuccess);
+        Assert.Equal(ProjectTemplate.Kanban, (await DetailsAsync("MOB")).Value!.Template);
+    }
+
+    [Fact]
+    public async Task P3_FR005_Only_Project_Admins_and_administrators_switch_templates_and_stale_switches_conflict()
+    {
+        await CreateAsync("Website Revamp", "WEB");
+        var version = (await DetailsAsync("WEB")).Value!.DetailsVersion;
+        var bilal = await Data.UserAsync("bilal");
+        await Data.MembersAsync("WEB", ProjectRole.Member, bilal);
+
+        ActAs(bilal);
+        Assert.Equal(ErrorKind.Forbidden, (await SwitchAsync("WEB", ProjectTemplate.Scrum, version)).Error!.Kind);
+
+        ActAs(await Data.AdministratorAsync());
+        Assert.True((await SwitchAsync("WEB", ProjectTemplate.Scrum, version)).IsSuccess);
+
+        ActAs(_amina);
+        var stale = await SwitchAsync("WEB", ProjectTemplate.Kanban, version);
+        Assert.Equal(ErrorKind.Conflict, stale.Error!.Kind);
+        Assert.Equal(ProjectTemplate.Scrum, Assert.IsType<ProjectDetails>(stale.Error.Current).Template);
+    }
 
     [Fact]
     public async Task US1_AS3_Creating_a_project_opens_a_board_with_three_columns_and_the_creator_as_owner()
@@ -106,9 +251,9 @@ public sealed class ProjectServiceTests(SqlServerFixture fixture) : IntegrationT
         var board = (await CallAsync<IBoardService, Result<BoardView>>(s => s.GetAsync("WEB", false, Ct))).Value!;
         var toDo = board.Columns[0].Id;
         var done = board.Columns[2].Id;
-        await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", toDo, "Open one", Ct));
-        await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", toDo, "Open two", Ct));
-        await CallAsync<IBoardService, Result<CardView>>(s => s.CreateInlineAsync("WEB", done, "Finished", Ct));
+        await AddCardAsync("WEB", toDo, "Open one");
+        await AddCardAsync("WEB", toDo, "Open two");
+        await AddCardAsync("WEB", done, "Finished");
 
         var first = (await CallAsync<IProjectService, Result<Page<ProjectSummary>>>(s => s.ListAsync(new PageRequest(1, 2), Ct))).Value!;
         var second = (await CallAsync<IProjectService, Result<Page<ProjectSummary>>>(s => s.ListAsync(new PageRequest(2, 2), Ct))).Value!;

@@ -1,0 +1,26 @@
+{
+  "name": "upms-editor",
+  "private": true,
+  "description": "The formatted-text editor of U-PMS (Phase 4 research R2), bundled into ../wwwroot/js/editor.js.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.31.4",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/extension-mention": "3.31.4",
+    "@tiptap/extension-table": "3.31.4",
+    "@tiptap/extensions": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "@tiptap/suggestion": "3.31.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

@@ -1,65 +1,205 @@
 @using Upms.Application.Projects
 @inject IProjectService Projects
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
-<ModalDialog @ref="_dialog" Title="Create project" TestId="create-project" OnClosed="Reset">
+@* "Create space" (Jira parity pass US3; contracts/ui-routes.md "Create space gallery"): first a gallery of templates with a
+   preview of what each gives, then the space's name, key and description; the Blank template also lets the creator choose
+   the columns and work types. *@
+<ModalDialog @ref="_dialog" Title="Create space" TestId="create-project" Class="modal-wide create-space" OnClosed="Reset">
     <ChildContent>
-        <form id="create-project-form" @onsubmit="CreateAsync" novalidate>
-            @if (_error is { Kind: not ErrorKind.Validation } && FieldFor(_error.Code) is null)
-            {
-                <div class="alert alert-error" role="alert">@_error.Message</div>
-            }
-            <div class="field">
-                <label for="project-name">Name</label>
-                <input id="project-name" class="input" autofocus maxlength="80" autocomplete="off"
-                       @bind="_name" @bind:event="oninput" @bind:after="NameChangedAsync"
-                       aria-invalid="@Invalid("Name")" aria-describedby="project-name-error" />
-                <span id="project-name-error" class="error-text">@ErrorFor("Name")</span>
+        @if (_step == Step.Gallery)
+        {
+            <div class="template-gallery">
+                <fieldset class="template-choice">
+                    <legend>Choose a template</legend>
+                    <div class="gallery-cards">
+                        @foreach (var info in TemplateCatalog.All)
+                        {
+                            <label class="template-card @(_template == info.Template ? "is-chosen" : "")" for="space-template-@info.Template">
+                                <input type="radio" id="space-template-@info.Template" name="space-template" value="@info.Template"
+                                       checked="@(_template == info.Template)" aria-labelledby="space-template-@(info.Template)-name" aria-describedby="space-template-@(info.Template)-hint"
+                                       @onchange="() => _template = info.Template" />
+                                <span id="space-template-@(info.Template)-name" class="template-name">@info.Name</span>
+                                <span id="space-template-@(info.Template)-hint" class="hint">@info.Description</span>
+                            </label>
+                        }
+                    </div>
+                </fieldset>
+                <section class="template-preview" aria-label="Preview of the @Chosen.Name template" aria-live="polite" data-testid="template-preview">
+                    <h3 id="template-preview-title">@Chosen.Name</h3>
+                    <h4>Columns</h4>
+                    <ol class="preview-columns">
+                        @foreach (var column in Chosen.Columns)
+                        {
+                            <li><span>@column.Name</span> <span class="hint">@DeleteColumnDialog.CategoryName(column.Category)</span></li>
+                        }
+                    </ol>
+                    <h4>Work types</h4>
+                    <p>@string.Join(", ", Chosen.WorkTypes)</p>
+                    <h4>Views</h4>
+                    <p>@string.Join(", ", Chosen.Views)</p>
+                </section>
             </div>
-            <div class="field">
-                <label for="project-key">Key</label>
-                <input id="project-key" class="input key-input" maxlength="10" autocomplete="off"
-                       @bind="_key" @bind:event="oninput" @bind:after="KeyEdited"
-                       @onfocus="() => _keyFocused = true" @onblur="() => _keyFocused = false"
-                       aria-invalid="@Invalid("Key")" aria-describedby="project-key-hint project-key-error" />
-                <span id="project-key-hint" class="hint">
-                    2–10 capital letters or digits, starting with a letter. Task keys start with it
-                    (for example @(string.IsNullOrEmpty(_key) ? "WEB" : _key)-1), and it cannot be changed later.
-                </span>
-                <span id="project-key-error" class="error-text">@ErrorFor("Key")</span>
-            </div>
-            <div class="field">
-                <label for="project-description">Description (optional)</label>
-                <textarea id="project-description" class="textarea" maxlength="2000" @bind="_description"
-                          aria-invalid="@Invalid("Description")" aria-describedby="project-description-error"></textarea>
-                <span id="project-description-error" class="error-text">@ErrorFor("Description")</span>
-            </div>
-        </form>
+        }
+        else
+        {
+            <form id="create-project-form" @onsubmit="CreateAsync" novalidate>
+                @if (_error is { Kind: not ErrorKind.Validation } && FieldFor(_error.Code) is null)
+                {
+                    <div class="alert alert-error" role="alert">@_error.Message</div>
+                }
+                <p class="hint" data-testid="chosen-template">Template: <strong>@Chosen.Name</strong></p>
+                <div class="field">
+                    <label for="space-name">Name</label>
+                    <input id="space-name" class="input" autofocus maxlength="80" autocomplete="off"
+                           @bind="_name" @bind:event="oninput" @bind:after="NameChangedAsync"
+                           aria-invalid="@Invalid("Name")" aria-describedby="space-name-error" />
+                    <span id="space-name-error" class="error-text">@ErrorFor("Name")</span>
+                </div>
+                <div class="field">
+                    <label for="project-key">Key</label>
+                    <input id="project-key" class="input key-input" maxlength="10" autocomplete="off"
+                           @bind="_key" @bind:event="oninput" @bind:after="KeyEdited"
+                           @onfocus="() => _keyFocused = true" @onblur="() => _keyFocused = false"
+                           aria-invalid="@Invalid("Key")" aria-describedby="project-key-hint project-key-error" />
+                    <span id="project-key-hint" class="hint">
+                        2–10 capital letters or digits, starting with a letter. Work item keys start with it
+                        (for example @(string.IsNullOrEmpty(_key) ? "WEB" : _key)-1), and it cannot be changed later.
+                    </span>
+                    <span id="project-key-error" class="error-text">@ErrorFor("Key")</span>
+                </div>
+                <div class="field">
+                    <label for="project-description">Description (optional)</label>
+                    <textarea id="project-description" class="textarea" maxlength="2000" @bind="_description"
+                              aria-invalid="@Invalid("Description")" aria-describedby="project-description-error"></textarea>
+                    <span id="project-description-error" class="error-text">@ErrorFor("Description")</span>
+                </div>
+                @if (_template == SpaceTemplate.Blank)
+                {
+                    <fieldset class="blank-columns" aria-describedby="blank-columns-hint blank-columns-error">
+                        <legend>Columns</legend>
+                        <p id="blank-columns-hint" class="hint">From left to right on the board: 1 to @BoardColumnsView.MaxColumns columns, with at least one "to do" and one "done".</p>
+                        <ol class="blank-column-list">
+                            @for (var i = 0; i < _columns.Count; i++)
+                            {
+                                var index = i;
+                                var column = _columns[i];
+                                <li @key="column" class="blank-column-row" data-testid="blank-column">
+                                    <label class="sr-only" for="blank-column-@index-name">Name of column @(index + 1)</label>
+                                    <input id="blank-column-@index-name" class="input input-sm" maxlength="30" autocomplete="off"
+                                           @bind="column.Name" @bind:event="oninput"
+                                           aria-invalid="@Invalid($"Columns[{index}].Name")" aria-describedby="blank-column-@index-error" />
+                                    <label class="sr-only" for="blank-column-@index-type">Status type of column @(index + 1)</label>
+                                    <select id="blank-column-@index-type" class="select select-sm" @bind="column.Category">
+                                        @foreach (var category in Enum.GetValues<StatusCategory>())
+                                        {
+                                            <option value="@category">@DeleteColumnDialog.CategoryName(category)</option>
+                                        }
+                                    </select>
+                                    <button type="button" class="btn btn-sm" disabled="@(index == 0)" aria-label="Move up: column @(index + 1)"
+                                            @onclick="() => MoveColumn(index, -1)">Move up</button>
+                                    <button type="button" class="btn btn-sm" disabled="@(index == _columns.Count - 1)" aria-label="Move down: column @(index + 1)"
+                                            @onclick="() => MoveColumn(index, 1)">Move down</button>
+                                    <button type="button" class="btn btn-sm btn-ghost btn-danger" disabled="@(_columns.Count == 1)" aria-label="Remove column @(index + 1)"
+                                            @onclick="() => _columns.RemoveAt(index)">Remove</button>
+                                    <span id="blank-column-@index-error" class="error-text">@ErrorFor($"Columns[{index}].Name")</span>
+                                </li>
+                            }
+                        </ol>
+                        <button type="button" class="btn btn-sm" data-testid="blank-add-column" disabled="@(_columns.Count >= BoardColumnsView.MaxColumns)"
+                                @onclick="AddColumn">Add column</button>
+                        <span id="blank-columns-error" class="error-text" role="alert">@ErrorFor("Columns")</span>
+                    </fieldset>
+                    <fieldset class="blank-types" aria-describedby="blank-types-hint blank-types-error">
+                        <legend>Work types</legend>
+                        <p id="blank-types-hint" class="hint">Choose at least one of Story, Task or Bug. Sub-tasks are always available.</p>
+                        @foreach (var type in new[] { WorkTypeSet.Epic, WorkTypeSet.Story, WorkTypeSet.Task, WorkTypeSet.Bug })
+                        {
+                            <label class="check" for="blank-type-@type">
+                                <input type="checkbox" id="blank-type-@type" checked="@_workTypes.HasFlag(type)" @onchange="e => ToggleType(type, e)" />
+                                @type
+                            </label>
+                        }
+                        <span id="blank-types-error" class="error-text" role="alert">@ErrorFor("WorkTypes")</span>
+                    </fieldset>
+                }
+            </form>
+        }
     </ChildContent>
     <Footer>
-        <button type="button" class="btn" @onclick="() => _dialog.CloseAsync()">Cancel</button>
-        <button type="submit" form="create-project-form" class="btn btn-primary" disabled="@_busy">Create project</button>
+        @if (_step == Step.Gallery)
+        {
+            <button type="button" class="btn" @onclick="() => _dialog.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-primary" data-testid="use-template" @onclick="() => Go(Step.Details)">Use template</button>
+        }
+        else
+        {
+            <button type="button" class="btn" data-testid="template-back" @onclick="() => Go(Step.Gallery)">Back</button>
+            <button type="submit" form="create-project-form" class="btn btn-primary" disabled="@_busy">Create space</button>
+        }
     </Footer>
 </ModalDialog>
 
 @code {
     private ModalDialog _dialog = default!;
+    private Step _step = Step.Gallery;
+    private SpaceTemplate _template = SpaceTemplate.Kanban;
     private string _name = "";
     private string _key = "";
     private string _description = "";
+    private List<ColumnDraft> _columns = Starting();
+    private WorkTypeSet _workTypes = WorkTypeSet.All;
     private bool _keyEditedByUser;
     private bool _keyFocused;
     private int _suggestionRequest;
     private bool _busy;
     private AppError? _error;
+    private string? _focusId;
+
+    private enum Step
+    {
+        Gallery,
+        Details,
+    }
+
+    private TemplateInfo Chosen => TemplateCatalog.All.Single(t => t.Template == _template);
 
     public void Open() => _dialog.Open();
 
+    // Each step starts where the person continues: the chosen template, or the name.
+    private void Go(Step step)
+    {
+        _step = step;
+        _focusId = step == Step.Details ? "space-name" : $"space-template-{_template}";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is { } id)
+        {
+            _focusId = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private static List<ColumnDraft> Starting() => TemplateCatalog.BlankColumns.Select(c => new ColumnDraft(c.Name, c.Category)).ToList();
+
     private void Reset()
     {
+        _step = Step.Gallery;
+        _template = SpaceTemplate.Kanban;
         _name = "";
         _key = "";
         _description = "";
+        _columns = Starting();
+        _workTypes = WorkTypeSet.All;
         _keyEditedByUser = false;
         _keyFocused = false;
         _error = null;
@@ -88,25 +228,61 @@
         _key = _key.ToUpperInvariant();
     }
 
+    private void AddColumn() => _columns.Insert(Math.Max(0, _columns.FindLastIndex(c => c.Category != StatusCategory.Done) + 1),
+        new ColumnDraft("", StatusCategory.InProgress));
+
+    private void MoveColumn(int index, int by)
+    {
+        var column = _columns[index];
+        _columns.RemoveAt(index);
+        _columns.Insert(index + by, column);
+    }
+
+    private void ToggleType(WorkTypeSet type, ChangeEventArgs e) =>
+        _workTypes = e.Value is true ? _workTypes | type : _workTypes & ~type;
+
     private async Task CreateAsync()
     {
-        _busy = true;
-        var result = await Projects.CreateAsync(_name, _key, _description, CancellationToken.None);
-        _busy = false;
-        if (result.IsSuccess)
+        if (_busy)
         {
-            Navigation.NavigateTo($"projects/{result.Value}/board");
             return;
         }
 
-        // The typed values stay in place (constitution VI).
-        _error = result.Error;
+        _busy = true;
+        try
+        {
+            var result = _template == SpaceTemplate.Blank
+                ? await Projects.CreateBlankAsync(_name, _key, _description,
+                    new SpaceSetup(_columns.Select(c => new NewColumn(c.Name, c.Category)).ToList(), _workTypes), CancellationToken.None)
+                : await Projects.CreateAsync(_name, _key, _description, TemplateOf(_template), CancellationToken.None);
+            if (result.IsSuccess)
+            {
+                Navigation.NavigateTo($"spaces/{result.Value}/board");
+                return;
+            }
+
+            // The typed values stay (constitution VI).
+            _error = result.Error;
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
+
+    private static ProjectTemplate TemplateOf(SpaceTemplate template) => template switch
+    {
+        SpaceTemplate.Scrum => ProjectTemplate.Scrum,
+        SpaceTemplate.StageGate => ProjectTemplate.StageGate,
+        _ => ProjectTemplate.Kanban,
+    };
 
     private static string? FieldFor(string code) => code switch
     {
         ErrorCodes.DuplicateProjectKey or ErrorCodes.InvalidProjectKey => "Key",
         ErrorCodes.DuplicateProjectName => "Name",
+        ErrorCodes.TooManyColumns or ErrorCodes.LastToDoColumn or ErrorCodes.LastDoneColumn or ErrorCodes.DuplicateColumnName => "Columns",
+        ErrorCodes.NoStandardType => "WorkTypes",
         _ => null,
     };
 
@@ -121,4 +297,12 @@
     }
 
     private string Invalid(string field) => ErrorFor(field) is null ? "false" : "true";
+
+    /// <summary>A column of the Blank template being set up.</summary>
+    private sealed class ColumnDraft(string name, StatusCategory category)
+    {
+        public string Name { get; set; } = name;
+
+        public StatusCategory Category { get; set; } = category;
+    }
 }

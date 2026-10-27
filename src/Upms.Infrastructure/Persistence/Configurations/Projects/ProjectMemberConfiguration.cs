@@ -12,6 +12,7 @@ internal sealed class ProjectMemberConfiguration : IEntityTypeConfiguration<Proj
         builder.ToTable("ProjectMembers");
         builder.Property(m => m.Role).HasConversion<string>().HasMaxLength(12).IsUnicode(false);
         builder.HasIndex(m => new { m.ProjectId, m.UserId }).IsUnique();
+        builder.Property(m => m.FromPortfolio).HasDefaultValue(false);
 
         // The project list and "My tasks" look memberships up by person (Phase 2 research R4).
         builder.HasIndex(m => m.UserId).IncludeProperties(m => m.Role);

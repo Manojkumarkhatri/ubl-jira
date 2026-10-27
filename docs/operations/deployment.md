@@ -1,4 +1,4 @@
-# Deploying U-PMS (Phase 1)
+# Deploying U-PMS (Phases 1–4 and the Jira parity pass)
 
 U-PMS is one ASP.NET Core application (`Upms.Web`) and one SQL Server database. The same build runs as a
 Linux container or on Windows Server with IIS (research R25). This guide covers both, the configuration keys,
@@ -8,9 +8,11 @@ TLS, data protection and the monitoring that supports the 99.5% availability tar
 
 | Component | Requirement |
 |-----------|-------------|
-| Database | SQL Server 2022 or later, or Azure SQL Database. One database, full recovery model (see [backup-restore.md](backup-restore.md)). |
+| Database | SQL Server 2022 or later, or Azure SQL Database. One database, full recovery model (see [backup-restore.md](backup-restore.md)). Since Phase 4 it also holds attachments (up to 25 MB each) and the search words (one row for each distinct word of each item): plan for the files people attach, and measure the index after the upgrade. |
 | Application | .NET 10 runtime (ASP.NET Core). Linux container, or Windows Server 2019+ with IIS 10 and the ASP.NET Core Hosting Bundle for .NET 10. |
 | Network | HTTPS only, with a certificate trusted by company browsers. **WebSockets must be allowed** end to end (Blazor Server keeps one connection per open tab). |
+| Malware scanner (Phase 4) | A ClamAV daemon reachable from the app on TCP 3310, on the private network. 2 GB of memory for its virus definitions. |
+| Mail server (Phase 4) | The company SMTP server, reachable from the app (usually TCP 587 with STARTTLS), accepting mail from the U-PMS sender address. |
 | Sizing (pilot) | 2 vCPU / 4 GB for the app; 4 vCPU / 16 GB for SQL Server. The performance suite (SC-002) passed 300 concurrent users on 500,000 work items on a single 4-vCPU host running both. |
 
 ## Configuration
@@ -30,8 +32,23 @@ store). Nothing secret is committed or baked into the image. Environment variabl
 | `OTEL_EXPORTER_OTLP_ENDPOINT` (and other `OTEL_*`) | no | Sends traces and metrics (ASP.NET Core, SQL client, runtime) to an OpenTelemetry collector. |
 | `RateLimiting__SignInPerMinute`, `RateLimiting__SetupPerMinute`, `RateLimiting__KeepAlivePerMinute` | no | Defaults 10, 5 and 6 per minute (contracts/http-endpoints.md). Leave them unless a shared proxy address makes all users look like one client. |
 | `Logging__LogLevel__Default` | no | `Information` by default; logs are structured JSON on standard output. |
+| `Malware__ClamAv__Host`, `Malware__ClamAv__Port` (default 3310), `Malware__ClamAv__Timeout` (default 60 s) | yes, for attachments (Phase 4) | The ClamAV daemon (`clamd`) that checks every upload. **Without it, uploads stay "being checked" and can never be opened**: the check fails closed, and the app logs a warning at startup. Run ClamAV on the private network next to the app (the `clamav/clamav:stable` image keeps its virus definitions up to date). |
+| `Email__Smtp__Host`, `Email__Smtp__Port` (default 587), `Email__Smtp__Security` (`Auto`, `StartTls`, `SslOnConnect` or `None`) | yes, for email (Phase 4) | The company mail server. Without a host, no email is queued or sent, and the app logs a warning at startup. |
+| `Email__Smtp__UserName`, `Email__Smtp__Password` | if the server asks | Credentials for the mail server. **Keep the password in the secret store**; it is never logged. |
+| `Email__FromAddress`, `Email__FromName` (default "U-PMS") | with email | The sender of every email, for example `upms@bank.example`. Links in emails use `App__PublicBaseUrl`. |
 
 Organization settings that users see (default time zone, 30-minute idle timeout) live in the database.
+
+### Background work (Phase 4)
+
+Each app instance runs small background workers. They claim their work in the database, so several instances never do
+the same item twice:
+
+- **attachment checks**, every 10 seconds;
+- **email sending**, every 15 seconds, retried for 24 hours when the mail server cannot be reached (then audited as
+  `EmailGivenUp`);
+- **search indexing**, which fills in the search words of items written before the upgrade and then picks up stragglers;
+- **clean-up**, daily: notifications older than 90 days and finished emails older than 30 days.
 
 ## Database migrations
 
@@ -45,6 +62,18 @@ sqlcmd -S <server> -d <database> -G -i upms.sql     # or run it with your usual 
 
 Review the script like any other change (constitution IV). The append-only triggers on `WorkItemChanges`
 and `AuditEvents` are created by the migrations; do not remove them.
+
+**Jira parity pass.** Three migrations come with it, all quick on a pilot-sized database:
+
+- `WorkTypesAndActivityIndex` adds `Projects.WorkTypes` (every existing space keeps all four work types) and an index
+  on the history by person, for "For you";
+- `SpaceNavigation` adds the tables `StarredProjects` and `ProjectVisits` (each person's stars and recent spaces),
+  `AspNetUsers.SidebarCollapsed`, and two read indexes for the Summary page;
+- `EpicColors` adds `WorkItems.Color` and gives every existing epic its color, and widens the sub-task index for
+  sub-task cards on boards.
+
+None of them changes or deletes a history row. On a database of about 500,000 work items, building the new indexes
+takes a few minutes; apply them outside working hours.
 
 ## Option A: Linux container
 
@@ -109,6 +138,7 @@ The proxy must:
 |-------|--------|-------|
 | `GET /health/live` | 200 | the process is down or hung: restart it (container restart policy, IIS rapid-fail protection) |
 | `GET /health/ready` | 200 within 2 s | the app cannot reach the database: page the on-call engineer after 2 failed probes, 1 minute apart |
+| `/health/ready` reports `Degraded` | 200, status Degraded | ClamAV or the mail server cannot be reached (Phase 4): uploads wait "being checked" and emails wait in the outbox; fix the service within the working day. The app keeps serving. |
 | Error rate (5xx) from the proxy or OpenTelemetry | below 1% over 5 minutes | investigate |
 | p95 response time (OpenTelemetry `http.server.request.duration`) | below 1 s | investigate against SC-002 |
 | SQL Server backups | every 15 minutes (log) | alert on any missed log backup (see [backup-restore.md](backup-restore.md)) |
@@ -124,3 +154,7 @@ maintenance windows and keep them short (a deployment is a restart of seconds).
 3. Deploy the new image or folder. Open tabs reconnect automatically; unsaved typing in an open editor may need
    to be re-entered after a restart.
 4. Check `/health/ready`, sign in and open a board.
+
+**Old addresses keep working.** Since the Jira parity pass, pages live under `/spaces/…` and "My tasks" is
+`/for-you/assigned`. Bookmarks and links in old emails (`/projects/…`, `/my-tasks`) open the same page at its new
+address, so nothing needs to be redirected at the proxy.

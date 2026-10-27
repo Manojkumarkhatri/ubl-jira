@@ -2,7 +2,8 @@ using Upms.Web.Components.Pages.Timeline;
 
 namespace Upms.Web.Tests.Timeline;
 
-/// <summary>Where dates fall on the timeline (Phase 2 research R12). "Today" is Sunday 27 Sep 2026.</summary>
+/// <summary>Where dates fall on the timeline (Phase 2 research R12), with Jira's header: weeks above the day numbers, or
+/// one row of months or quarters, the current one marked. "Today" is Sunday 27 Sep 2026.</summary>
 public sealed class TimelineScaleTests
 {
     private static readonly DateOnly Today = new(2026, 9, 27);
@@ -19,35 +20,43 @@ public sealed class TimelineScaleTests
     }
 
     [Fact]
-    public void In_months_the_range_covers_every_date_and_today_with_a_month_of_room_on_each_side()
+    public void In_months_the_range_covers_every_date_and_today_with_room_to_fill_the_screen()
     {
         var scale = TimelineScale.For(TimelineZoom.Months, [D(10, 5), D(11, 20)], Today);
 
-        Assert.Equal((D(8, 1), D(12, 31)), (scale.Start, scale.End));
-        Assert.Equal(153 * 8, scale.Width);
-        Assert.Equal(["Aug 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dec 2026"], scale.Headings.Select(h => h.Label));
-        Assert.Equal([0, 248, 488, 736, 976], scale.Headings.Select(h => h.Left));
-        Assert.Equal([248, 240, 248, 240, 248], scale.Headings.Select(h => h.Width));
+        Assert.Equal((D(6, 1), D(5, 31, 2027)), (scale.Start, scale.End));
+        Assert.Equal(365 * 8, scale.Width);
+        Assert.Equal(["June", "July", "August", "September", "October", "November", "December", "January '27", "February '27",
+            "March '27", "April '27", "May '27"], scale.Periods.Select(p => p.Label));
+        Assert.Equal([0, 240, 488, 736], scale.Periods.Take(4).Select(p => p.Left));
+        Assert.Equal("September", Assert.Single(scale.Periods, p => p.IsCurrent).Label);
+        Assert.False(scale.HasDayRow);
     }
 
     [Fact]
-    public void In_weeks_the_range_runs_from_Monday_to_Sunday()
+    public void In_weeks_the_range_runs_from_Monday_to_Sunday_with_every_day_numbered()
     {
         var scale = TimelineScale.For(TimelineZoom.Weeks, [D(10, 7)], Today);
 
-        Assert.Equal((D(9, 14), D(10, 18)), (scale.Start, scale.End));
+        Assert.Equal((D(8, 10), D(12, 20)), (scale.Start, scale.End));
         Assert.Equal(DayOfWeek.Monday, scale.Start.DayOfWeek);
-        Assert.Equal(["14 Sep", "21 Sep", "28 Sep", "5 Oct", "12 Oct"], scale.Headings.Select(h => h.Label));
-        Assert.All(scale.Headings, h => Assert.Equal(7 * 36, h.Width));
+        Assert.All(scale.Periods, p => Assert.Equal(7 * 36, p.Width));
+        Assert.Equal(["Aug", "Aug", "Aug", "Aug / Sep", "Sep"], scale.Periods.Take(5).Select(p => p.Label));
+        Assert.Equal(D(9, 21), scale.Start.AddDays((int)(Assert.Single(scale.Periods, p => p.IsCurrent).Left / 36)));
+        Assert.True(scale.HasDayRow);
+        Assert.Equal(133, scale.Days.Count);
+        Assert.Equal(27, Assert.Single(scale.Days, d => d.IsToday).Number);
     }
 
     [Fact]
-    public void In_quarters_the_range_is_whole_quarters()
+    public void In_quarters_the_range_is_whole_quarters_named_by_their_months()
     {
         var scale = TimelineScale.For(TimelineZoom.Quarters, [D(10, 5)], Today);
 
-        Assert.Equal((D(4, 1), D(3, 31, 2027)), (scale.Start, scale.End));
-        Assert.Equal(["Q2 2026", "Q3 2026", "Q4 2026", "Q1 2027"], scale.Headings.Select(h => h.Label));
+        Assert.Equal((D(1, 1), D(12, 31, 2027)), (scale.Start, scale.End));
+        Assert.Equal(["January - March", "April - June", "July - September", "October - December", "January - March '27",
+            "April - June '27", "July - September '27", "October - December '27"], scale.Periods.Select(p => p.Label));
+        Assert.Equal("July - September", Assert.Single(scale.Periods, p => p.IsCurrent).Label);
     }
 
     [Fact]
@@ -55,8 +64,8 @@ public sealed class TimelineScaleTests
     {
         var scale = TimelineScale.For(TimelineZoom.Months, [D(10, 5)], Today);
 
-        Assert.Equal(0, scale.Left(D(8, 1)));
-        Assert.Equal(8, scale.Left(D(8, 2)));
+        Assert.Equal(0, scale.Left(D(6, 1)));
+        Assert.Equal(8, scale.Left(D(6, 2)));
         Assert.Equal(6 * 8, scale.WidthOf(D(10, 5), D(10, 10)));
         Assert.Equal(8, scale.WidthOf(D(10, 5), D(10, 5))); // a one-date task is one day wide
     }
@@ -66,7 +75,7 @@ public sealed class TimelineScaleTests
     {
         var scale = TimelineScale.For(TimelineZoom.Months, [], Today);
 
-        Assert.Equal(57 * 8 + 4, scale.TodayLeft);
+        Assert.Equal(118 * 8 + 4, scale.TodayLeft);
     }
 
     [Fact]
@@ -74,7 +83,7 @@ public sealed class TimelineScaleTests
     {
         var scale = TimelineScale.For(TimelineZoom.Weeks, [], Today);
 
-        Assert.Equal((D(9, 14), D(10, 4)), (scale.Start, scale.End));
+        Assert.Equal((D(8, 10), D(12, 6)), (scale.Start, scale.End));
         Assert.InRange(Today, scale.Start, scale.End);
     }
 

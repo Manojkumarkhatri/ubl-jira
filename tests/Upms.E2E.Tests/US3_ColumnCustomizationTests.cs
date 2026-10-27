@@ -28,15 +28,16 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         var rafaelPassword = await App.CreateUserAsync("rafael", "Rafael Costa");
         var sanaPassword = await App.CreateUserAsync("sana", "Sana Mirza");
         var page = await SignInAsync("rafael", rafaelPassword);
-        await GotoAsync(page, "/projects");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(page, "/spaces");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync("Treasury Operations");
         // The suggested key appears first; typing over it before it arrives would mix the two.
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("TRS");
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await WaitForPathAsync(page, "/projects/TRS/board");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
+        await WaitForPathAsync(page, "/spaces/TRS/board");
         await WaitForInteractivityAsync(page);
         foreach (var title in new[] { "Reconcile nostro", "Review limits", "Update the cash forecast" })
         {
@@ -46,7 +47,8 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await AddTaskAsync(page, 0, "Renew the FX licence");
 
         // US3_AS1: add "In Review" (in progress) between In Progress and Done.
-        await page.GetByRole(AriaRole.Link, new() { Name = "Project settings" }).ClickAsync();
+        await page.GetByTestId("space-more").ClickAsync();
+        await page.GetByRole(AriaRole.Menuitem, new() { Name = "Space settings" }).ClickAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Columns" })).ToBeVisibleAsync();
         await page.Locator("#new-column-name").FillAsync("In Review");
         await Assertions.Expect(page.Locator("#new-column-type")).ToHaveValueAsync("InProgress");
@@ -76,7 +78,7 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await page.AssertNoAccessibilityViolationsAsync();
 
         // The board shows the new columns for everyone; US3_AS4: a fourth card marks In Progress over its limit.
-        await GotoAsync(page, "/projects/TRS/board");
+        await GotoAsync(page, "/spaces/TRS/board");
         await Assertions.Expect(page.GetByTestId("column").Locator("h2")).ToHaveTextAsync(["Backlog", "In Progress", "In Review", "Done"]);
         await Assertions.Expect(Column(page, 1).Locator(".count")).ToHaveTextAsync("3 of 3");
         await page.GetByTestId("card-TRS-4").DragToAsync(Column(page, 1).GetByTestId("column-drop-end"));
@@ -86,13 +88,13 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         await AddTaskAsync(page, 2, "Sign off the forecast");
 
         // US3_AS5: delete In Review and send its tasks to Done; no task is lost.
-        await GotoAsync(page, "/projects/TRS/settings");
+        await GotoAsync(page, "/spaces/TRS/settings");
         await ColumnRow(page, "In Review").GetByRole(AriaRole.Button, new() { Name = "Delete" }).ClickAsync();
         var confirm = page.GetByTestId("delete-column");
         await confirm.GetByLabel("Move its work items (2) to").SelectOptionAsync("Done");
         await confirm.GetByRole(AriaRole.Button, new() { Name = "Delete column" }).ClickAsync();
         await ExpectSavedAsync(page, "its work items moved to Done");
-        await GotoAsync(page, "/projects/TRS/board");
+        await GotoAsync(page, "/spaces/TRS/board");
         await Assertions.Expect(page.GetByTestId("column").Locator("h2")).ToHaveTextAsync(["Backlog", "In Progress", "Done"]);
         await Assertions.Expect(Column(page, 2).Locator(".card-title")).ToHaveTextAsync(["Check the settlement file", "Sign off the forecast"]);
         await Assertions.Expect(page.Locator("[data-testid^='card-TRS-']")).ToHaveCountAsync(6);
@@ -100,10 +102,12 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
         // US3_AS8: a Member who is not a Project Admin cannot change the columns, but still works on tasks.
         await App.AddMemberAsync("TRS", "sana");
         var sana = await SignInAsync("sana", sanaPassword);
-        await GotoAsync(sana, "/projects/TRS/board");
-        await Assertions.Expect(sana.GetByRole(AriaRole.Link, new() { Name = "Project settings" })).ToHaveCountAsync(0);
+        await GotoAsync(sana, "/spaces/TRS/board");
+        await sana.GetByTestId("space-more").ClickAsync();
+        await Assertions.Expect(sana.GetByRole(AriaRole.Menuitem, new() { Name = "Space settings" })).ToHaveCountAsync(0);
+        await sana.Keyboard.PressAsync("Escape");
         await AddTaskAsync(sana, 0, "Sana's task");
-        await sana.GotoAsync("/projects/TRS/settings");
+        await sana.GotoAsync("/spaces/TRS/settings");
         await Assertions.Expect(sana.GetByRole(AriaRole.Heading, new() { Name = "Not found" })).ToBeVisibleAsync();
     }
 
@@ -112,16 +116,17 @@ public sealed class US3_ColumnCustomizationTests(AppFixture app) : BrowserTest(a
     {
         var password = await App.CreateUserAsync("tariq", "Tariq Jamil");
         var page = await SignInAsync("tariq", password);
-        await GotoAsync(page, "/projects");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(page, "/spaces");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync("Audit Findings");
         // The suggested key appears first; typing over it before it arrives would mix the two.
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync("AUD");
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await WaitForPathAsync(page, "/projects/AUD/board");
-        await GotoAsync(page, "/projects/AUD/settings");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
+        await WaitForPathAsync(page, "/spaces/AUD/board");
+        await GotoAsync(page, "/spaces/AUD/settings");
 
         await ColumnRow(page, "Done").GetByRole(AriaRole.Button, new() { Name = "Delete" }).ClickAsync();
 

@@ -1,0 +1,65 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@* The "Work log" tab of an item's activity, as in Jira: who logged how much and when, newest first, with what was done.
+   The author, Space admins and administrators can change or delete a log. *@
+<div class="drawer-section worklog-section" data-testid="work-log">
+    <h4 class="section-title">Work log</h4>
+    @if (Time is null)
+    {
+        <p class="hint" aria-busy="true">Loading the work log…</p>
+    }
+    else
+    {
+        @if (Time.Logs.Count == 0)
+        {
+            <p class="hint">No work has been logged yet.</p>
+        }
+        <ul class="worklog-list">
+            @foreach (var log in Time.Logs)
+            {
+                <li class="worklog">
+                    <Avatar UserId="log.AuthorId" Initials="@AssigneeRef.InitialsOf(log.AuthorName)" />
+                    <div class="worklog-body">
+                        <p class="worklog-head">
+                            <strong>@log.AuthorName</strong> logged <strong>@WorkDuration.Format(log.Minutes)</strong>
+                            <span class="hint"><LocalTime Value="log.StartedAt" /></span>
+                        </p>
+                        @if (log.Note is { } note)
+                        {
+                            <p class="worklog-note">@note</p>
+                        }
+                        @if (log.CanChange)
+                        {
+                            <p class="worklog-actions">
+                                <button type="button" class="link-action" @onclick="() => OnEdit.InvokeAsync(log)">Edit</button>
+                                <button type="button" class="link-action" @onclick="() => OnDelete.InvokeAsync(log)">Delete</button>
+                            </p>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+        @if (CanLog)
+        {
+            <button type="button" class="btn btn-sm" data-testid="log-work" @onclick="() => OnLog.InvokeAsync()">Log work</button>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Null while loading.</summary>
+    [Parameter]
+    public TimeTracking? Time { get; set; }
+
+    [Parameter]
+    public bool CanLog { get; set; }
+
+    [Parameter]
+    public EventCallback OnLog { get; set; }
+
+    [Parameter]
+    public EventCallback<WorkLogView> OnEdit { get; set; }
+
+    [Parameter]
+    public EventCallback<WorkLogView> OnDelete { get; set; }
+}

@@ -4,9 +4,13 @@
 @using Upms.Domain.Work
 @implements IDisposable
 @inject IWorkItemService Items
+@inject IWatcherService Watchers
 @inject ViewerToday ViewerToday
 @inject LiveAnnouncer Announcer
 @inject IJSRuntime JS
+@inject IWorkItemActionService Actions
+@inject NavigationManager Nav
+@inject ICreateWorkService CreateWork
 
 @* The task details drawer (FR-023 to FR-033, research R20): a modal dialog on the right of the board. Focus
    moves in when it opens, Esc closes it (unless a text field holds typed text) and focus returns to the card. *@
@@ -14,11 +18,12 @@
     <div class="drawer-head">
         @if (_details is { } head)
         {
+            <TypeIcon Type="head.Type" />
             <span class="crumbs drawer-crumbs">
-                @head.ProjectName /
+                <a href="spaces/@head.ProjectKey/board">@head.ProjectName</a> /
                 @if (head.Parent is { } parent)
                 {
-                    <a href="projects/@head.ProjectKey/board?task=@parent.Key" title="@parent.Title">@parent.Key</a>
+                    <a href="spaces/@head.ProjectKey/board?task=@parent.Key" title="@parent.Title">@parent.Key</a>
                     <text> / </text>
                 }
             </span>
@@ -26,12 +31,22 @@
         <span class="key drawer-key" data-testid="drawer-key">@(_details?.Key ?? WorkItemKey)</span>
         <span class="saved drawer-saved" role="status" data-testid="drawer-saved">@(_saved is null ? "" : "✓ " + _saved)</span>
         <span class="spacer"></span>
-        @if (_details?.CanDelete == true)
+        @if (_details is { Watchers: { } headWatchers } watched)
         {
-            <button type="button" class="btn btn-ghost btn-sm btn-danger" data-testid="delete-task" disabled="@_busy"
-                    aria-label="Delete @_details.Key" @onclick="AskDeleteAsync">Delete</button>
+            <WatchersSection @key="@($"watchers-{watched.Key}")" WorkItemKey="@watched.Key" Initial="headWatchers" Compact="true" />
         }
-        <button type="button" class="icon-btn" aria-label="Close task details" @onclick="CloseAsync">×</button>
+        @if (_details is { } menuDetails)
+        {
+            @* Jira's share button and "⋯" menu (log work, vote, cover, clone, move, archive, print and exports). *@
+            <span class="share-wrap">
+                <button type="button" class="icon-btn head-action" data-copy-link data-testid="share-item" title="Copy link"
+                        aria-label="Copy link to @menuDetails.Key"><Icon Name="share" /></button>
+                <span class="share-note" role="status"></span>
+            </span>
+            <ItemActionsMenu @key="@($"menu-{menuDetails.Key}")" Details="menuDetails" OnAction="MenuActionAsync" OnCover="CoverChosenAsync"
+                             OnEpicColor="ColorChangedAsync" />
+        }
+        <button type="button" class="icon-btn head-action" aria-label="Close task details" title="Close" @onclick="CloseAsync"><Icon Name="close" /></button>
     </div>
 
     @if (_loadError is not null)
@@ -58,7 +73,7 @@
             <div class="drawer-main">
                 @if (d.Parent is { } parentRef)
                 {
-                    <p class="hint parent-link">Sub-task of <a href="projects/@d.ProjectKey/board?task=@parentRef.Key">@parentRef.Key @parentRef.Title</a></p>
+                    <p class="hint parent-link">Sub-task of <a href="spaces/@d.ProjectKey/board?task=@parentRef.Key">@parentRef.Key @parentRef.Title</a></p>
                 }
 
                 @if (_editingTitle)
@@ -69,9 +84,9 @@
                         <input id="drawer-title-input" class="input title-input" type="text" maxlength="255" autocomplete="off"
                                @bind="_titleDraft" @bind:event="oninput" @onkeydown="TitleKeyDownAsync"
                                aria-invalid="@(_titleError is null ? "false" : "true")" aria-describedby="drawer-title-error" />
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveTitleAsync">Save</button>
-                            <button type="button" class="btn btn-sm" @onclick="CancelTitle">Cancel</button>
+                        <div class="title-actions">
+                            <button type="button" class="icon-btn" disabled="@_busy" aria-label="Save title" title="Save" @onclick="SaveTitleAsync"><Icon Name="check" /></button>
+                            <button type="button" class="icon-btn" aria-label="Cancel" title="Cancel" @onclick="CancelTitle"><Icon Name="close" /></button>
                         </div>
                         <span id="drawer-title-error" class="error-text" role="alert">@_titleError</span>
                     </div>
@@ -93,6 +108,29 @@
                     </h2>
                 }
 
+                @if (d.CanContribute)
+                {
+                    @* Jira's buttons under the title: a child work item (an item in an epic or stage, or a sub-task of a story,
+                       task or bug), a linked work item and a file. *@
+                    <div class="item-quick-actions" role="group" aria-label="Add to @d.Key">
+                        @if (d.AsContainer is not null || WorkItemTypes.IsCard(d.Type))
+                        {
+                            <button type="button" class="btn btn-sm quick-action" data-testid="quick-add-child" @onclick="AddChild">
+                                <Icon Name="plus" Size="14" /> Add child work item
+                            </button>
+                        }
+                        @if (d.Dependencies is not null)
+                        {
+                            <button type="button" class="btn btn-sm quick-action" data-testid="quick-link" @onclick="() => _dependencyLinks?.OpenAdd()">
+                                <Icon Name="link" Size="14" /> Link work item
+                            </button>
+                        }
+                        <button type="button" class="btn btn-sm quick-action" data-testid="quick-attach" @onclick="AttachAsync">
+                            <Icon Name="attachments" Size="14" /> Attach
+                        </button>
+                    </div>
+                }
+
                 @if (_conflict is { } conflict)
                 {
                     <div class="alert alert-warn" role="alert" data-testid="conflict">
@@ -104,7 +142,7 @@
                         else if (conflict.Field == ConflictField.Description)
                         {
                             <p>Latest description:</p>
-                            <PlainText Text="@d.Description" Placeholder="(no description)" Class="conflict-latest" />
+                            <FormattedTextView Text="@d.Description" Placeholder="(no description)" Class="conflict-latest" />
                         }
                         <p class="hint">
                             Last changed <LocalTime Value="d.UpdatedAt" />.
@@ -119,157 +157,189 @@
                 {
                     <div class="alert alert-error" role="alert">@_error</div>
                 }
+                @if (_clonedKey is { } cloned)
+                {
+                    <div class="alert alert-success" role="status" data-testid="cloned-notice">
+                        Cloned as <a href="@ItemHref(cloned)">@cloned</a>.
+                    </div>
+                }
                 @foreach (var warning in _warnings)
                 {
                     <div class="alert alert-warn" role="status" data-testid="drawer-warning">@warning</div>
                 }
+                @if (d.LockedUntil is { } gateTitle)
+                {
+                    @* Work in a locked stage stays in "to do" until the earlier gate is approved (Phase 3 FR-032). *@
+                    <p class="alert alert-info" data-testid="locked-notice">This work can start once the @gateTitle gate is approved.</p>
+                }
+                @if (d.Gate is { } gate)
+                {
+                    <p class="drawer-gate" data-testid="drawer-gate">
+                        <strong>Gate:</strong> @Upms.Web.Components.Pages.Stages.GatePanel.StateText(gate.State) · @gate.Approvals of @gate.ApprovalsNeeded approval@(gate.ApprovalsNeeded == 1 ? "" : "s")
+                        · <a href="spaces/@d.ProjectKey/stages?stage=@d.Key">Open in Stages</a>
+                    </p>
+                }
 
+                @* The description fields, in the type's layout order: the description and long text fields. *@
+                @foreach (var mainKey in d.Fields.Description.Where(k => k != SystemFields.Description))
+                {
+                    if (CustomOf(d, mainKey) is { } mainField && BeforeDescription(d, mainKey))
+                    {
+                        @MainField(d, mainField)
+                    }
+                }
+                @if (d.Fields.Shows(SystemFields.Description))
+                {
                 <section class="drawer-section" aria-labelledby="description-title">
                     <div class="section-head">
                         <h3 id="description-title" class="section-title">Description</h3>
-                        @if (!_editingDescription && d.CanContribute)
+                        @if (!_editingDescription && d.CanContribute && d.Description is not null)
                         {
-                            <button type="button" class="btn btn-ghost btn-sm" data-testid="edit-description" aria-label="Edit description"
-                                    @onclick="EditDescription">Edit</button>
+                            <button type="button" id="edit-description-button" class="icon-btn section-edit" data-testid="edit-description" aria-label="Edit description"
+                                    title="Edit description" @onclick="EditDescription"><Icon Name="pencil" Size="14" /></button>
                         }
                     </div>
                     @if (_editingDescription)
                     {
-                        <label class="sr-only" for="drawer-description-input">Description</label>
-                        <textarea id="drawer-description-input" class="textarea description-input" maxlength="32000"
-                                  @bind="_descriptionDraft" @bind:event="oninput"
-                                  aria-invalid="@(_descriptionError is null ? "false" : "true")" aria-describedby="drawer-description-error"></textarea>
-                        <span id="drawer-description-error" class="error-text" role="alert">@_descriptionError</span>
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-sm" data-testid="save-description" disabled="@_busy"
-                                    @onclick="SaveDescriptionAsync">Save</button>
-                            <button type="button" class="btn btn-sm" @onclick="CancelDescription">Cancel</button>
+                        @* Formatted text with "@" mentions (Phase 4 FR-001, FR-007); a refused save keeps the text. *@
+                        <RichTextEditor @key="@($"description-{d.Key}")" Id="drawer-description" Label="Description" Initial="@d.Description"
+                                        WorkItemKey="@d.Key" Placeholder="Add a description…" OnSave="SaveDescriptionAsync"
+                                        OnCancel="CancelDescription" OnAttached="ImageAttachedAsync" />
+                    }
+                    else if (d.Description is null && d.CanContribute)
+                    {
+                        <div data-testid="drawer-description">
+                            <button type="button" class="placeholder-btn" @onclick="EditDescription">Add a description…</button>
                         </div>
                     }
                     else
                     {
-                        <div data-testid="drawer-description">
-                            <PlainText Text="@d.Description" Placeholder="No description yet." />
+                        @* Clicking the text edits it, as in Jira; a link in it still opens. *@
+                        <div data-testid="drawer-description" class="description-view @(d.CanContribute ? "is-editable" : "")"
+                             data-click-to-edit="@(d.CanContribute ? "edit-description-button" : null)">
+                            <FormattedTextView Text="@d.Description" Attachments="@(_attachments ?? d.Attachments)" Placeholder="No description yet." />
                         </div>
                     }
                 </section>
-
-                @if (d.Type == WorkItemType.Task)
+                }
+                @foreach (var mainKey in d.Fields.Description.Where(k => k != SystemFields.Description))
                 {
-                    <SubtaskList @key="@($"subtasks-{d.Key}")" ProjectKey="@d.ProjectKey" Subtasks="d.Subtasks" Statuses="d.Statuses" ReadOnly="!d.CanContribute" Today="_today"
+                    if (CustomOf(d, mainKey) is { } mainField && !BeforeDescription(d, mainKey))
+                    {
+                        @MainField(d, mainField)
+                    }
+                }
+
+                @if (d.AsContainer is { } summary)
+                {
+                    <ContainerItems @key="@($"items-{d.Key}")" @ref="_containerItems" Offered="_childTypes" ProjectKey="@d.ProjectKey" ContainerKey="@d.Key" ContainerType="d.Type" Summary="summary"
+                                    Today="_today" ReadOnly="!d.CanContribute" OnAdd="AddToContainerAsync" />
+                }
+
+                @if (WorkItemTypes.IsCard(d.Type))
+                {
+                    <SubtaskList @key="@($"subtasks-{d.Key}")" @ref="_subtaskList" ProjectKey="@d.ProjectKey" Subtasks="d.Subtasks" Statuses="d.Statuses" ReadOnly="!d.CanContribute" Today="_today"
                                  OnAdd="AddSubtaskAsync" OnMarkDone="MarkSubtaskDoneAsync" OnStatusChange="ChangeSubtaskStatusAsync"
                                  OnShowMore="ShowMoreSubtasksAsync" />
                 }
 
-                <CommentThread @key="@($"comments-{d.Key}")" WorkItemKey="@d.Key" Initial="d.Comments" ReadOnly="!d.CanContribute" OnChanged="ReloadHistoryAsync" />
+                @if (d.Dependencies is { } dependencyList)
+                {
+                    <DependencyLinks @key="@($"dependencies-{d.Key}")" @ref="_dependencyLinks" ProjectKey="@d.ProjectKey" ItemKey="@d.Key" List="dependencyList"
+                                    ReadOnly="!d.CanContribute" OnChanged="DependenciesChangedAsync" />
+                }
 
-                <details class="drawer-section history-section">
-                    <summary class="section-title">History (@d.History.TotalCount)</summary>
-                    <HistoryList @key="d.Key" WorkItemKey="@d.Key" Initial="d.History" ItemNoun="@Noun(d)" />
-                </details>
+                <AttachmentsSection @key="@($"attachments-{d.Key}")" @ref="_attachmentsSection" WorkItemKey="@d.Key" Initial="d.Attachments"
+                                    CanAttach="d.CanContribute" OnChanged="AttachmentsChangedAsync" />
+
+                @* Jira's "Activity": all of it, or only the comments or only the history. *@
+                <section class="drawer-section activity" aria-labelledby="activity-title">
+                    <h3 id="activity-title" class="section-title">Activity</h3>
+                    <div class="activity-tabs" role="group" aria-label="Show activity">
+                        @foreach (var (tab, label) in ActivityTabs)
+                        {
+                            <button type="button" class="activity-tab @(_activity == tab ? "is-current" : "")" aria-pressed="@(_activity == tab ? "true" : "false")"
+                                    @onclick="() => ShowActivityAsync(tab)">@label</button>
+                        }
+                    </div>
+                    @if (_activity is Activity.All or Activity.WorkLog)
+                    {
+                        <WorkLogList Time="_time" CanLog="@(d.CanContribute && TimeTracked(d))" OnLog="OpenLogWorkAsync" OnEdit="EditWorkLogAsync" OnDelete="AskDeleteWorkLog" />
+                    }
+                    @if (_activity is Activity.All or Activity.Comments)
+                    {
+                        <CommentThread @key="@($"comments-{d.Key}")" WorkItemKey="@d.Key" Initial="d.Comments" ReadOnly="!d.CanContribute" OnChanged="CommentsChangedAsync"
+                                       Attachments="@(_attachments ?? d.Attachments)" OnAttached="ImageAttachedAsync" />
+                    }
+                    @if (_activity is Activity.All or Activity.History)
+                    {
+                        <div class="drawer-section history-section">
+                            <h4 class="section-title">History <span class="hint">(@d.History.TotalCount)</span></h4>
+                            <HistoryList @key="d.Key" WorkItemKey="@d.Key" Initial="d.History" ItemNoun="@Noun(d)" />
+                        </div>
+                    }
+                </section>
             </div>
 
             <aside class="drawer-side" aria-label="Details of @d.Key">
-                <div class="detail-row">
-                    <label for="drawer-status">Status</label>
-                    <select id="drawer-status" class="select" disabled="@(_busy || !d.CanContribute)" value="@(_pendingStatus ?? d.Status.Id)" @onchange="StatusChangedAsync">
+                @* The status first, as Jira's status button, coloured by its type. *@
+                <div class="side-status">
+                    <label class="sr-only" for="drawer-status">Status</label>
+                    <select id="drawer-status" class="status-select status-@StatusCategoryOf(d).ToString().ToLowerInvariant()"
+                            disabled="@(_busy || !d.CanContribute)" value="@(_pendingStatus ?? d.Status.Id)" @onchange="StatusChangedAsync">
                         @foreach (var status in d.Statuses)
                         {
                             <option value="@status.Id">@status.Name</option>
                         }
                     </select>
                 </div>
-                <div class="detail-row">
-                    <label for="drawer-priority">Priority</label>
-                    <select id="drawer-priority" class="select" disabled="@(_busy || !d.CanContribute)" value="@((_pendingPriority ?? d.Priority).ToString())" @onchange="PriorityChangedAsync">
-                        @foreach (var priority in Enum.GetValues<Priority>())
-                        {
-                            <option value="@priority.ToString()">@priority</option>
-                        }
-                    </select>
-                </div>
-                @if (d.CanContribute)
+                <details class="details-panel" open>
+                    <summary>Details</summary>
+
+                @* The type, then the fields of the type's layout in its order (Jira's "Configure"), then those hidden while empty. *@
+                @if (d.CanContribute && d.TypeChoices.Count > 0)
                 {
                     <div class="detail-row">
-                        <label for="drawer-assignee">Assignee</label>
-                        <div class="field-stack">
-                            <select id="drawer-assignee" class="select" disabled="@_busy" value="@(_pendingAssignee ?? AssigneeValue(d))" @onchange="AssigneeChangedAsync">
-                                <option value="">Unassigned</option>
-                                @if (d.Assignee is { CanWork: false } former)
-                                {
-                                    <option value="@former.UserId" disabled>@former.DisplayName (no longer on the project)</option>
-                                }
-                                @foreach (var option in d.AssigneeOptions)
-                                {
-                                    <option value="@option.UserId">@option.DisplayName@(option.IsMe ? " (me)" : "")</option>
-                                }
-                            </select>
-                            @if (d.AssigneeOptions.FirstOrDefault(o => o.IsMe) is { } me && d.Assignee?.UserId != me.UserId)
+                        <label for="drawer-type">Type</label>
+                        <select id="drawer-type" class="select" disabled="@_busy" value="@((_pendingType ?? d.Type).ToString())" @onchange="TypeChangedAsync">
+                            @foreach (var type in d.TypeChoices)
                             {
-                                <button type="button" class="btn btn-sm btn-ghost" data-testid="assign-to-me" disabled="@_busy"
-                                        @onclick="() => AssignAsync(me.UserId, me.DisplayName, isMe: true)">Assign to me</button>
+                                <option value="@type.ToString()">@WorkItemTypes.DisplayName(type)</option>
                             }
-                        </div>
-                    </div>
-                    <div data-testid="drawer-dates">
-                        <div class="detail-row">
-                            <label for="drawer-start">Start date</label>
-                            <input id="drawer-start" type="date" class="input" min="2000-01-01" max="2099-12-31" disabled="@_busy"
-                                   value="@(_startDraft ?? Iso(d.StartDate))" @onchange="StartDateChangedAsync"
-                                   aria-invalid="@(_datesErrorField == "StartDate" ? "true" : "false")" aria-describedby="drawer-dates-error" />
-                        </div>
-                        <div class="detail-row">
-                            <label for="drawer-due">Due date</label>
-                            <div class="field-stack">
-                                <input id="drawer-due" type="date" class="input" min="2000-01-01" max="2099-12-31" disabled="@_busy"
-                                       value="@(_dueDraft ?? Iso(d.DueDate))" @onchange="DueDateChangedAsync"
-                                       aria-invalid="@(_datesErrorField == "DueDate" ? "true" : "false")" aria-describedby="drawer-dates-error" />
-                                @if (IsOverdue(d))
-                                {
-                                    <span class="overdue-label">Overdue</span>
-                                }
-                            </div>
-                        </div>
-                        <span id="drawer-dates-error" class="error-text" role="alert">@_datesError</span>
+                        </select>
                     </div>
                 }
                 else
                 {
-                    <div class="detail-row">
-                        <span>Assignee</span>
-                        <span data-testid="drawer-assignee-text">
-                            @if (d.Assignee is null)
-                            {
-                                <span class="hint">Unassigned</span>
-                            }
-                            <AssigneeBadge Assignee="d.Assignee" ShowName="true" />
-                        </span>
-                    </div>
-                    <div data-testid="drawer-dates">
-                        <div class="detail-row">
-                            <span>Start date</span>
-                            <span>@(d.StartDate is { } start ? start.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : "None")</span>
-                        </div>
-                        <div class="detail-row">
-                            <span>Due date</span>
-                            <span>
-                                @if (d.DueDate is null)
-                                {
-                                    <text>None</text>
-                                }
-                                <DueDateText Due="d.DueDate" IsOpen="@(d.Status.Category != StatusCategory.Done)" Today="_today" WithYear="true" />
-                            </span>
-                        </div>
-                    </div>
+                    <div class="detail-row"><span>Type</span><span data-testid="drawer-type-text">@WorkItemTypes.DisplayName(d.Type)</span></div>
                 }
-                <div class="detail-row"><span>Type</span><span>@(d.Type == WorkItemType.Task ? "Task" : "Sub-task")</span></div>
-                <div class="detail-row"><span>Created by</span><span>@d.CreatorName</span></div>
-                <div class="detail-row"><span>Created</span><span class="hint"><LocalTime Value="d.CreatedAt" /></span></div>
-                <div class="detail-row"><span>Updated</span><span class="hint"><LocalTime Value="d.UpdatedAt" /></span></div>
-                @if (d.ResolvedAt is { } resolved)
+                @foreach (var key in d.Fields.Context)
                 {
-                    <div class="detail-row"><span>Resolved</span><span class="hint"><LocalTime Value="resolved" /></span></div>
+                    @DetailField(d, key)
                 }
+                @foreach (var key in d.Fields.HiddenWhenEmpty.Where(k => HasValue(d, k)))
+                {
+                    @DetailField(d, key)
+                }
+                @if (d.Fields.HiddenWhenEmpty.Where(k => !HasValue(d, k)).ToList() is { Count: > 0 } emptyFields)
+                {
+                    <details class="more-fields" data-testid="more-fields">
+                        <summary>More fields (@emptyFields.Count)</summary>
+                        @foreach (var key in emptyFields)
+                        {
+                            @DetailField(d, key)
+                        }
+                    </details>
+                }
+                </details>
+                <p class="side-times">
+                    Created <LocalTime Value="d.CreatedAt" /><br />
+                    Updated <LocalTime Value="d.UpdatedAt" />
+                    @if (d.ResolvedAt is { } resolved)
+                    {
+                        <br /><text>Resolved </text><LocalTime Value="resolved" />
+                    }
+                </p>
             </aside>
         </div>
     }
@@ -279,25 +349,62 @@
             @if (_deletePreview is { } preview)
             {
                 <p><strong>@preview.Key</strong> @preview.Title</p>
-                <p>@(preview.SubtaskCount switch
-                   {
-                       0 => "It has no sub-tasks.",
-                       1 => "Its 1 sub-task will be deleted too.",
-                       _ => $"Its {preview.SubtaskCount} sub-tasks will be deleted too.",
-                   })</p>
-                <p class="hint">An administrator can restore deleted tasks.</p>
+                <p>@DeleteConsequence(preview)</p>
+                <p class="hint">Deleted work items leave the board, lists and search. An administrator can restore them from Archived work items.</p>
                 <span class="error-text" role="alert">@_deleteError</span>
             }
         </ChildContent>
         <Footer>
             <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">Cancel</button>
-            <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete task</button>
+            <button type="button" class="btn btn-danger" data-testid="delete-task" disabled="@_busy" @onclick="DeleteAsync">Delete @(_details is { } shown ? Noun(shown) : "task")</button>
+        </Footer>
+    </ModalDialog>
+
+    <LogWorkDialog @ref="_logWork" OnSaved="WorkLoggedAsync" />
+    <CloneDialog @ref="_clone" OnCloned="ClonedAsync" />
+    <MoveDialog @ref="_move" OnMoved="MovedAsync" />
+    <CommandPalette @ref="_palette" ItemKey="@(_details?.Key ?? WorkItemKey)" />
+    <ModalDialog @ref="_deleteLogDialog" Title="Delete work log?" TestId="delete-work-log">
+        <ChildContent>
+            @if (_deletingLog is { } log)
+            {
+                <p>@log.AuthorName logged @WorkDuration.Format(log.Minutes) on <LocalTime Value="log.StartedAt" />.</p>
+                <p class="hint">The time goes back to the remaining estimate.</p>
+            }
+            <span class="error-text" role="alert">@_deleteLogError</span>
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn" @onclick="() => _deleteLogDialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteWorkLogAsync">Delete</button>
         </Footer>
     </ModalDialog>
 </dialog>
 
 @code {
     private enum ConflictField { None, Title, Description }
+
+    private enum Activity { All, Comments, History, WorkLog }
+
+    private static readonly (Activity Tab, string Label)[] ActivityTabs =
+        [(Activity.All, "All"), (Activity.Comments, "Comments"), (Activity.History, "History"), (Activity.WorkLog, "Work log")];
+
+    private Activity _activity = Activity.Comments;
+
+    /// <summary>A date as the panel shows it ("13 Oct 2026"), from a change being saved or the saved date; null for none.</summary>
+    private static string? ShownDate(string? draft, DateOnly? saved)
+    {
+        var iso = draft ?? saved?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return DateOnly.TryParseExact(iso, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date.ToString("d MMM yyyy", CultureInfo.InvariantCulture)
+            : null;
+    }
+
+    private static string InitialsOf(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
+
+    /// <summary>The status type of the status shown (a change still being saved included), for the status button's colour.</summary>
+    private StatusCategory StatusCategoryOf(WorkItemDetails d) =>
+        d.Statuses.FirstOrDefault(s => s.Id == (_pendingStatus ?? d.Status.Id))?.Category ?? d.Status.Category;
 
     private sealed record ConflictInfo(string Message, ConflictField Field);
 
@@ -315,8 +422,8 @@
     private string _titleDraft = "";
     private string? _titleError;
     private bool _editingDescription;
-    private string _descriptionDraft = "";
-    private string? _descriptionError;
+    private IReadOnlyList<AttachmentView>? _attachments;
+    private AttachmentsSection? _attachmentsSection;
     private long? _pendingStatus;
     private Priority? _pendingPriority;
     private string? _pendingAssignee;
@@ -324,6 +431,11 @@
     private string? _dueDraft;
     private string? _datesError;
     private string? _datesErrorField;
+    private WorkItemType? _pendingType;
+    private string? _pendingContainer;
+    private IReadOnlyList<ContainerOption> _containers = [];
+    private string? _estimateDraft;
+    private string? _estimateError;
     private DateOnly _today;
     private DeletePreview? _deletePreview;
     private string? _deleteError;
@@ -362,6 +474,8 @@
         if (result.IsSuccess)
         {
             _details = result.Value!;
+            await LoadContainersAsync();
+            await LoadChildTypesAsync();
         }
         else
         {
@@ -381,6 +495,7 @@
             {
                 _self = DotNetObjectReference.Create(this);
                 await JS.InvokeVoidAsync("upms.dialog.open", _dialog, _self);
+                await JS.InvokeVoidAsync("upms.itemKeys", _dialog, _self);
             }
 
             if (_focusAfterRender is { } id)
@@ -438,12 +553,96 @@
         _editingTitle = false;
         _titleError = null;
         _editingDescription = false;
-        _descriptionError = null;
+        _attachments = null;
         ClearDateDrafts();
+        _estimateDraft = null;
+        _estimateError = null;
+        _containers = [];
         _deletePreview = null;
+        _time = null;
+        _clonedKey = null;
+        _originalDraft = null;
+        _originalError = null;
     }
 
-    private static string Noun(WorkItemDetails details) => details.Type == WorkItemType.Task ? "task" : "sub-task";
+    /// <summary>"task", "sub-task", "bug", "epic"… for the history's sentences.</summary>
+    private static string Noun(WorkItemDetails details) => WorkItemTypes.DisplayName(details.Type).ToLowerInvariant();
+
+    /// <summary>What deleting takes with it: an item's sub-tasks, while an epic's or stage's items stay (Phase 3 FR-018).</summary>
+    private string DeleteConsequence(DeletePreview preview)
+    {
+        if (_details?.AsContainer is { } container)
+        {
+            var count = container.Items.TotalCount;
+            return count switch
+            {
+                0 => "It has no items.",
+                1 => $"Its 1 item stays in the space, in no {Noun(_details)}.",
+                _ => $"Its {count} items stay in the space, in no {Noun(_details)}.",
+            };
+        }
+
+        return preview.SubtaskCount switch
+        {
+            0 => "It has no sub-tasks.",
+            1 => "Its 1 sub-task is deleted with it.",
+            _ => $"Its {preview.SubtaskCount} sub-tasks are deleted with it.",
+        };
+    }
+
+    private static string ContainerLabel(WorkItemDetails details) => details.Template == ProjectTemplate.StageGate ? "Stage" : "Epic";
+
+    // ----- "Add child work item", "Link work item" and "Attach" under the title, as Jira's -----
+
+    private ContainerItems? _containerItems;
+    private SubtaskList? _subtaskList;
+    private DependencyLinks? _dependencyLinks;
+    private IReadOnlyList<WorkItemType>? _childTypes;
+
+    /// <summary>An epic or stage offers the work types its space has turned on (the Create form's list).</summary>
+    private async Task LoadChildTypesAsync()
+    {
+        _childTypes = null;
+        if (_details is { CanContribute: true, AsContainer: not null } container
+            && await CreateWork.OptionsAsync(container.ProjectKey, CancellationToken.None) is { IsSuccess: true } options)
+        {
+            _childTypes = options.Value!.Types;
+        }
+    }
+
+    /// <summary>An item in this epic or stage, or a sub-task of this story, task or bug.</summary>
+    private void AddChild()
+    {
+        if (_details?.AsContainer is not null)
+        {
+            _containerItems?.StartAdding();
+        }
+        else
+        {
+            _subtaskList?.StartAdding();
+        }
+    }
+
+    private async Task AttachAsync()
+    {
+        if (_attachmentsSection is not null)
+        {
+            await _attachmentsSection.ChooseAsync();
+        }
+    }
+
+    /// <summary>The epics or stages a contributor can put the item in.</summary>
+    private async Task LoadContainersAsync()
+    {
+        if (_details is not { CanContribute: true } details || WorkItemTypes.LevelOf(details.Type) != WorkItemLevel.Standard)
+        {
+            _containers = [];
+            return;
+        }
+
+        var result = await Items.ListContainersAsync(details.ProjectKey, CancellationToken.None);
+        _containers = result.IsSuccess ? result.Value! : [];
+    }
 
     // ----- Fields (FR-026: each field saves on its own with a visible confirmation) -----
 
@@ -495,34 +694,29 @@
 
     private void EditDescription()
     {
-        _editingDescription = true;
-        _descriptionDraft = _details!.Description ?? "";
-        _descriptionError = null;
-        _focusAfterRender = "drawer-description-input";
+        _editingDescription = true; // the editor takes focus once it has loaded
     }
 
     private void CancelDescription()
     {
         _editingDescription = false;
-        _descriptionError = null;
         if (_conflict?.Field == ConflictField.Description)
         {
             _conflict = null;
         }
     }
 
-    private async Task SaveDescriptionAsync()
+    /// <summary>Saves the editor's document; on a refusal the editor keeps the text and shows the reason.</summary>
+    private async Task SaveDescriptionAsync(RichTextEditor.EditorSave save)
     {
-        var outcome = await SaveAsync(new WorkItemEdit.Description(_descriptionDraft), "Description saved", ConflictField.Description);
+        var outcome = await SaveAsync(new WorkItemEdit.Description(save.Document), "Description saved", ConflictField.Description);
         if (outcome.Saved)
         {
             _editingDescription = false;
-            _descriptionError = null;
+            return;
         }
-        else
-        {
-            _descriptionError = outcome.Error?.MessageFor("Description");
-        }
+
+        save.Error = outcome.Error?.MessageFor("Description") ?? "The description was not saved.";
     }
 
     private async Task StatusChangedAsync(ChangeEventArgs e)
@@ -561,6 +755,120 @@
         {
             _pendingPriority = null;
         }
+    }
+
+    // ----- Type, epic or stage, and estimate (Phase 3 FR-011, FR-014, FR-015) -----
+
+    private async Task TypeChangedAsync(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<WorkItemType>(e.Value?.ToString(), out var type) || type == _details?.Type)
+        {
+            return;
+        }
+
+        _pendingType = type;
+        try
+        {
+            await SaveAsync(new WorkItemEdit.Type(type), $"Type changed to {WorkItemTypes.DisplayName(type)}", ConflictField.None);
+        }
+        finally
+        {
+            _pendingType = null;
+        }
+    }
+
+    /// <summary>An epic's color, for its tags everywhere (Jira parity pass FR-025).</summary>
+    private async Task ColorChangedAsync(EpicColor color)
+    {
+        if (_details?.Color != color)
+        {
+            await SaveAsync(new WorkItemEdit.Color(color), $"Color changed to {color}", ConflictField.None);
+        }
+    }
+
+    private async Task ContainerChangedAsync(ChangeEventArgs e)
+    {
+        var key = e.Value?.ToString() ?? "";
+        if (_details is not { } details || key == (details.Container?.Key ?? ""))
+        {
+            return;
+        }
+
+        _pendingContainer = key;
+        try
+        {
+            var label = ContainerLabel(details).ToLowerInvariant();
+            var outcome = await SaveAsync(new WorkItemEdit.Container(key.Length == 0 ? null : key),
+                key.Length == 0 ? $"Taken out of the {label}" : $"Put in {key}", ConflictField.None);
+            if (outcome.Error is { Kind: ErrorKind.Validation } refused)
+            {
+                _error = refused.Message; // an epic or stage deleted, or a stage locked, meanwhile
+                await LoadContainersAsync();
+            }
+        }
+        finally
+        {
+            _pendingContainer = null;
+        }
+    }
+
+    /// <summary>Numbers such as 3 or 2.5; empty clears the estimate. Text that is not a number is not sent.</summary>
+    private async Task EstimateChangedAsync(ChangeEventArgs e)
+    {
+        if (_details is not { } details)
+        {
+            return;
+        }
+
+        var text = (e.Value?.ToString() ?? "").Trim();
+        _estimateDraft = text;
+        decimal? estimate = null;
+        if (text.Length > 0)
+        {
+            if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value))
+            {
+                _estimateError = "Enter a number, such as 3 or 2.5.";
+                return;
+            }
+
+            estimate = value;
+        }
+
+        if (estimate == details.Estimate)
+        {
+            _estimateDraft = null;
+            _estimateError = null;
+            return;
+        }
+
+        var outcome = await SaveAsync(new WorkItemEdit.Estimate(estimate), estimate is null ? "Estimate cleared" : "Estimate saved",
+            ConflictField.None);
+        if (outcome.Error is { Kind: ErrorKind.Validation } invalid)
+        {
+            _estimateError = invalid.MessageFor("Estimate"); // what was typed stays in the field
+        }
+        else
+        {
+            _estimateDraft = null; // saved, or a conflict whose latest estimate is now shown
+            _estimateError = null;
+        }
+    }
+
+    private async Task<string?> AddToContainerAsync(string title, WorkItemType type)
+    {
+        var container = _details!;
+        var result = await Items.CreateAsync(container.ProjectKey, new NewWorkItem(type, title, container.Key), CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            return result.Error!.MessageFor("Title");
+        }
+
+        await ReloadAsync(); // the container's items and progress
+        _saved = $"Created {result.Value!.Key}";
+        Announcer.Announce($"Created {result.Value.Key}: {result.Value.Title}, in {container.Key}.");
+        await OnChanged.InvokeAsync();
+        StateHasChanged(); // called through a plain delegate from the items section
+        return null;
     }
 
     // ----- Assignee and dates (Phase 2 FR-017–FR-020) -----
@@ -617,7 +925,7 @@
     private Task DueDateChangedAsync(ChangeEventArgs e)
     {
         _dueDraft = e.Value?.ToString() ?? "";
-        return SaveDatesAsync("Due date saved");
+        return SaveDatesAsync(_details?.Type == WorkItemType.Milestone ? "Date saved" : "Due date saved"); // a milestone has one date
     }
 
     /// <summary>Both dates go in one edit; refused dates stay in the fields with the reason (FR-018).</summary>
@@ -814,6 +1122,54 @@
         };
     }
 
+    // ----- Dependencies (Phase 3 FR-047–FR-049) -----
+
+    /// <summary>A dependency was added or removed: show both lists and the history as they are now.</summary>
+    private async Task DependenciesChangedAsync()
+    {
+        await ReloadAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    /// <summary>A comment was posted, edited or deleted: the history shows it, and its author now watches the item (Phase 4
+    /// FR-011).</summary>
+    private async Task CommentsChangedAsync()
+    {
+        await ReloadHistoryAsync();
+        var watchers = await Watchers.GetAsync(_details!.Key, CancellationToken.None);
+        if (watchers.IsSuccess && _details is not null)
+        {
+            _details = _details with { Watchers = watchers.Value };
+        }
+    }
+
+    // ----- Labels (Phase 4 FR-042–FR-048) -----
+
+    /// <summary>A label was added or removed: the history shows it, and the board or list shows the new labels.</summary>
+    private async Task LabelsChangedAsync()
+    {
+        await ReloadHistoryAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    // ----- Attachments (Phase 4 FR-023–FR-031) -----
+
+    /// <summary>The files changed: images in the text follow, and the history shows the change.</summary>
+    private async Task AttachmentsChangedAsync(IReadOnlyList<AttachmentView> files)
+    {
+        _attachments = files;
+        await ReloadHistoryAsync();
+    }
+
+    /// <summary>An image was pasted or dropped into an editor: the list shows it while it is checked.</summary>
+    private async Task ImageAttachedAsync()
+    {
+        if (_attachmentsSection is not null)
+        {
+            await _attachmentsSection.ReloadAsync();
+        }
+    }
+
     // ----- Comments and history (FR-030, FR-031) -----
 
     private async Task ReloadHistoryAsync()
@@ -877,6 +1233,635 @@
         {
             _busy = false;
         }
+    }
+
+    // ----- The "⋯" menu: log work, vote, cover, clone, move, archive, command palette -----
+
+    private LogWorkDialog? _logWork;
+    private CloneDialog? _clone;
+    private MoveDialog? _move;
+    private CommandPalette? _palette;
+    private ModalDialog? _deleteLogDialog;
+    private WorkLogView? _deletingLog;
+    private string? _deleteLogError;
+    private TimeTracking? _time;
+    private string? _clonedKey;
+    private string? _originalDraft;
+    private string? _originalError;
+
+    // ----- The details panel, field by field in the type's layout -----
+
+    private static CustomFieldView? CustomOf(WorkItemDetails d, string key) => d.CustomFields.FirstOrDefault(f => f.Key == key);
+
+    /// <summary>Whether a field has something to show, for the layout's "Hide when empty" fields.</summary>
+    private static bool HasValue(WorkItemDetails d, string key) => key switch
+    {
+        SystemFields.Description => d.Description is not null,
+        SystemFields.Assignee => d.Assignee is not null,
+        SystemFields.Parent => d.Container is not null,
+        SystemFields.DueDate => d.DueDate is not null,
+        SystemFields.StartDate => d.StartDate is not null,
+        SystemFields.Labels => d.Labels.Count > 0,
+        SystemFields.StoryPoints => d.Estimate is not null,
+        SystemFields.Sprint => d.Sprint is not null,
+        SystemFields.OriginalEstimate => d.OriginalEstimateMinutes is not null,
+        SystemFields.TimeTracking => d.TimeSpentMinutes > 0 || d.RemainingEstimateMinutes is not null,
+        _ when SystemFields.FieldIdOf(key) is not null => CustomOf(d, key) is { IsEmpty: false },
+        _ => true,
+    };
+
+    /// <summary>Whether a description field comes before the description itself in the layout.</summary>
+    private static bool BeforeDescription(WorkItemDetails d, string key)
+    {
+        var keys = d.Fields.Description.ToList();
+        return keys.IndexOf(key) < keys.IndexOf(SystemFields.Description);
+    }
+
+    /// <summary>A long text field in the main column, as the description is.</summary>
+    private RenderFragment MainField(WorkItemDetails d, CustomFieldView field) => __builder =>
+    {
+        <section class="drawer-section custom-field-section" aria-labelledby="field-heading-@field.Id">
+            <h3 id="field-heading-@field.Id" class="section-title" title="@field.Description">@field.Name</h3>
+            <CustomFieldInput @key="@($"{d.Key}-{field.Key}")" WorkItemKey="@d.Key" Field="field" CanEdit="d.CanContribute" Main="true"
+                              People="d.AssigneeOptions" OnSaved="FieldSavedAsync" />
+        </section>
+    };
+
+    private async Task FieldSavedAsync(string message)
+    {
+        await ReloadAsync();
+        _saved = message;
+    }
+
+    private RenderFragment DetailField(WorkItemDetails d, string key) => __builder =>
+    {
+        switch (key)
+        {
+            case SystemFields.Parent:
+                <div class="detail-row">
+                    @if (d.CanContribute)
+                    {
+                        <label for="drawer-container">@ContainerLabel(d)</label>
+                        <div class="field-stack">
+                            <select id="drawer-container" class="select" disabled="@_busy" value="@(_pendingContainer ?? d.Container?.Key ?? "")" @onchange="ContainerChangedAsync">
+                                <option value="">None</option>
+                                @if (d.Container is { } current && _containers.All(c => c.Key != current.Key))
+                                {
+                                    <option value="@current.Key">@current.Key @current.Title</option>
+                                }
+                                @foreach (var container in _containers)
+                                {
+                                    <option value="@container.Key">@container.Key @container.Title@(container.IsLocked ? " (locked)" : "")</option>
+                                }
+                            </select>
+                            @if (d.Container is { } link)
+                            {
+                                <a class="hint" href="spaces/@d.ProjectKey/board?task=@link.Key">Open @link.Key</a>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <span>@ContainerLabel(d)</span>
+                        <span data-testid="drawer-container-text">
+                            @if (d.Container is { } container)
+                            {
+                                <a href="spaces/@d.ProjectKey/board?task=@container.Key">@container.Key @container.Title</a>
+                            }
+                            else
+                            {
+                                <text>None</text>
+                            }
+                        </span>
+                    }
+                </div>
+                break;
+            case SystemFields.StoryPoints:
+                <div class="detail-row">
+                    @if (d.CanContribute)
+                    {
+                        <label for="drawer-estimate">Estimate</label>
+                        <div class="field-stack">
+                            <input id="drawer-estimate" type="text" inputmode="decimal" class="input estimate-input" maxlength="6" autocomplete="off" placeholder="None"
+                                   disabled="@_busy" value="@(_estimateDraft ?? WorkItem.FormatEstimate(d.Estimate))" @onchange="EstimateChangedAsync"
+                                   aria-invalid="@(_estimateError is null ? "false" : "true")" aria-describedby="drawer-estimate-hint drawer-estimate-error" />
+                            <span id="drawer-estimate-hint" class="hint">Story points, from 0 to 999.9</span>
+                            <span id="drawer-estimate-error" class="error-text" role="alert">@_estimateError</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <span>Estimate</span>
+                        <span data-testid="drawer-estimate-text">@(WorkItem.FormatEstimate(d.Estimate) ?? "None")</span>
+                    }
+                </div>
+                break;
+            case SystemFields.OriginalEstimate:
+                <div class="detail-row">
+                    @if (d.CanContribute)
+                    {
+                        <label for="drawer-original">Original estimate</label>
+                        <div class="field-stack">
+                            <input id="drawer-original" type="text" class="input estimate-input" maxlength="40" autocomplete="off" placeholder="None"
+                                   disabled="@_busy" value="@(_originalDraft ?? WorkDuration.FormatOrNull(d.OriginalEstimateMinutes))" @onchange="OriginalEstimateChangedAsync"
+                                   aria-invalid="@(_originalError is null ? "false" : "true")" aria-describedby="drawer-original-hint drawer-original-error" />
+                            <span id="drawer-original-hint" class="sr-only">Such as 3d 4h</span>
+                            <span id="drawer-original-error" class="error-text" role="alert">@_originalError</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <span>Original estimate</span>
+                        <span>@(WorkDuration.FormatOrNull(d.OriginalEstimateMinutes) ?? "None")</span>
+                    }
+                </div>
+                break;
+            case SystemFields.TimeTracking:
+                <div class="detail-row">
+                    <span id="drawer-time-label">Time tracking</span>
+                    @if (d.CanContribute)
+                    {
+                        <button type="button" class="time-tracking-btn" data-testid="time-tracking" title="Log work"
+                                aria-describedby="drawer-time-label" @onclick="OpenLogWorkAsync">
+                            <TimeTrackingBar Time="TimeOf(d)" />
+                        </button>
+                    }
+                    else
+                    {
+                        <TimeTrackingBar Time="TimeOf(d)" />
+                    }
+                </div>
+                break;
+            case SystemFields.Sprint:
+                @* Read-only: cards move between sprints in the backlog (Phase 3 FR-030). *@
+                <div class="detail-row">
+                    <span>Sprint</span>
+                    <span data-testid="drawer-sprint">
+                        @if (d.Sprint is { State: SprintState.Completed } done)
+                        {
+                            <a href="spaces/@d.ProjectKey/sprints/@done.Number">@done.Name</a>
+                        }
+                        else
+                        {
+                            @(d.Sprint?.Name ?? "Backlog")
+                        }
+                    </span>
+                </div>
+                break;
+            case SystemFields.Priority:
+                <div class="detail-row">
+                    <label for="drawer-priority">Priority</label>
+                    <span class="priority-field">
+                        <Upms.Web.Components.Pages.Board.PriorityIcon Priority="@(_pendingPriority ?? d.Priority)" />
+                        <select id="drawer-priority" class="select" disabled="@(_busy || !d.CanContribute)" value="@((_pendingPriority ?? d.Priority).ToString())" @onchange="PriorityChangedAsync">
+                            @foreach (var priority in Enum.GetValues<Priority>())
+                            {
+                                <option value="@priority.ToString()">@priority</option>
+                            }
+                        </select>
+                    </span>
+                </div>
+                break;
+            case SystemFields.Assignee when d.CanContribute:
+                <div class="detail-row">
+                    <label for="drawer-assignee">Assignee</label>
+                    <div class="field-stack">
+                        <span class="field-with-avatar">
+                            @if (d.Assignee is { } shownAssignee)
+                            {
+                                <Avatar UserId="shownAssignee.UserId" Initials="@shownAssignee.Initials" />
+                            }
+                            else
+                            {
+                                <span class="field-avatar-empty" aria-hidden="true"><Icon Name="person" Size="14" /></span>
+                            }
+                            <select id="drawer-assignee" class="select" disabled="@_busy" value="@(_pendingAssignee ?? AssigneeValue(d))" title="@(d.Assignee?.DisplayName ?? "Unassigned")"
+                                    @onchange="AssigneeChangedAsync">
+                                <option value="">Unassigned</option>
+                                @if (d.Assignee is { CanWork: false } former)
+                                {
+                                    <option value="@former.UserId" disabled>@former.DisplayName (no longer in the space)</option>
+                                }
+                                @foreach (var option in d.AssigneeOptions)
+                                {
+                                    <option value="@option.UserId">@option.DisplayName@(option.IsMe ? " (me)" : "")</option>
+                                }
+                            </select>
+                        </span>
+                        @if (d.AssigneeOptions.FirstOrDefault(o => o.IsMe) is { } me && d.Assignee?.UserId != me.UserId)
+                        {
+                            <button type="button" class="link-action" data-testid="assign-to-me" disabled="@_busy"
+                                    @onclick="() => AssignAsync(me.UserId, me.DisplayName, isMe: true)">Assign to me</button>
+                        }
+                    </div>
+                </div>
+                break;
+            case SystemFields.Assignee:
+                <div class="detail-row">
+                    <span>Assignee</span>
+                    <span data-testid="drawer-assignee-text">
+                        @if (d.Assignee is null)
+                        {
+                            <span class="hint">Unassigned</span>
+                        }
+                        <AssigneeBadge Assignee="d.Assignee" ShowName="true" />
+                    </span>
+                </div>
+                break;
+            case SystemFields.DueDate when d.CanContribute:
+                @* A milestone has one date, its due date (Phase 3 FR-021). Dates read "Add date" until set, as in Jira; the native date
+                   field on top does the picking. *@
+                <div class="detail-row" data-testid="drawer-dates">
+                    <label for="drawer-due">@(d.Type == WorkItemType.Milestone ? "Date" : "Due date")</label>
+                    <div class="field-stack">
+                        <span class="date-field">
+                            <span class="date-text @(ShownDate(_dueDraft, d.DueDate) is null ? "is-empty" : "")" aria-hidden="true">@(ShownDate(_dueDraft, d.DueDate) ?? "Add due date")</span>
+                            <input id="drawer-due" type="date" class="date-overlay" min="2000-01-01" max="2099-12-31" disabled="@_busy"
+                                   value="@(_dueDraft ?? Iso(d.DueDate))" @onchange="DueDateChangedAsync"
+                                   aria-invalid="@(_datesErrorField == "DueDate" ? "true" : "false")" aria-describedby="drawer-due-error" />
+                        </span>
+                        @if (IsOverdue(d))
+                        {
+                            <span class="overdue-label">Overdue</span>
+                        }
+                        <span id="drawer-due-error" class="error-text" role="alert">@(_datesErrorField == "StartDate" ? null : _datesError)</span>
+                    </div>
+                </div>
+                break;
+            case SystemFields.DueDate:
+                <div class="detail-row" data-testid="drawer-dates">
+                    <span>@(d.Type == WorkItemType.Milestone ? "Date" : "Due date")</span>
+                    <span>
+                        @if (d.DueDate is null)
+                        {
+                            <text>None</text>
+                        }
+                        <DueDateText Due="d.DueDate" IsOpen="@(d.Status.Category != StatusCategory.Done)" Today="_today" WithYear="true" />
+                    </span>
+                </div>
+                break;
+            case SystemFields.StartDate when d.CanContribute:
+                <div class="detail-row">
+                    <label for="drawer-start">Start date</label>
+                    <div class="field-stack">
+                        <span class="date-field">
+                            <span class="date-text @(ShownDate(_startDraft, d.StartDate) is null ? "is-empty" : "")" aria-hidden="true">@(ShownDate(_startDraft, d.StartDate) ?? "Add date")</span>
+                            <input id="drawer-start" type="date" class="date-overlay" min="2000-01-01" max="2099-12-31" disabled="@_busy"
+                                   value="@(_startDraft ?? Iso(d.StartDate))" @onchange="StartDateChangedAsync"
+                                   aria-invalid="@(_datesErrorField == "StartDate" ? "true" : "false")" aria-describedby="drawer-start-error" />
+                        </span>
+                        <span id="drawer-start-error" class="error-text" role="alert">@(_datesErrorField == "StartDate" ? _datesError : null)</span>
+                    </div>
+                </div>
+                break;
+            case SystemFields.StartDate:
+                <div class="detail-row">
+                    <span>Start date</span>
+                    <span>@(d.StartDate is { } start ? start.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : "None")</span>
+                </div>
+                break;
+            case SystemFields.Labels:
+                <LabelsSection @key="@($"labels-{d.Key}")" WorkItemKey="@d.Key" ProjectKey="@d.ProjectKey" Initial="d.Labels"
+                               CanEdit="d.CanContribute" OnChanged="LabelsChangedAsync" />
+                break;
+            case SystemFields.Reporter:
+                <div class="detail-row"><span>Reporter</span><span class="reporter"><span class="avatar avatar-@(d.CreatorName.Sum(c => c) % 8)" aria-hidden="true">@InitialsOf(d.CreatorName)</span> @d.CreatorName</span></div>
+                break;
+            default:
+                if (CustomOf(d, key) is { } field)
+                {
+                    var labelled = d.CanContribute && field.Type is not (FieldType.Checkbox or FieldType.Formula);
+                    <div class="detail-row custom-row">
+                        @if (labelled)
+                        {
+                            <label for="field-@field.Id-input" title="@field.Description">@field.Name</label>
+                        }
+                        else
+                        {
+                            <span title="@field.Description">@field.Name</span>
+                        }
+                        <CustomFieldInput @key="@($"{d.Key}-{field.Key}")" WorkItemKey="@d.Key" Field="field" CanEdit="d.CanContribute"
+                                          People="d.AssigneeOptions" OnSaved="FieldSavedAsync" />
+                    </div>
+                }
+
+                break;
+        }
+    };
+
+    /// <summary>Stages and milestones are plan markers; everything else takes time tracking, as in Jira.</summary>
+    private static bool TimeTracked(WorkItemDetails d) => d.Type is not (WorkItemType.Stage or WorkItemType.Milestone);
+
+    private static TimeTracking TimeOf(WorkItemDetails d) =>
+        new(d.Key, d.OriginalEstimateMinutes, d.RemainingEstimateMinutes, d.TimeSpentMinutes, [], d.CanContribute);
+
+    /// <summary>The same page showing another item.</summary>
+    private string ItemHref(string key) => Nav.GetUriWithQueryParameter("task", key);
+
+    private async Task MenuActionAsync(ItemAction action)
+    {
+        switch (action)
+        {
+            case ItemAction.LogWork:
+                await OpenLogWorkAsync();
+                break;
+            case ItemAction.Palette:
+                OpenPaletteNow();
+                break;
+            case ItemAction.Vote:
+                await VoteAsync();
+                break;
+            case ItemAction.Clone when _details is { } cloning:
+                _clone!.Open(cloning);
+                break;
+            case ItemAction.Move when _details is { } moving:
+                await _move!.OpenAsync(moving);
+                break;
+            case ItemAction.Delete:
+                await AskDeleteAsync();
+                break;
+        }
+    }
+
+    /// <summary>Ctrl+K in the open item (see <c>upms.itemKeys</c>).</summary>
+    [JSInvokable]
+    public async Task OpenPalette()
+    {
+        OpenPaletteNow();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Q in the open item.</summary>
+    [JSInvokable]
+    public async Task OpenLogWork()
+    {
+        await OpenLogWorkAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ShowActivityAsync(Activity tab)
+    {
+        _activity = tab;
+        if (tab is Activity.All or Activity.WorkLog)
+        {
+            await LoadTimeAsync();
+        }
+    }
+
+    private async Task LoadTimeAsync()
+    {
+        if (_details is not { } d)
+        {
+            return;
+        }
+
+        var result = await Actions.GetTimeAsync(d.Key, CancellationToken.None);
+        if (result.IsSuccess && _details?.Key == d.Key)
+        {
+            _time = result.Value!;
+        }
+    }
+
+    private async Task OpenLogWorkAsync()
+    {
+        if (_details is not { CanContribute: true } d || !TimeTracked(d) || _logWork is null)
+        {
+            return;
+        }
+
+        await _logWork.OpenAsync(d.Key, _time ?? TimeOf(d));
+    }
+
+    private async Task EditWorkLogAsync(WorkLogView log)
+    {
+        if (_details is { } d && _logWork is not null)
+        {
+            await _logWork.OpenAsync(d.Key, _time ?? TimeOf(d), log);
+        }
+    }
+
+    private async Task WorkLoggedAsync(TimeTracking time)
+    {
+        _time = time;
+        await ReloadAsync();
+        _saved = "Work logged";
+        Announcer.Announce($"Work logged on {time.WorkItemKey}.");
+    }
+
+    private void AskDeleteWorkLog(WorkLogView log)
+    {
+        _deletingLog = log;
+        _deleteLogError = null;
+        _deleteLogDialog!.Open();
+    }
+
+    private async Task DeleteWorkLogAsync()
+    {
+        if (_deletingLog is not { } log || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Actions.DeleteWorkLogAsync(log.Id, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _deleteLogError = result.Error!.Message;
+                return;
+            }
+
+            await _deleteLogDialog!.CloseAsync();
+            _time = result.Value!;
+            await ReloadAsync();
+            _saved = "Work log deleted";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OriginalEstimateChangedAsync(ChangeEventArgs e)
+    {
+        if (_details is not { } d || _busy)
+        {
+            return;
+        }
+
+        var text = e.Value?.ToString() ?? "";
+        _originalDraft = text;
+        _originalError = null;
+        _busy = true;
+        try
+        {
+            var result = await Actions.SetOriginalEstimateAsync(d.Key, text, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _originalError = result.Error!.MessageFor("OriginalEstimate");
+                return;
+            }
+
+            _originalDraft = null;
+            _time = _time is null ? null : result.Value!;
+            await ReloadAsync();
+            _saved = string.IsNullOrWhiteSpace(text) ? "Original estimate cleared" : "Original estimate saved";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task VoteAsync()
+    {
+        if (_details is not { } d)
+        {
+            return;
+        }
+
+        var result = await Actions.ToggleVoteAsync(d.Key, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        var votes = result.Value!;
+        _details = d with { Votes = votes.Votes, HasVoted = votes.HasVoted, VoteRefusal = null };
+        _saved = votes.HasVoted ? "Vote added" : "Vote removed";
+        Announcer.Announce($"{_saved}. {votes.Votes} vote{(votes.Votes == 1 ? "" : "s")}.");
+    }
+
+    private async Task CoverChosenAsync((string? Color, long? ImageId) cover)
+    {
+        if (_details is not { } d)
+        {
+            return;
+        }
+
+        var result = await Actions.SetCoverAsync(d.Key, cover.Color, cover.ImageId, CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        await ReloadAsync();
+        _saved = cover.Color is null && cover.ImageId is null ? "Cover removed" : "Cover updated";
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ClonedAsync(string key)
+    {
+        _clonedKey = key;
+        await ReloadAsync(); // its history says it was cloned
+        await OnChanged.InvokeAsync();
+        Announcer.Announce($"Cloned as {key}.");
+    }
+
+    private async Task MovedAsync((string Key, string SpaceKey) moved)
+    {
+        if (_details is not { } d)
+        {
+            return;
+        }
+
+        await OnChanged.InvokeAsync();
+        if (!string.Equals(moved.SpaceKey, d.ProjectKey, StringComparison.OrdinalIgnoreCase))
+        {
+            // Another space: open the item there, under its new key, as Jira does.
+            Nav.NavigateTo($"spaces/{moved.SpaceKey}/board?task={Uri.EscapeDataString(moved.Key)}");
+            return;
+        }
+
+        _time = null;
+        await ReloadAsync();
+        await LoadContainersAsync();
+        _saved = "Moved";
+        Announcer.Announce($"{moved.Key} moved.");
+    }
+
+    /// <summary>Jira's command palette for this item: assign, change status or priority, and the "⋯" menu's actions.</summary>
+    private void OpenPaletteNow()
+    {
+        if (_details is not { } d || _palette is null)
+        {
+            return;
+        }
+
+        var commands = new List<PaletteCommand>();
+        if (d.CanContribute)
+        {
+            if (d.AssigneeOptions.FirstOrDefault(o => o.IsMe) is { } me && d.Assignee?.UserId != me.UserId)
+            {
+                commands.Add(new("Assignee", "Assign to me", () => AssignAsync(me.UserId, me.DisplayName, isMe: true)));
+            }
+
+            if (d.Assignee is not null)
+            {
+                commands.Add(new("Assignee", "Unassign", () => AssignAsync(null, null, isMe: false)));
+            }
+
+            foreach (var status in d.Statuses.Where(s => s.Id != d.Status.Id))
+            {
+                commands.Add(new("Status", $"Change status to {status.Name}",
+                    () => StatusChangedAsync(new ChangeEventArgs { Value = status.Id.ToString(CultureInfo.InvariantCulture) })));
+            }
+
+            foreach (var priority in Enum.GetValues<Priority>().Where(p => p != d.Priority))
+            {
+                commands.Add(new("Priority", $"Change priority to {priority}",
+                    () => PriorityChangedAsync(new ChangeEventArgs { Value = priority.ToString() })));
+            }
+
+            commands.Add(new("Actions", "Edit title", () => { EditTitle(); return Task.CompletedTask; }));
+            commands.Add(new("Actions", "Edit description", () => { EditDescription(); return Task.CompletedTask; }));
+            if (TimeTracked(d))
+            {
+                commands.Add(new("Actions", "Log work", OpenLogWorkAsync, "Q"));
+            }
+        }
+
+        if (d.HasVoted || d.VoteRefusal is null)
+        {
+            commands.Add(new("Actions", d.HasVoted ? "Remove vote" : "Add vote", VoteAsync));
+        }
+
+        if (d.CanContribute && d.Type != WorkItemType.Stage)
+        {
+            commands.Add(new("Actions", "Clone", () => { _clone!.Open(d); return Task.CompletedTask; }));
+        }
+
+        if (d.CanContribute && d.Type is not (WorkItemType.Stage or WorkItemType.Milestone))
+        {
+            commands.Add(new("Actions", "Move", () => _move!.OpenAsync(d)));
+        }
+
+        commands.Add(new("Actions", "Copy link", async () =>
+        {
+            var copied = await JS.InvokeAsync<bool>("upms.clipboard.copy", Nav.Uri);
+            _saved = copied ? "Link copied" : null;
+            _error = copied ? null : "The link could not be copied.";
+        }));
+        if (d.CanDelete)
+        {
+            commands.Add(new("Actions", "Delete", AskDeleteAsync));
+        }
+
+        var export = $"work-items/{Uri.EscapeDataString(d.Key)}";
+        commands.Add(new("Export", "Print", async () => await JS.InvokeVoidAsync("open", $"{export}/print", "_blank", "noopener")));
+        commands.Add(new("Export", "Export Excel CSV", () => Download($"{export}/export/csv")));
+        commands.Add(new("Export", "Export Word", () => Download($"{export}/export/doc")));
+        commands.Add(new("Export", "Export XML", () => Download($"{export}/export/xml")));
+        _palette.Open(commands);
+    }
+
+    private Task Download(string url)
+    {
+        Nav.NavigateTo(url, forceLoad: true); // the answer is a download, so the page stays
+        return Task.CompletedTask;
     }
 
     public void Dispose() => _self?.Dispose();

@@ -11,9 +11,10 @@ internal sealed class ProjectWorkflow(IAppDbContext db) : IProjectWorkflow
     {
         var project = await db.Projects.AsNoTracking()
             .Where(p => p.Id == projectId)
-            .Select(p => new { p.Id, p.Key, p.Name, p.BoardVersion })
+            .Select(p => new { p.Id, p.Key, p.Name, p.BoardVersion, p.Template })
             .SingleAsync(ct);
-        return new BoardInfo(project.Id, project.Key, project.Name, project.BoardVersion, await StatusesAsync(projectId, ct));
+        return new BoardInfo(project.Id, project.Key, project.Name, project.BoardVersion, await StatusesAsync(projectId, ct),
+            project.Template);
     }
 
     public async Task<IReadOnlyList<StatusInfo>> StatusesAsync(long projectId, CancellationToken ct) =>
@@ -34,6 +35,20 @@ internal sealed class ProjectWorkflow(IAppDbContext db) : IProjectWorkflow
             .ToListAsync(ct);
         return statuses.GroupBy(s => s.ProjectId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<StatusInfo>)g.Select(s => s.Status).ToList());
+    }
+
+    public async Task<IReadOnlyList<long>> StatusIdsAsync(IReadOnlyCollection<StatusCategory> categories, IReadOnlyCollection<long>? projectIds,
+        CancellationToken ct)
+    {
+        var wanted = categories.Distinct().ToList();
+        var statuses = db.ProjectStatuses.AsNoTracking().Where(s => wanted.Contains(s.Category));
+        if (projectIds is not null)
+        {
+            var ids = projectIds.Distinct().ToList();
+            statuses = statuses.Where(s => ids.Contains(s.ProjectId));
+        }
+
+        return await statuses.Select(s => s.Id).ToListAsync(ct);
     }
 
     public async Task<StatusInfo> FirstToDoStatusAsync(long projectId, CancellationToken ct) =>

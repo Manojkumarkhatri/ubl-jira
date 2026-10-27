@@ -15,6 +15,10 @@ public interface IProjectMemberService
     /// <summary><c>DuplicateMember</c>, <c>AccountDeactivated</c>; <c>Conflict</c> when the team changed meanwhile.</summary>
     Task<Result<TeamView>> AddAsync(string projectKey, Guid userId, ProjectRole role, int expectedMembersVersion, CancellationToken ct);
 
+    /// <summary>Adds a person with the role their ticks give (owner's decision of 2026-10-20): "Manage space settings" a
+    /// Space admin, "Create and edit work" a Member, neither a Viewer. The rules of <see cref="AddAsync"/>.</summary>
+    Task<Result<TeamView>> AddPersonAsync(string projectKey, Guid userId, int expectedMembersVersion, CancellationToken ct);
+
     /// <summary><c>LastProjectAdmin</c>; <c>Conflict</c> when the team changed meanwhile.</summary>
     Task<Result<TeamView>> ChangeRoleAsync(string projectKey, Guid userId, ProjectRole role, int expectedMembersVersion,
         CancellationToken ct);
@@ -25,10 +29,18 @@ public interface IProjectMemberService
 
 /// <param name="Members">Project Admins first, then by display name.</param>
 /// <param name="CanRestoreDeleted">True for administrators, for the project header's "Deleted tasks".</param>
+/// <param name="Template">For the project header (Phase 3 FR-006).</param>
 public sealed record TeamView(string ProjectKey, string ProjectName, int MembersVersion, bool CanManage,
-    IReadOnlyList<MemberView> Members, bool CanRestoreDeleted = false);
+    IReadOnlyList<MemberView> Members, bool CanRestoreDeleted = false, Upms.Domain.Common.ProjectTemplate Template = Upms.Domain.Common.ProjectTemplate.Kanban);
 
 public sealed record MemberView(Guid UserId, string DisplayName, string UserName, ProjectRole Role, bool IsActive, bool IsMe,
-    DateTimeOffset AddedAt);
+    DateTimeOffset AddedAt)
+{
+    /// <summary>The badge under the person's name (owner's decision of 2026-10-20).</summary>
+    public Upms.Domain.Common.UserType Type { get; init; }
+
+    /// <summary>Given by the space's portfolio or department, not added by hand; it goes when that changes.</summary>
+    public bool FromPortfolio { get; init; }
+}
 
 public sealed record PersonOption(Guid UserId, string DisplayName, string UserName);

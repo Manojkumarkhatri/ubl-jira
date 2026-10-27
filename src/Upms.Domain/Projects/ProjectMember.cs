@@ -29,5 +29,11 @@ public sealed class ProjectMember
     /// <summary>Who added the person; null for memberships created by the Phase 2 upgrade.</summary>
     public Guid? AddedById { get; private set; }
 
+    /// <summary>Given by the space's portfolio (a lead) or department (a Head) rather than added by someone; it goes when they
+    /// stop leading the portfolio or the space leaves it.</summary>
+    public bool FromPortfolio { get; private set; }
+
     internal void ChangeRole(ProjectRole role) => Role = role;
+
+    internal void SetFromPortfolio(bool fromPortfolio) => FromPortfolio = fromPortfolio;
 }

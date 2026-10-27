@@ -1,0 +1,190 @@
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+
+@* An epic's or stage's items and its progress (Phase 3 FR-015–FR-017). More than one page of items links to the List,
+   filtered by this container. *@
+<section class="drawer-section" aria-labelledby="container-items-title" data-testid="container-items">
+    <h3 id="container-items-title" class="section-title">Child work items <span class="hint">in this @Noun</span></h3>
+    <div class="container-progress">
+        <progress max="100" value="@Summary.Progress.Percent" aria-labelledby="container-progress-text"></progress>
+        <span id="container-progress-text" class="hint">@ProgressText</span>
+    </div>
+    @if (Summary.Items.Items.Count == 0)
+    {
+        <p class="hint">No items in this @Noun yet.</p>
+    }
+    else
+    {
+        <ul class="child-list">
+            @foreach (var item in Summary.Items.Items)
+            {
+                <li @key="item.Key" data-testid="contained-item">
+                    <TypeIcon Type="item.Type" />
+                    <a class="child-link" href="spaces/@ProjectKey/board?task=@item.Key">
+                        <span class="key" data-testid="contained-key">@item.Key</span> <span class="child-title">@item.Title</span>
+                    </a>
+                    <span class="status-name">@item.Status.Name</span>
+                    <DueDateText Due="item.DueDate" IsOpen="@(item.Status.Category != StatusCategory.Done)" Today="Today" />
+                    <AssigneeBadge Assignee="item.Assignee" />
+                </li>
+            }
+        </ul>
+    }
+    @if (Summary.Items.Items.Count < Summary.Items.TotalCount)
+    {
+        <a class="btn btn-sm btn-ghost show-more" href="spaces/@ProjectKey/list?container=@ContainerKey">
+            Show all @Summary.Items.TotalCount in the list
+        </a>
+    }
+    @if (!ReadOnly && !_adding)
+    {
+        @* As Jira: "Add child work item" opens the box. *@
+        <button type="button" class="placeholder-btn add-child-toggle" @onclick="StartAdding"><Icon Name="plus" Size="14" /> Add child work item</button>
+    }
+    else if (!ReadOnly)
+    {
+        <div class="add-child">
+            @if (Types.Count > 1)
+            {
+                <label class="sr-only" for="container-add-type">Type of the new item</label>
+                <select id="container-add-type" class="select select-sm type-choice" value="@SelectedType" @onchange="TypeChanged">
+                    @foreach (var type in Types)
+                    {
+                        <option value="@type">@WorkItemTypes.DisplayName(type)</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <span title="@WorkItemTypes.DisplayName(SelectedType)"><TypeIcon Type="SelectedType" /></span>
+            }
+            <label class="sr-only" for="container-add-input">New item in this @Noun</label>
+            <input id="container-add-input" class="input" @ref="_input" type="text" placeholder="What needs to be done?" autocomplete="off" maxlength="255"
+                   @bind="_title" @bind:event="oninput" @onkeydown="KeyDownAsync"
+                   aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="container-add-error" />
+            <button type="button" class="btn btn-sm" @onclick="AddAsync">Add</button>
+        </div>
+        <span id="container-add-error" class="error-text" role="alert">@_error</span>
+    }
+</section>
+
+@code {
+    private bool _adding;
+    private bool _focusInput;
+    private ElementReference _input;
+
+    /// <summary>Opens the box for a new item, from its own button or from "Add child work item" under the title.</summary>
+    public void StartAdding()
+    {
+        _adding = true;
+        _focusInput = true;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusInput)
+        {
+            _focusInput = false;
+            await _input.FocusAsync();
+        }
+    }
+
+    private string _title = "";
+    private WorkItemType _type = WorkItemType.Task;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string ContainerKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public WorkItemType ContainerType { get; set; }
+
+    [Parameter, EditorRequired]
+    public ContainerSummary Summary { get; set; } = default!;
+
+    [Parameter]
+    public DateOnly Today { get; set; }
+
+    /// <summary>True for Viewers: nothing is added (Phase 2 FR-003).</summary>
+    [Parameter]
+    public bool ReadOnly { get; set; }
+
+    /// <summary>Creates an item of the type in this container; returns an error message, or null when it was
+    /// created.</summary>
+    [Parameter, EditorRequired]
+    public Func<string, WorkItemType, Task<string?>> OnAdd { get; set; } = default!;
+
+    private string Noun => ContainerType == WorkItemType.Stage ? "stage" : "epic";
+
+    /// <summary>Stories, tasks and bugs go into epics; tasks and milestones into stages (FR-015); only those the space has
+    /// turned on.</summary>
+    private IReadOnlyList<WorkItemType> Types =>
+        (ContainerType == WorkItemType.Stage ? new[] { WorkItemType.Task, WorkItemType.Milestone } : new[] { WorkItemType.Task, WorkItemType.Story, WorkItemType.Bug })
+            .Where(t => Offered is null || Offered.Contains(t)).ToList();
+
+    private WorkItemType SelectedType => Types.Contains(_type) ? _type : Types.FirstOrDefault(WorkItemType.Task);
+
+    /// <summary>The work types the space offers; null until they are known.</summary>
+    [Parameter]
+    public IReadOnlyList<WorkItemType>? Offered { get; set; }
+
+    private string ProgressText
+    {
+        get
+        {
+            var progress = Summary.Progress;
+            return progress.ContainerDone && progress.Done < progress.Total
+                ? $"Done ({progress.Done} of {progress.Total} items done)"
+                : $"{progress.Done} of {progress.Total} done ({progress.Percent}%)";
+        }
+    }
+
+    private void TypeChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<WorkItemType>(e.Value?.ToString(), out var type) && Types.Contains(type))
+        {
+            _type = type;
+        }
+    }
+
+    private Task KeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _title = "";
+            _error = null;
+            _adding = false;
+        }
+
+        return e.Key == "Enter" ? AddAsync() : Task.CompletedTask;
+    }
+
+    private async Task AddAsync()
+    {
+        var title = _title.Trim();
+        if (title.Length == 0 || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _error = await OnAdd(title, SelectedType);
+            if (_error is null)
+            {
+                _title = "";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

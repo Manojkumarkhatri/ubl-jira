@@ -1,0 +1,18 @@
+@* The application's one logo (owner's choice of 2026-10-26): three connected people, two in navy and one in blue
+   (theme of 2026-10-28), for teams working together. Used in the top bar, on the sign-in page and on the Create space pages; the browser
+   tab shows the same mark (wwwroot/favicon.svg). Decorative: the name beside it says what it is. *@
+<svg class="app-logo @(OnDark ? "app-logo-on-dark" : "")" width="@Size" height="@Size" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+    <path class="logo-link" d="M12 34 24 12 36 34Z" />
+    <circle class="logo-node" cx="24" cy="12" r="7" />
+    <circle class="logo-node" cx="12" cy="34" r="7" />
+    <circle class="logo-accent" cx="36" cy="34" r="7" />
+</svg>
+
+@code {
+    [Parameter]
+    public int Size { get; set; } = 32;
+
+    /// <summary>White and light blue, for a navy or dark background.</summary>
+    [Parameter]
+    public bool OnDark { get; set; }
+}

@@ -1,0 +1,378 @@
+@page "/admin/portfolios"
+@using Upms.Application.Projects
+@inject IPortfolioService Portfolios
+@inject IOrganizationAdminService Organization
+@inject LiveAnnouncer Announcer
+
+<PageTitle>Portfolios · U-PMS</PageTitle>
+
+@* Departments, their portfolios and the spaces in them (owner's decision of 2026-10-20). A portfolio's leads, and its
+   department's Heads, get access to every space in it. Admins manage everything; a Head their own department; a lead
+   sees the portfolios they lead and can put the spaces they manage into them. *@
+<div class="page-head">
+    <div>
+        <div class="crumbs">Administration</div>
+        <h1>Portfolios</h1>
+    </div>
+</div>
+<p class="hint">Department → portfolio → space. A portfolio's leads and its department's Heads can open every space in it.
+    @if (_view is { } view && (view.CanCreateDepartments || view.Departments.Any(d => d.CanManage)))
+    {
+        <span>Make someone a Head in User management.</span>
+    }
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">@_error</div>
+}
+
+@if (_view is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else
+{
+    @if (_view.CanCreateDepartments)
+    {
+        <form class="inline-add" @onsubmit="AddDepartmentAsync" @onsubmit:preventDefault>
+            <label for="new-department" class="sr-only">New department name</label>
+            <input id="new-department" class="input" placeholder="New department, for example IT-PMO" maxlength="80" @bind="_newDepartment" @bind:event="oninput" />
+            <button type="submit" class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(_newDepartment)">Add department</button>
+        </form>
+    }
+
+    @if (_view.Departments.Count == 0)
+    {
+        <EmptyState Title="No portfolios yet" Text="@(_view.CanCreateDepartments ? "Add a department, then its portfolios." : "You do not lead a portfolio or head a department.")" />
+    }
+
+    @foreach (var department in _view.Departments)
+    {
+        <section class="dept-section card" aria-labelledby="@($"dept-{department.Id}")" @key="department.Id">
+            <header class="dept-head">
+                @if (_renaming == DeptKey(department.Id))
+                {
+                    <form class="inline-add" @onsubmit="() => RenameDepartmentAsync(department.Id)" @onsubmit:preventDefault>
+                        <label for="rename-@department.Id" class="sr-only">Department name</label>
+                        <input id="rename-@department.Id" class="input" maxlength="80" @bind="_renameText" />
+                        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                        <button type="button" class="btn btn-sm" @onclick="() => _renaming = null">Cancel</button>
+                    </form>
+                }
+                else
+                {
+                    <h2 id="@($"dept-{department.Id}")">@department.Name</h2>
+                    <span class="dept-heads">
+                        @if (department.Heads.Count == 0)
+                        {
+                            <span class="hint">No Head yet</span>
+                        }
+                        @foreach (var head in department.Heads)
+                        {
+                            <span class="person-chip"><span class="avatar avatar-xs" aria-hidden="true">@Initials(head.DisplayName)</span> @head.DisplayName <UserTypeBadge Type="head.Type" /></span>
+                        }
+                    </span>
+                    <span class="spacer"></span>
+                    @if (_view.CanCreateDepartments)
+                    {
+                        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => StartRename(DeptKey(department.Id), department.Name)">Rename</button>
+                        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => DeleteDepartmentAsync(department)">Delete</button>
+                    }
+                }
+            </header>
+
+            <div class="portfolio-grid">
+                @foreach (var portfolio in department.Portfolios)
+                {
+                    <article class="portfolio-card" @key="portfolio.Id" data-testid="portfolio-card">
+                        @if (_renaming == PortfolioKey(portfolio.Id))
+                        {
+                            <form class="stack" @onsubmit="() => EditPortfolioAsync(portfolio.Id)" @onsubmit:preventDefault>
+                                <label for="pname-@portfolio.Id">Name</label>
+                                <input id="pname-@portfolio.Id" class="input" maxlength="80" @bind="_renameText" />
+                                <label for="pdesc-@portfolio.Id">Description</label>
+                                <input id="pdesc-@portfolio.Id" class="input" maxlength="500" @bind="_renameDescription" />
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                                    <button type="button" class="btn btn-sm" @onclick="() => _renaming = null">Cancel</button>
+                                </div>
+                            </form>
+                        }
+                        else
+                        {
+                            <header class="portfolio-head">
+                                <h3>@portfolio.Name</h3>
+                                @if (portfolio.CanManage)
+                                {
+                                    <button type="button" class="btn btn-sm btn-ghost" aria-label="Edit @portfolio.Name"
+                                            @onclick="() => StartEditPortfolio(portfolio)"><Icon Name="pencil" /></button>
+                                    <button type="button" class="btn btn-sm btn-ghost" aria-label="Delete @portfolio.Name"
+                                            @onclick="() => DeletePortfolioAsync(portfolio)"><Icon Name="trash" /></button>
+                                }
+                            </header>
+                            @if (portfolio.Description is { } description)
+                            {
+                                <p class="portfolio-desc">@description</p>
+                            }
+                        }
+
+                        <h4 class="portfolio-label">Leads</h4>
+                        <ul class="chip-list">
+                            @foreach (var lead in portfolio.Leads)
+                            {
+                                <li class="person-chip">
+                                    <span class="avatar avatar-xs" aria-hidden="true">@Initials(lead.DisplayName)</span> @lead.DisplayName
+                                    @if (portfolio.CanManage)
+                                    {
+                                        <button type="button" class="chip-remove" aria-label="Remove @lead.DisplayName as lead"
+                                                @onclick="() => RemoveLeadAsync(portfolio, lead.Id)">×</button>
+                                    }
+                                </li>
+                            }
+                            @if (portfolio.Leads.Count == 0)
+                            {
+                                <li class="hint">No lead yet</li>
+                            }
+                        </ul>
+                        @if (portfolio.CanManage)
+                        {
+                            @if (_leadFor == portfolio.Id)
+                            {
+                                <div class="lead-picker">
+                                    <label for="lead-search-@portfolio.Id" class="sr-only">Find a person</label>
+                                    <input id="lead-search-@portfolio.Id" type="search" class="input input-sm" placeholder="Find a person" autocomplete="off"
+                                           @bind="_leadTerm" @bind:event="oninput" @bind:after="FindLeadsAsync" />
+                                    <ul class="lead-results">
+                                        @foreach (var person in _leadResults.Where(p => !portfolio.Leads.Any(l => l.Id == p.Id)))
+                                        {
+                                            <li>
+                                                <button type="button" class="menu-item" @onclick="() => AddLeadAsync(portfolio, person.Id)">
+                                                    @person.DisplayName <UserTypeBadge Type="person.Type" />
+                                                </button>
+                                            </li>
+                                        }
+                                    </ul>
+                                    <button type="button" class="btn btn-sm" @onclick="() => _leadFor = null">Done</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-ghost add-link" @onclick="() => OpenLeadPicker(portfolio.Id)">+ Add lead</button>
+                            }
+                        }
+
+                        <h4 class="portfolio-label">Spaces <span class="count">@portfolio.Spaces.Count</span></h4>
+                        <ul class="space-list">
+                            @foreach (var space in portfolio.Spaces)
+                            {
+                                <li>
+                                    <a href="spaces/@space.Key"><span class="space-mark" aria-hidden="true">@space.Key[..1]</span> @space.Name</a>
+                                    @if (portfolio.CanManage)
+                                    {
+                                        <button type="button" class="chip-remove" aria-label="Take @space.Name out of @portfolio.Name"
+                                                @onclick="() => MoveAsync(space.Key, null, space.Name, null)">×</button>
+                                    }
+                                </li>
+                            }
+                            @if (portfolio.Spaces.Count == 0)
+                            {
+                                <li class="hint">No spaces yet</li>
+                            }
+                        </ul>
+                        @if (_view.Unassigned.Count > 0 && (portfolio.CanManage || _choices.Any(c => c.Id == portfolio.Id)))
+                        {
+                            <div class="field-stack">
+                                <label for="add-space-@portfolio.Id" class="sr-only">Add a space to @portfolio.Name</label>
+                                <select id="add-space-@portfolio.Id" class="select select-sm" @bind="_spaceToAdd[portfolio.Id]">
+                                    <option value="">Add a space…</option>
+                                    @foreach (var space in _view.Unassigned)
+                                    {
+                                        <option value="@space.Key">@space.Name (@space.Key)</option>
+                                    }
+                                </select>
+                                <button type="button" class="btn btn-sm" disabled="@string.IsNullOrEmpty(_spaceToAdd.GetValueOrDefault(portfolio.Id))"
+                                        @onclick="() => AddSpaceAsync(portfolio)">Add</button>
+                            </div>
+                        }
+                    </article>
+                }
+
+                @if (department.CanManage)
+                {
+                    <form class="portfolio-card portfolio-new" @onsubmit="() => AddPortfolioAsync(department.Id)" @onsubmit:preventDefault>
+                        <h3>New portfolio</h3>
+                        <label for="new-portfolio-@department.Id" class="sr-only">Portfolio name</label>
+                        <input id="new-portfolio-@department.Id" class="input" maxlength="80" placeholder="For example Data & AI"
+                               @bind="_newPortfolio[department.Id]" @bind:event="oninput" />
+                        <button type="submit" class="btn btn-sm btn-primary" disabled="@string.IsNullOrWhiteSpace(_newPortfolio.GetValueOrDefault(department.Id))">Add portfolio</button>
+                    </form>
+                }
+            </div>
+        </section>
+    }
+
+    @if (_view.Unassigned.Count > 0)
+    {
+        <section class="card dept-section" aria-labelledby="loose-heading">
+            <header class="dept-head"><h2 id="loose-heading">Spaces in no portfolio</h2></header>
+            <ul class="space-list loose-list">
+                @foreach (var space in _view.Unassigned)
+                {
+                    <li><a href="spaces/@space.Key"><span class="space-mark" aria-hidden="true">@space.Key[..1]</span> @space.Name</a> <span class="muted">@space.Key</span></li>
+                }
+            </ul>
+        </section>
+    }
+}
+
+@code {
+    private OrganizationView? _view;
+    private IReadOnlyList<PortfolioChoice> _choices = [];
+    private string? _error;
+    private string _newDepartment = "";
+    private readonly Dictionary<long, string> _newPortfolio = [];
+    private readonly Dictionary<long, string> _spaceToAdd = [];
+    private string? _renaming;
+    private string _renameText = "";
+    private string _renameDescription = "";
+    private long? _leadFor;
+    private string _leadTerm = "";
+    private IReadOnlyList<PersonRef> _leadResults = [];
+    private int _searches;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await Portfolios.OverviewAsync(CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        _view = result.Value;
+        foreach (var department in _view!.Departments)
+        {
+            _newPortfolio.TryAdd(department.Id, "");
+            foreach (var portfolio in department.Portfolios)
+            {
+                _spaceToAdd.TryAdd(portfolio.Id, "");
+            }
+        }
+
+        _choices = await Portfolios.ChoicesAsync(CancellationToken.None);
+    }
+
+    private static string DeptKey(long id) => $"d{id}";
+
+    private static string PortfolioKey(long id) => $"p{id}";
+
+    private static string Initials(string name) => string.Concat(name
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .Take(2)
+        .Select(part => char.ToUpperInvariant(part[0])));
+
+    private async Task<bool> DoneAsync(Result result, string saved)
+    {
+        _error = result.IsSuccess ? null : result.Error!.Message;
+        if (result.IsSuccess)
+        {
+            Announcer.Announce(saved);
+            await LoadAsync();
+        }
+
+        return result.IsSuccess;
+    }
+
+    private async Task AddDepartmentAsync()
+    {
+        var result = await Organization.CreateDepartmentAsync(_newDepartment, CancellationToken.None);
+        if (await DoneAsync(result.IsSuccess ? Result.Ok() : Result.Fail(result.Error!), $"Department {_newDepartment.Trim()} added."))
+        {
+            _newDepartment = "";
+        }
+    }
+
+    private void StartRename(string key, string name, string? description = null)
+    {
+        _renaming = key;
+        _renameText = name;
+        _renameDescription = description ?? "";
+    }
+
+    private void StartEditPortfolio(PortfolioView portfolio) => StartRename(PortfolioKey(portfolio.Id), portfolio.Name, portfolio.Description);
+
+    private async Task RenameDepartmentAsync(long id)
+    {
+        if (await DoneAsync(await Organization.RenameDepartmentAsync(id, _renameText, CancellationToken.None), "Department renamed."))
+        {
+            _renaming = null;
+        }
+    }
+
+    private async Task DeleteDepartmentAsync(DepartmentView department) =>
+        await DoneAsync(await Organization.DeleteDepartmentAsync(department.Id, CancellationToken.None), $"Department {department.Name} deleted.");
+
+    private async Task AddPortfolioAsync(long departmentId)
+    {
+        var name = _newPortfolio.GetValueOrDefault(departmentId) ?? "";
+        var result = await Portfolios.CreateAsync(departmentId, name, null, CancellationToken.None);
+        if (await DoneAsync(result.IsSuccess ? Result.Ok() : Result.Fail(result.Error!), $"Portfolio {name.Trim()} added."))
+        {
+            _newPortfolio[departmentId] = "";
+        }
+    }
+
+    private async Task EditPortfolioAsync(long id)
+    {
+        if (await DoneAsync(await Portfolios.EditAsync(id, _renameText, _renameDescription, CancellationToken.None), "Portfolio saved."))
+        {
+            _renaming = null;
+        }
+    }
+
+    private async Task DeletePortfolioAsync(PortfolioView portfolio) =>
+        await DoneAsync(await Portfolios.DeleteAsync(portfolio.Id, CancellationToken.None),
+            $"Portfolio {portfolio.Name} deleted. Its spaces are now in no portfolio.");
+
+    private void OpenLeadPicker(long portfolioId)
+    {
+        _leadFor = portfolioId;
+        _leadTerm = "";
+        _leadResults = [];
+    }
+
+    private async Task FindLeadsAsync()
+    {
+        var search = ++_searches;
+        var found = await Portfolios.FindPeopleAsync(_leadTerm, CancellationToken.None);
+        if (search == _searches)
+        {
+            _leadResults = found;
+        }
+    }
+
+    private async Task AddLeadAsync(PortfolioView portfolio, Guid userId) =>
+        await DoneAsync(await Portfolios.SetLeadsAsync(portfolio.Id, portfolio.Leads.Select(l => l.Id).Append(userId).ToList(),
+            CancellationToken.None), "Lead added.");
+
+    private async Task RemoveLeadAsync(PortfolioView portfolio, Guid userId) =>
+        await DoneAsync(await Portfolios.SetLeadsAsync(portfolio.Id, portfolio.Leads.Select(l => l.Id).Where(id => id != userId).ToList(),
+            CancellationToken.None), "Lead removed.");
+
+    private async Task AddSpaceAsync(PortfolioView portfolio)
+    {
+        if (_spaceToAdd.GetValueOrDefault(portfolio.Id) is { Length: > 0 } key)
+        {
+            var name = _view?.Unassigned.FirstOrDefault(s => s.Key == key)?.Name ?? key;
+            await MoveAsync(key, portfolio.Id, name, portfolio.Name);
+            _spaceToAdd[portfolio.Id] = "";
+        }
+    }
+
+    private async Task MoveAsync(string key, long? portfolioId, string spaceName, string? portfolioName) =>
+        await DoneAsync(await Portfolios.MoveSpaceAsync(key, portfolioId, CancellationToken.None),
+            portfolioName is null ? $"{spaceName} is now in no portfolio." : $"{spaceName} added to {portfolioName}.");
+}

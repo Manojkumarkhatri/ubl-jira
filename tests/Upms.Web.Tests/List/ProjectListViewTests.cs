@@ -1,3 +1,4 @@
+using AngleSharp.Dom;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +11,8 @@ using Upms.Web.Tests.Fakes;
 
 namespace Upms.Web.Tests.List;
 
-/// <summary>The List view (Phase 2 FR-027–FR-033). The viewer is Amina Khan; "today" is 27 Sep 2026.</summary>
+/// <summary>The List view (Phase 2 FR-027–FR-033), laid out as Jira's: a search, the people, "Filter" and "Group" above
+/// the table. The viewer is Amina Khan; "today" is 27 Sep 2026.</summary>
 public sealed class ProjectListViewTests : BunitTestBase
 {
     private readonly FakeWorkItemListService _list;
@@ -31,26 +33,52 @@ public sealed class ProjectListViewTests : BunitTestBase
 
     private IRenderedComponent<ProjectListView> RenderList(string query = "")
     {
-        _navigation.NavigateTo($"projects/WEB/list{query}");
+        _navigation.NavigateTo($"spaces/WEB/list{query}");
         return Render<ProjectListView>(p => p.Add(x => x.Key, "WEB"));
     }
 
     private string Query => new Uri(_navigation.Uri).Query;
+
+    private static void OpenFilter(IRenderedComponent<ProjectListView> cut) => cut.Find("button[aria-controls=list-filter-panel]").Click();
+
+    /// <summary>The Filter panel's buttons under one heading: "Work type", "Status", "Priority", "Epic" (or "Stage"),
+    /// "Label" or "Due date".</summary>
+    private static List<IElement> FilterButtons(IRenderedComponent<ProjectListView> cut, string heading) =>
+        [.. cut.FindAll("#list-filter-panel .panel-heading").Single(h => h.TextContent.Trim() == heading).NextElementSibling!.QuerySelectorAll("button")];
+
+    /// <summary>A filter button's words; a type's name once, without its symbol.</summary>
+    private static string Name(IElement button) => (button.QuerySelector(".type-icon .sr-only")?.TextContent ?? button.TextContent).Trim();
+
+    private static IElement FilterButton(IRenderedComponent<ProjectListView> cut, string heading, string name) =>
+        FilterButtons(cut, heading).Single(b => Name(b) == name);
+
+    private static IElement Me(IRenderedComponent<ProjectListView> cut) => cut.Find(".avatar-filter button[title='Amina Khan (you)']");
+
+    private static string FilterButtonText(IRenderedComponent<ProjectListView> cut) =>
+        cut.Find("button[aria-controls=list-filter-panel]").TextContent.Trim();
+
+    /// <summary>Shows a column the list hides until chosen, with the column picker.</summary>
+    private static void ShowColumn(IRenderedComponent<ProjectListView> cut, string label)
+    {
+        cut.Find("button[aria-label='Choose columns']").Click();
+        cut.FindAll("#list-columns label").Single(l => l.TextContent.Trim() == label).QuerySelector("input")!.Change(true);
+    }
 
     [Fact]
     public void P2_US3_AS1_The_table_shows_every_column_with_parent_keys_and_the_count()
     {
         var cut = RenderList();
 
-        Assert.Equal(["Key", "Title", "Status", "Priority", "Assignee", "Start", "Due", "Updated"],
-            cut.FindAll("thead th").Select(th => th.TextContent.Trim()));
+        // Jira's default columns; the others (start date, epic, labels, work type) are chosen with the column picker.
+        Assert.Equal(["Work", "Assignee", "Reporter", "Priority", "Status", "Resolution", "Created", "Updated", "Due date"],
+            cut.FindAll("thead th:not(.col-check):not(.col-pick)").Select(th => th.TextContent.Replace("↓", "").Replace("↑", "").Trim()));
         var rows = cut.FindAll("[data-testid=list-row]");
         Assert.Equal(["WEB-3", "WEB-2", "WEB-1"], rows.Select(r => r.GetAttribute("data-key")));
-        Assert.Contains("Sub-task of WEB-1", rows[0].TextContent, StringComparison.Ordinal);
+        Assert.Equal("in WEB-1", rows[0].QuerySelector(".work-parent")!.TextContent.Trim());
         Assert.Contains("Bilal Ahmed", rows[1].TextContent, StringComparison.Ordinal);
-        Assert.Equal("3 tasks", cut.Find("[data-testid=list-count]").TextContent.Trim());
+        Assert.Equal("3 of 3", cut.Find("[data-testid=list-count]").TextContent.Trim());
         Assert.Equal(new DateOnly(2026, 9, 27), _list.Queries[^1].Today);
-        Assert.Equal("page", cut.Find("nav.project-nav a[href='projects/WEB/list']").GetAttribute("aria-current"));
+        Assert.Equal("page", cut.Find("nav.project-nav > a[href='spaces/WEB/list']").GetAttribute("aria-current"));
     }
 
     [Fact]
@@ -72,38 +100,43 @@ public sealed class ProjectListViewTests : BunitTestBase
         Assert.Equal((ListSort.DueDate, true, 2), (query.Sort, query.Descending, query.Page));
         Assert.Equal([StatusCategory.InProgress], query.Categories!);
         Assert.Equal((true, DueFilter.Overdue, "login"), (query.AssignedToMe, query.Due, query.Text));
-        Assert.Equal("inprogress", cut.Find("#filter-type").GetAttribute("value"));
-        Assert.Equal("me", cut.Find("#filter-assignee").GetAttribute("value"));
-        Assert.Equal("overdue", cut.Find("#filter-due").GetAttribute("value"));
-        Assert.Equal("login", cut.Find("#filter-text").GetAttribute("value"));
-        Assert.Equal(["Status type: In progress", "Assignee: Me", "Due: Overdue", "Words: login"],
-            cut.FindAll("[data-testid=filter-chip] .chip-label").Select(c => c.TextContent.Trim()));
+        Assert.Equal("descending", cut.Find("th[data-sort=due]").GetAttribute("aria-sort"));
+        Assert.Equal("login", cut.Find("#list-search").GetAttribute("value"));
+        Assert.Equal("true", Me(cut).GetAttribute("aria-pressed"));
+        Assert.Equal("Filter (2)", FilterButtonText(cut)); // the status type kept from a Phase 2 address, and the due date
+        OpenFilter(cut);
+        Assert.Equal(["Overdue"], FilterButtons(cut, "Due date").Where(b => b.GetAttribute("aria-pressed") == "true").Select(Name));
     }
 
     [Fact]
     public void P2_US3_AS3_Choosing_a_filter_puts_it_in_the_address_and_starts_at_page_one()
     {
         var cut = RenderList("?page=3");
+        OpenFilter(cut);
 
-        cut.Find("#filter-type").Change("inprogress");
+        FilterButton(cut, "Status", "In Progress").Click();
 
-        Assert.Equal("?type=inprogress", Query);
-        Assert.Equal([StatusCategory.InProgress], _list.Queries[^1].Query.Categories!);
-        cut.Find("#filter-assignee").Change("me");
-        Assert.Equal("?type=inprogress&assignee=me", Query);
+        Assert.Equal("?column=2", Query);
+        Assert.Equal([2L], _list.Queries[^1].Query.ColumnIds!);
+        Assert.Equal("true", FilterButton(cut, "Status", "In Progress").GetAttribute("aria-pressed"));
+        Me(cut).Click();
+        Assert.Equal("?column=2&assignee=me", Query);
     }
 
     [Fact]
     public void P2_US3_AS3_Each_filter_can_be_removed_on_its_own_or_all_cleared()
     {
-        var cut = RenderList("?type=inprogress&assignee=me&sort=title");
+        var cut = RenderList("?column=2&assignee=me&sort=title");
 
-        cut.FindAll("[data-testid=filter-chip] button").First(b => b.GetAttribute("aria-label") == "Remove filter Assignee: Me").Click();
-        Assert.Equal("?type=inprogress&sort=title", Query);
+        Me(cut).Click();
+        Assert.Equal("?column=2&sort=title", Query);
+        Assert.Equal("false", Me(cut).GetAttribute("aria-pressed"));
 
+        OpenFilter(cut);
         cut.Find("[data-testid=clear-filters]").Click();
         Assert.Equal("?sort=title", Query);
-        Assert.Empty(cut.FindAll("[data-testid=filter-chip]"));
+        Assert.Equal("Filter", FilterButtonText(cut));
+        Assert.Empty(cut.FindAll("[data-testid=clear-filters]"));
     }
 
     [Fact]
@@ -111,8 +144,8 @@ public sealed class ProjectListViewTests : BunitTestBase
     {
         var cut = RenderList();
 
-        cut.Find("#filter-text").Input("release notes");
-        cut.Find("form.list-search").Submit();
+        cut.Find("#list-search").Input("release notes");
+        cut.Find("form.board-search").Submit();
 
         Assert.Equal("?q=release%20notes", Query);
         Assert.Equal("release notes", _list.Queries[^1].Query.Text);
@@ -138,9 +171,9 @@ public sealed class ProjectListViewTests : BunitTestBase
     public void P2_US3_AS5_A_row_opens_the_drawer_over_the_list_and_changes_show_in_the_list()
     {
         var cut = RenderList("?due=overdue");
-        Assert.Equal("projects/WEB/list?due=overdue&task=WEB-1", cut.Find("[data-key='WEB-1'] a.task-link").GetAttribute("href"));
+        Assert.Equal("spaces/WEB/list?due=overdue&task=WEB-1", cut.Find("[data-key='WEB-1'] a.task-link").GetAttribute("href"));
 
-        _navigation.NavigateTo("projects/WEB/list?due=overdue&task=WEB-1");
+        _navigation.NavigateTo("spaces/WEB/list?due=overdue&task=WEB-1");
         Assert.NotEmpty(cut.FindAll("[data-testid=drawer]"));
         var loads = _list.Queries.Count;
         cut.Find("#drawer-priority").Change(nameof(Priority.Lowest));
@@ -156,11 +189,13 @@ public sealed class ProjectListViewTests : BunitTestBase
         var cut = RenderList();
         var loads = _list.Queries.Count;
 
-        var box = cut.Find("input.inline-input");
+        cut.Find("button.tl-create").Click(); // "+ Create" at the foot of the list opens the box, as in Jira
+        var box = cut.Find(".list-create input.inline-input");
         box.Input("Plan the launch");
         box.KeyDown("Enter");
 
-        Assert.Equal((FakeWorkItemListService.ToDo.Id, "Plan the launch"), Assert.Single(_boards.Created));
+        // Created through the work item service, which starts every item in the leftmost "to do" column (Phase 3 FR-010).
+        Assert.Equal(("WEB", new NewWorkItem(WorkItemType.Task, "Plan the launch")), Assert.Single(_items.Created));
         Assert.Equal(loads + 1, _list.Queries.Count);
     }
 
@@ -171,6 +206,7 @@ public sealed class ProjectListViewTests : BunitTestBase
 
         var cut = RenderList();
 
+        Assert.Empty(cut.FindAll("button.tl-create"));
         Assert.Empty(cut.FindAll("input.inline-input"));
     }
 
@@ -181,7 +217,7 @@ public sealed class ProjectListViewTests : BunitTestBase
 
         var cut = RenderList("?due=overdue");
 
-        Assert.Contains("No task matches these filters.", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("No work items match these filters.", cut.Find(".list-empty").TextContent, StringComparison.Ordinal);
         cut.Find("[data-testid=empty-clear-filters]").Click();
         Assert.Equal("", Query);
     }
@@ -193,8 +229,9 @@ public sealed class ProjectListViewTests : BunitTestBase
 
         var cut = RenderList();
 
-        Assert.Contains("No tasks yet", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("No work items yet.", cut.Find(".list-empty").TextContent, StringComparison.Ordinal);
         Assert.Empty(cut.FindAll("[data-testid=empty-clear-filters]"));
+        Assert.NotEmpty(cut.FindAll("button.tl-create"));
     }
 
     [Fact]
@@ -203,9 +240,10 @@ public sealed class ProjectListViewTests : BunitTestBase
         _list.TotalCount = 120;
 
         var cut = RenderList();
-        Assert.Equal("120 tasks", cut.Find("[data-testid=list-count]").TextContent.Trim());
+        Assert.Equal("3 of 120", cut.Find("[data-testid=list-count]").TextContent.Trim());
+        Assert.Contains("Page 1 of 3", cut.Find(".list-pager").TextContent, StringComparison.Ordinal);
 
-        cut.FindAll("nav.pager button").Single(b => b.TextContent.Trim() == "Next").Click();
+        cut.Find(".list-pager button[aria-label='Next page']").Click();
 
         Assert.Equal("?page=2", Query);
         Assert.Equal(2, _list.Queries[^1].Query.Page);
@@ -214,9 +252,99 @@ public sealed class ProjectListViewTests : BunitTestBase
     [Fact]
     public void An_unknown_project_shows_not_found()
     {
-        _navigation.NavigateTo("projects/NOPE/list");
+        _navigation.NavigateTo("spaces/NOPE/list");
         var cut = Render<ProjectListView>(p => p.Add(x => x.Key, "NOPE"));
 
         Assert.Contains("Not found", cut.Markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void P3_US1_AS8_Rows_show_their_type_and_epic()
+    {
+        _list.Rows[1] = _list.Rows[1] with { Type = WorkItemType.Bug, Container = new ContainerView("WEB-7", "Card refunds", WorkItemType.Epic) };
+        var cut = RenderList();
+
+        ShowColumn(cut, "Epic");
+
+        var bug = cut.FindAll("[data-testid=list-row]")[1];
+        Assert.Equal("Bug", bug.QuerySelector(".col-work .type-icon .sr-only")!.TextContent.Trim());
+        Assert.Contains("WEB-7 Card refunds", bug.QuerySelector(".col-parent [data-testid=epic-tag]")!.TextContent, StringComparison.Ordinal);
+        Assert.Contains("Epic", cut.FindAll("thead th").Select(th => th.TextContent.Trim()));
+    }
+
+    [Fact]
+    public void P3_US1_AS8_The_list_filters_by_type_and_epic()
+    {
+        var cut = RenderList();
+        OpenFilter(cut);
+
+        Assert.Equal(["Epic", "Story", "Task", "Bug", "Sub-task"], FilterButtons(cut, "Work type").Select(Name));
+        Assert.Equal(["None", "Card refunds", "Statements"], FilterButtons(cut, "Epic").Select(Name));
+
+        FilterButton(cut, "Work type", "Bug").Click();
+        cut.WaitForAssertion(() => Assert.Contains("kind=bug", Query, StringComparison.Ordinal));
+        FilterButton(cut, "Epic", "Card refunds").Click();
+        cut.WaitForAssertion(() => Assert.Contains("container=WEB-7", Query, StringComparison.Ordinal));
+
+        cut.WaitForAssertion(() => Assert.Equal("true", FilterButton(cut, "Epic", "Card refunds").GetAttribute("aria-pressed")));
+        Assert.Equal("true", FilterButton(cut, "Work type", "Bug").GetAttribute("aria-pressed"));
+        Assert.Equal("Filter (2)", FilterButtonText(cut));
+        var query = _list.Queries[^1].Query;
+        Assert.Equal([WorkItemType.Bug], query.Types!);
+        Assert.Equal(["WEB-7"], query.ContainerKeys!);
+    }
+
+    [Fact]
+    public void In_a_Stage_gate_project_the_list_offers_stages_and_milestones()
+    {
+        _list.Template = ProjectTemplate.StageGate;
+        _items.Containers = [new ContainerOption("WEB-1", "Initiation", WorkItemType.Stage, false)];
+
+        var cut = RenderList();
+        OpenFilter(cut);
+
+        Assert.Equal(["Stage", "Task", "Milestone", "Sub-task"], FilterButtons(cut, "Work type").Select(Name));
+        Assert.Equal(["None", "Initiation"], FilterButtons(cut, "Stage").Select(Name));
+        ShowColumn(cut, "Stage");
+        Assert.Contains("Stage", cut.FindAll("thead th").Select(th => th.TextContent.Trim()));
+    }
+
+    [Fact]
+    public void P3_FR010_The_create_box_offers_every_type_the_contributor_may_create()
+    {
+        var cut = RenderList();
+        cut.Find("button.tl-create").Click();
+
+        var choice = cut.Find(".list-create select.type-choice");
+        Assert.Equal(["Task", "Story", "Bug", "Epic"], choice.QuerySelectorAll("option").Select(o => o.TextContent.Trim()));
+        Assert.Equal("Task", choice.GetAttribute("value"));
+
+        choice.Change("Epic");
+        cut.Find(".list-create input.inline-input").Input("Card refunds");
+        cut.Find(".list-create input.inline-input").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Enter" });
+
+        var (projectKey, item) = Assert.Single(_items.Created);
+        Assert.Equal(("WEB", WorkItemType.Epic, "Card refunds", (string?)null), (projectKey, item.Type, item.Title, item.ContainerKey));
+    }
+
+    [Fact]
+    public void P4_US4_AS6_Rows_show_labels_and_a_label_filter_lives_in_the_address()
+    {
+        _list.Rows[2] = _list.Rows[2] with { Labels = ["design", "launch"] };
+        var cut = RenderList("?labels=launch");
+
+        ShowColumn(cut, "Labels");
+        Assert.Equal(["design", "launch"], cut.Find("[data-key='WEB-1'] .col-labels").QuerySelectorAll("li").Select(l => l.TextContent));
+        Assert.Equal(["launch"], _list.Queries[^1].Query.Labels);
+        OpenFilter(cut);
+        Assert.Equal(["design", "launch"], FilterButtons(cut, "Label").Select(Name));
+        Assert.Equal("true", FilterButton(cut, "Label", "launch").GetAttribute("aria-pressed"));
+
+        cut.Find("#filter-label").Change("Pricing");
+        cut.Find("#filter-label").Closest("form")!.Submit();
+        Assert.Equal("?labels=launch%2CPricing", Query);
+
+        FilterButton(cut, "Label", "launch").Click();
+        Assert.Equal("?labels=Pricing", Query);
     }
 }

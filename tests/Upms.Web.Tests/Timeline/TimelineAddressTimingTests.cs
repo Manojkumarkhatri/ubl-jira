@@ -12,7 +12,7 @@ namespace Upms.Web.Tests.Timeline;
 /// "Hide completed" made meanwhile keeps the first (Phase 2 FR-035, FR-040).</summary>
 public sealed class TimelineAddressTimingTests : BunitTestBase
 {
-    private readonly SlowNavigationManager _navigation = new("projects/WEB/timeline");
+    private readonly SlowNavigationManager _navigation = new("spaces/WEB/timeline");
 
     public TimelineAddressTimingTests()
     {
@@ -30,12 +30,12 @@ public sealed class TimelineAddressTimingTests : BunitTestBase
         _navigation.Holding = true;
 
         cut.Find("[data-scale=weeks]").Click();
-        cut.Find("[data-testid=hide-completed]").Click();
+        TimelinePageTests.ToggleHideCompleted(cut);
         cut.InvokeAsync(_navigation.Arrive);
 
-        Assert.EndsWith("/projects/WEB/timeline?scale=weeks&completed=hide", _navigation.Uri, StringComparison.Ordinal);
+        Assert.EndsWith("/spaces/WEB/timeline?scale=weeks&completed=hide", _navigation.Uri, StringComparison.Ordinal);
         Assert.Equal("true", cut.Find("[data-scale=weeks]").GetAttribute("aria-pressed"));
-        Assert.Equal("true", cut.Find("[data-testid=hide-completed]").GetAttribute("aria-pressed"));
+        cut.WaitForAssertion(() => Assert.True(cut.Find("[data-testid=hide-completed]").HasAttribute("checked")));
     }
 
     [Fact]
@@ -45,11 +45,11 @@ public sealed class TimelineAddressTimingTests : BunitTestBase
         _navigation.Holding = true;
 
         cut.Find("[data-scale=weeks]").Click();
-        cut.Find("[data-testid=hide-completed]").Click();
+        TimelinePageTests.ToggleHideCompleted(cut);
         cut.Find("[data-scale=quarters]").Click();
         cut.InvokeAsync(_navigation.Arrive);
 
-        Assert.EndsWith("/projects/WEB/timeline?scale=quarters&completed=hide", _navigation.Uri, StringComparison.Ordinal);
+        Assert.EndsWith("/spaces/WEB/timeline?scale=quarters&completed=hide", _navigation.Uri, StringComparison.Ordinal);
         Assert.Equal("true", cut.Find("[data-scale=quarters]").GetAttribute("aria-pressed"));
     }
 }

@@ -3,7 +3,7 @@
 
 <section class="drawer-section" aria-labelledby="subtasks-title">
     <h3 id="subtasks-title" class="section-title">
-        Sub-tasks
+        Child work items
         @if (Subtasks.TotalCount > 0)
         {
             <span class="hint">@DoneCount of @Subtasks.TotalCount done</span>
@@ -19,7 +19,7 @@
             @foreach (var subtask in Subtasks.Items)
             {
                 <li @key="subtask.Key" data-testid="subtask">
-                    <a class="child-link" href="projects/@ProjectKey/board?task=@subtask.Key">
+                    <a class="child-link" href="spaces/@ProjectKey/board?task=@subtask.Key">
                         <span class="key">@subtask.Key</span> <span class="child-title">@subtask.Title</span>
                     </a>
                     <DueDateText Due="subtask.DueDate" IsOpen="@(subtask.Status.Category != StatusCategory.Done)" Today="Today" />
@@ -48,11 +48,16 @@
             Show more sub-tasks (@(Subtasks.TotalCount - Subtasks.Items.Count) more)
         </button>
     }
-    @if (!ReadOnly)
+    @if (!ReadOnly && !_adding)
+    {
+        @* As Jira: "Add child work item" opens the box. *@
+        <button type="button" class="placeholder-btn add-child-toggle" @onclick="StartAdding"><Icon Name="plus" Size="14" /> Add child work item</button>
+    }
+    else if (!ReadOnly)
     {
         <div class="add-child">
             <label class="sr-only" for="add-subtask">New sub-task title</label>
-            <input id="add-subtask" class="input" type="text" placeholder="+ Add a sub-task" autocomplete="off" maxlength="255"
+            <input id="add-subtask" class="input" @ref="_input" type="text" placeholder="What needs to be done?" autocomplete="off" maxlength="255"
                    @bind="_title" @bind:event="oninput" @onkeydown="KeyDownAsync"
                    aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="add-subtask-error" />
             <button type="button" class="btn btn-sm" @onclick="AddAsync">Add</button>
@@ -62,6 +67,27 @@
 </section>
 
 @code {
+    private bool _adding;
+    private bool _focusInput;
+    private ElementReference _input;
+
+    /// <summary>Opens the box for a new sub-task, from its own button or from "Add child work item" under the title.</summary>
+    public void StartAdding()
+    {
+        _adding = true;
+        _focusInput = true;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusInput)
+        {
+            _focusInput = false;
+            await _input.FocusAsync();
+        }
+    }
+
     private readonly Dictionary<string, long> _pendingStatus = new(StringComparer.Ordinal);
     private string _title = "";
     private string? _error;
@@ -124,6 +150,7 @@
         {
             _title = "";
             _error = null;
+            _adding = false;
         }
 
         return e.Key == "Enter" ? AddAsync() : Task.CompletedTask;

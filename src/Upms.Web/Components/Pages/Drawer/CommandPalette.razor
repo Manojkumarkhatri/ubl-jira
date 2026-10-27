@@ -1,0 +1,94 @@
+@* Jira's command palette (Ctrl+K) on a work item: type to find an action, move with the arrow keys and press Enter. The
+   input is a combobox and the actions a listbox, so screen readers hear the highlighted action. *@
+<ModalDialog @ref="_dialog" Title="Command palette" TestId="command-palette" Class="command-palette">
+    <ChildContent>
+        <label class="sr-only" for="palette-input">Search actions</label>
+        <input id="palette-input" class="input palette-input" type="text" autocomplete="off" placeholder="Search actions for @ItemKey…"
+               role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list"
+               aria-activedescendant="@(Shown.Count > 0 ? OptionId(_active) : null)"
+               value="@_text" @oninput="TextChanged" @onkeydown="KeyDownAsync" autofocus />
+        <ul id="palette-list" class="palette-list" role="listbox" aria-label="Actions">
+            @{
+                string? group = null;
+            }
+            @for (var i = 0; i < Shown.Count; i++)
+            {
+                var index = i;
+                var command = Shown[i];
+                @if (command.Group != group)
+                {
+                    group = command.Group;
+                    <li role="presentation" class="palette-group">@group</li>
+                }
+                <li id="@OptionId(index)" role="option" class="palette-option @(index == _active ? "is-active" : "")" aria-selected="@(index == _active ? "true" : "false")"
+                    @onclick="() => RunAsync(command)" @onmouseenter="() => _active = index">
+                    <span>@command.Label</span>
+                    @if (command.Hint is { } hint)
+                    {
+                        <span class="hint">@hint</span>
+                    }
+                </li>
+            }
+            @if (Shown.Count == 0)
+            {
+                <li role="presentation" class="hint palette-empty">No actions match “@_text”.</li>
+            }
+        </ul>
+    </ChildContent>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _dialog;
+    private IReadOnlyList<PaletteCommand> _commands = [];
+    private string _text = "";
+    private int _active;
+
+    [Parameter]
+    public string ItemKey { get; set; } = "";
+
+    private IReadOnlyList<PaletteCommand> Shown =>
+        string.IsNullOrWhiteSpace(_text)
+            ? _commands
+            : _commands.Where(c => _text.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .All(word => c.Label.Contains(word, StringComparison.OrdinalIgnoreCase) || c.Group.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+    private static string OptionId(int index) => $"palette-option-{index}";
+
+    public void Open(IReadOnlyList<PaletteCommand> commands)
+    {
+        _commands = commands;
+        _text = "";
+        _active = 0;
+        _dialog!.Open();
+    }
+
+    private void TextChanged(ChangeEventArgs e)
+    {
+        _text = e.Value?.ToString() ?? "";
+        _active = 0;
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs e)
+    {
+        var count = Shown.Count;
+        switch (e.Key)
+        {
+            case "ArrowDown" when count > 0:
+                _active = (_active + 1) % count;
+                break;
+            case "ArrowUp" when count > 0:
+                _active = (_active - 1 + count) % count;
+                break;
+            case "Enter" when count > 0:
+                await RunAsync(Shown[Math.Min(_active, count - 1)]);
+                break;
+        }
+    }
+
+    private async Task RunAsync(PaletteCommand command)
+    {
+        await _dialog!.CloseAsync();
+        await command.Run();
+    }
+}

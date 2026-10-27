@@ -1,0 +1,150 @@
+@using Upms.Application.Work
+@implements IDisposable
+@inject SidebarState State
+@inject ISearchService Search
+@inject ISavedFilterService Filters
+@inject NavigationManager Navigation
+@inject IOrganizationAdminService Organization
+@* The sidebar on every page, as in today's Jira Cloud (Jira parity pass US4; contracts/ui-routes.md "Every page"): For
+   you, Recent, Starred, Spaces, Filters and, for administrators, Accounts. The sections are disclosures, not hover menus,
+   so they work with the keyboard and read well in screen readers. On phones the same list opens as a panel. *@
+<nav class="sidebar-nav" aria-label="Main" data-testid="sidebar">
+    <ul class="side-list">
+        <li><NavItem Href=""><Icon Name="home" /> Home</NavItem></li>
+        <li><NavItem Href="for-you"><Icon Name="foryou" /> For you</NavItem></li>
+        <li>
+            <button type="button" class="side-section" aria-expanded="@Open("recent")" aria-controls="@Id("recent")" @onclick="@(() => Toggle("recent"))"><Icon Name="clock" /> Recent</button>
+            <div id="@Id("recent")" class="side-group" hidden="@(!IsOpen("recent"))">
+                <h3 class="side-heading">Items</h3>
+                @if (_recentItems.Count == 0)
+                {
+                    <p class="hint">Items you open appear here.</p>
+                }
+                else
+                {
+                    <ul>
+                        @foreach (var item in _recentItems)
+                        {
+                            <li><a href="@ItemHref(item)"><span class="key">@item.Key</span> @item.Title</a></li>
+                        }
+                    </ul>
+                }
+                <h3 class="side-heading">Spaces</h3>
+                @SpaceLinks(State.View?.RecentSpaces, "Spaces you open appear here.")
+            </div>
+        </li>
+        <li>
+            <button type="button" class="side-section" aria-expanded="@Open("starred")" aria-controls="@Id("starred")" @onclick="@(() => Toggle("starred"))"><Icon Name="star" /> Starred</button>
+            <div id="@Id("starred")" class="side-group" hidden="@(!IsOpen("starred"))">
+                @SpaceLinks(State.View?.Starred, "Star a space to keep it here.")
+            </div>
+        </li>
+        <li>
+            <button type="button" class="side-section" aria-expanded="@Open("spaces")" aria-controls="@Id("spaces")" @onclick="@(() => Toggle("spaces"))"><Icon Name="spaces" /> Spaces</button>
+            @if (_access.Can(Rights.CreateSpaces))
+            {
+                <a class="side-add" href="create-space" aria-label="Create space" title="Create space"><Icon Name="plus" /></a>
+            }
+            <div id="@Id("spaces")" class="side-group" hidden="@(!IsOpen("spaces"))">
+                @SpaceLinks(State.View?.Spaces, "Spaces you star or open appear here.")
+                <a class="side-more" href="spaces">View all spaces</a>
+            </div>
+        </li>
+        <li>
+            <button type="button" class="side-section" aria-expanded="@Open("filters")" aria-controls="@Id("filters")" @onclick="@(() => Toggle("filters"))"><Icon Name="filter" /> Filters</button>
+            <div id="@Id("filters")" class="side-group" hidden="@(!IsOpen("filters"))">
+                @if (_filters is { } filters && (filters.Mine.Count > 0 || filters.SharedWithMe.Count > 0))
+                {
+                    <ul>
+                        @foreach (var filter in filters.Mine.Take(FiltersShown).Concat(filters.SharedWithMe.Take(FiltersShown)))
+                        {
+                            <li><a href="search?filter=@filter.Id">@filter.Name</a></li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="hint">Saved filters appear here.</p>
+                }
+                <a class="side-more" href="search">View all filters</a>
+            </div>
+        </li>
+        @if (_access.Can(Rights.DownloadSpaceMis) || _access.Can(Rights.DownloadPortfolioMis) || _access.Can(Rights.DownloadDepartmentMis)
+            || _access.Can(Rights.DownloadAllMis))
+        {
+            <li><NavItem Href="mis"><Icon Name="reports" /> MIS reports</NavItem></li>
+        }
+        @if (_access.IsAdministrator || _access.Type is UserType.Head or UserType.PortfolioLead)
+        {
+            <li><NavItem Href="admin/portfolios"><Icon Name="spaces" /> Portfolios</NavItem></li>
+        }
+        @* One User management page: people, their rights and each type's defaults (owner, 2026-10-26). *@
+        @if (_access.IsAdministrator || (_access.Department is not null && _access.Rights.HasAny(RightsCatalog.ManagesUsers)))
+        {
+            <li><NavItem Href="admin/users"><Icon Name="people" /> User management</NavItem></li>
+        }
+    </ul>
+</nav>
+
+@code {
+    private const int FiltersShown = 10;
+    private readonly string _prefix = "side-" + Guid.NewGuid().ToString("N")[..6];
+    private readonly HashSet<string> _open = ["spaces"];
+    private IReadOnlyList<SearchResultRow> _recentItems = [];
+    private SavedFilterList? _filters;
+    private MyAccess _access = MyAccess.None;
+
+    private string Id(string section) => $"{_prefix}-{section}";
+
+    private bool IsOpen(string section) => _open.Contains(section);
+
+    private string Open(string section) => IsOpen(section) ? "true" : "false";
+
+    private async Task Toggle(string section)
+    {
+        if (!_open.Remove(section))
+        {
+            _open.Add(section);
+            // Recent items and filters change as the person works: they are read when their section opens.
+            if (section == "recent" && await Search.RecentAsync(CancellationToken.None) is { IsSuccess: true } recent)
+            {
+                _recentItems = recent.Value!;
+            }
+            else if (section == "filters" && await Filters.ListAsync(CancellationToken.None) is { IsSuccess: true } filters)
+            {
+                _filters = filters.Value!;
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnChanged;
+        await State.EnsureLoadedAsync();
+        _access = await Organization.MyAccessAsync(CancellationToken.None);
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private static string ItemHref(SearchResultRow item) =>
+        $"spaces/{item.ProjectKey}/board?task={Uri.EscapeDataString(item.Key)}";
+
+    private static RenderFragment SpaceLinks(IReadOnlyList<Upms.Application.Projects.SpaceLink>? spaces, string empty) => __builder =>
+    {
+        if (spaces is not { Count: > 0 })
+        {
+            <p class="hint">@empty</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var space in spaces)
+                {
+                    <li><NavItem Href="@($"spaces/{space.Key}")"><span class="space-mark" aria-hidden="true">@space.Key[..1]</span> <span class="side-name" title="@space.Name">@space.Name</span></NavItem></li>
+                }
+            </ul>
+        }
+    };
+
+    public void Dispose() => State.Changed -= OnChanged;
+}

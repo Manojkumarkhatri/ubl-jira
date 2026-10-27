@@ -1,0 +1,34 @@
+@using System.Globalization
+@* A date as a chip, as in Jira's Create form: it reads "Due date" until a date is chosen, then the date, with a way to clear
+   it. The native date field does the picking, so it works with the keyboard and screen readers. *@
+<span class="chip-date @(Value is null ? "" : "has-value")">
+    <label class="chip-btn" for="@Id">
+        <Icon Name="calendar" />
+        <span>@(Value is { } date ? date.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : Label)</span>
+    </label>
+    <input id="@Id" class="chip-date-input" type="date" min="2000-01-01" max="2099-12-31" aria-label="@Label"
+           value="@(Value?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "")" @onchange="ChangedAsync" />
+    @if (Value is not null)
+    {
+        <button type="button" class="chip-clear" aria-label="Clear @Label" @onclick="() => ValueChanged.InvokeAsync(null)"><Icon Name="close" Size="12" /></button>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    [Parameter]
+    public DateOnly? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<DateOnly?> ValueChanged { get; set; }
+
+    private Task ChangedAsync(ChangeEventArgs e) =>
+        ValueChanged.InvokeAsync(DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date
+            : null);
+}

@@ -23,6 +23,8 @@ public static class WebServiceCollectionExtensions
         services.AddScoped<AuthenticationStateProvider, UserRevalidatingAuthenticationStateProvider>();
         services.AddScoped<IdentityRedirectManager>();
         services.AddScoped<LiveAnnouncer>();
+        services.AddScoped<Upms.Web.Components.Layout.CreateWorkLauncher>();
+        services.AddScoped<Upms.Web.Components.Layout.SidebarState>();
         services.AddScoped<ViewerTimeZone>();
         services.AddScoped<ViewerToday>();
 
@@ -99,16 +101,41 @@ public static class WebServiceCollectionExtensions
         // UI-facing services run each call in its own scope (see OperationScope).
         services.AddOperationScoped<IAccountService>();
         services.AddOperationScoped<IUserAdminService>();
+        services.AddOperationScoped<IOrganizationAdminService>();
         services.AddOperationScoped<IOrganizationSettingsReader>();
         services.AddOperationScoped<Upms.Application.Projects.IProjectService>();
+        services.AddOperationScoped<Upms.Application.Projects.ISpaceTrashService>();
         services.AddOperationScoped<Upms.Application.Projects.IBoardColumnService>();
         services.AddOperationScoped<Upms.Application.Projects.IProjectMemberService>();
+        services.AddOperationScoped<Upms.Application.Projects.ISpaceNavigationService>();
+        services.AddOperationScoped<Upms.Application.Projects.ISpaceViewService>();
+        services.AddOperationScoped<Upms.Application.Projects.IPortfolioService>();
         services.AddOperationScoped<Upms.Application.Work.IBoardService>();
         services.AddOperationScoped<Upms.Application.Work.IWorkItemService>();
+        services.AddOperationScoped<Upms.Application.Work.IWorkItemActionService>();
+        services.AddOperationScoped<Upms.Application.Work.ISpaceFieldService>();
+        services.AddOperationScoped<Upms.Application.Work.ICreateWorkService>();
+        services.AddOperationScoped<Upms.Application.Work.ISpaceSummaryService>();
         services.AddOperationScoped<Upms.Application.Work.ICommentService>();
         services.AddOperationScoped<Upms.Application.Work.IMyTasksService>();
         services.AddOperationScoped<Upms.Application.Work.IWorkItemListService>();
         services.AddOperationScoped<Upms.Application.Work.ITimelineService>();
+        services.AddOperationScoped<Upms.Application.Work.ICalendarService>();
+        services.AddOperationScoped<Upms.Application.Work.ISpaceReportService>();
+        services.AddOperationScoped<Upms.Application.Work.IMisService>();
+        services.AddOperationScoped<Upms.Application.Work.ISpaceDocService>();
+        services.AddOperationScoped<Upms.Application.Work.ISpaceFormService>();
+        services.AddOperationScoped<Upms.Application.Work.IBacklogService>();
+        services.AddOperationScoped<Upms.Application.Work.ISprintService>();
+        services.AddOperationScoped<Upms.Application.Work.IStageGateService>();
+        services.AddOperationScoped<Upms.Application.Work.IDependencyService>();
+        services.AddOperationScoped<Upms.Application.Work.IWatcherService>();
+        services.AddOperationScoped<Upms.Application.Work.IMentionService>();
+        services.AddOperationScoped<Upms.Application.Work.IAttachmentService>();
+        services.AddOperationScoped<Upms.Application.Work.ISearchService>();
+        services.AddOperationScoped<Upms.Application.Work.ISavedFilterService>();
+        services.AddOperationScoped<Upms.Application.Work.ILabelService>();
+        services.AddOperationScoped<Upms.Application.Notifications.INotificationService>();
         return services;
     }
 

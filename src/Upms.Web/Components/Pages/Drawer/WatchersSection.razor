@@ -1,0 +1,187 @@
+@using Upms.Application.Work
+@inject IWatcherService Watchers
+@inject IMentionService People
+@* Watching an item (Phase 4 FR-011–FR-013, research R7, R25): anyone who can see it starts or stops watching; the count
+   opens the list; Project Admins and administrators add and remove people. *@
+@if (Compact)
+{
+    @* Jira's eye button at the top of an item: the number of watchers, and the list with "Watch" behind it. *@
+    <div class="watch-compact" data-testid="watchers">
+        <button type="button" class="icon-btn head-action watch-btn @(_view.IsWatching ? "is-on" : "")" data-testid="watchers-count" title="Watchers"
+                aria-expanded="@(_open ? "true" : "false")" aria-controls="watchers-pop" @onclick="() => _open = !_open">
+            @* The space is in the expression: Razor trims a space at the start of an element, which made the name "2watchers". *@
+            <Icon Name="eye" /> @_view.Count<span class="sr-only">@($" {(_view.Count == 1 ? "watcher" : "watchers")}")@(_view.IsWatching ? ", you are watching" : "")</span>
+        </button>
+        <span class="sr-only" role="status">@_status</span>
+        @if (_open)
+        {
+            <div id="watchers-pop" class="watch-pop">
+                <div class="watch-row">
+                    <button type="button" class="btn btn-sm" data-testid="watch-toggle" disabled="@_busy" @onclick="ToggleWatchAsync">
+                        @(_view.IsWatching ? "Stop watching" : "Start watching")
+                    </button>
+                </div>
+                @WatchersList()
+            </div>
+        }
+    </div>
+}
+else
+{
+<div class="drawer-section watchers" data-testid="watchers">
+    <div class="watch-row">
+        <button type="button" class="btn btn-sm" data-testid="watch-toggle" disabled="@_busy" @onclick="ToggleWatchAsync">
+            @(_view.IsWatching ? "Stop watching" : "Watch")
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" data-testid="watchers-count" aria-expanded="@(_open ? "true" : "false")"
+                aria-controls="watchers-list" @onclick="() => _open = !_open">
+            @_view.Count @(_view.Count == 1 ? "watcher" : "watchers")
+        </button>
+        <span class="sr-only" role="status">@_status</span>
+    </div>
+    @if (_open)
+    {
+        @WatchersList()
+    }
+</div>
+}
+
+@code {
+    /// <summary>The eye button for the top of an item, instead of the panel row.</summary>
+    [Parameter]
+    public bool Compact { get; set; }
+
+    private RenderFragment WatchersList() => __builder =>
+    {
+        <div id="watchers-list" class="watchers-list" role="region" aria-label="Watchers of @WorkItemKey">
+            @if (_view.People.Count == 0)
+            {
+                <p class="hint">No one is watching yet.</p>
+            }
+            else
+            {
+                <ul>
+                    @foreach (var person in _view.People)
+                    {
+                        <li @key="person.UserId">
+                            <span>@person.DisplayName</span>
+                            @if (_view.CanManage)
+                            {
+                                <button type="button" class="btn btn-ghost btn-sm" disabled="@_busy" aria-label="Remove @person.DisplayName from watchers"
+                                        @onclick="() => RemoveAsync(person)">Remove</button>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            @if (_view.CanManage)
+            {
+                <label for="add-watcher">Add watcher</label>
+                <input id="add-watcher" class="input" type="search" autocomplete="off" placeholder="Name or user name"
+                       aria-describedby="add-watcher-error" @bind="_term" @bind:event="oninput" @bind:after="FindAsync" />
+                <span id="add-watcher-error" class="error-text" role="alert">@_error</span>
+                @if (_found.Count > 0)
+                {
+                    <ul class="watcher-choices" aria-label="People found">
+                        @foreach (var person in _found)
+                        {
+                            <li @key="person.UserId">
+                                <button type="button" class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => AddAsync(person)">
+                                    Add @person.DisplayName <span class="hint">@person.UserName</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            }
+        </div>
+    };
+
+    private WatchersView _view = new(0, false, [], false);
+    private WatchersView? _initial;
+    private IReadOnlyList<PersonView> _found = [];
+    private string _term = "";
+    private string? _status;
+    private string? _error;
+    private bool _open;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string WorkItemKey { get; set; } = "";
+
+    /// <summary>The watchers loaded with the item's details.</summary>
+    [Parameter, EditorRequired]
+    public WatchersView Initial { get; set; } = default!;
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(Initial, _initial))
+        {
+            _initial = Initial;
+            _view = Initial;
+        }
+    }
+
+    private Task ToggleWatchAsync() => ChangeAsync(
+        _view.IsWatching ? Watchers.StopWatchingAsync(WorkItemKey, CancellationToken.None) : Watchers.WatchAsync(WorkItemKey, CancellationToken.None),
+        view => view.IsWatching ? $"You are watching {WorkItemKey}." : $"You stopped watching {WorkItemKey}.");
+
+    private Task RemoveAsync(PersonView person) => ChangeAsync(
+        Watchers.RemoveAsync(WorkItemKey, person.UserId, CancellationToken.None), _ => $"{person.DisplayName} no longer watches {WorkItemKey}.");
+
+    private async Task AddAsync(PersonView person)
+    {
+        await ChangeAsync(Watchers.AddAsync(WorkItemKey, person.UserId, CancellationToken.None), _ => $"{person.DisplayName} now watches {WorkItemKey}.");
+        if (_error is null)
+        {
+            _term = "";
+            _found = [];
+        }
+    }
+
+    // @bind keeps characters typed while an answer is on its way; value= with @oninput would put back an older value.
+    private async Task FindAsync()
+    {
+        if (_term.Trim().Length == 0)
+        {
+            _found = [];
+            return;
+        }
+
+        var term = _term;
+        var found = await People.SuggestAsync(WorkItemKey, term, CancellationToken.None);
+        if (term == _term)
+        {
+            // Only the answer for the latest text counts; people already watching are left out.
+            _found = found.IsSuccess ? found.Value!.Where(p => _view.People.All(w => w.UserId != p.UserId)).ToList() : [];
+        }
+    }
+
+    private async Task ChangeAsync(Task<Upms.Application.Common.Results.Result<WatchersView>> change, Func<WatchersView, string> said)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await change;
+            if (result.IsSuccess)
+            {
+                _view = result.Value!;
+                _status = said(_view);
+                _error = null;
+            }
+            else
+            {
+                _error = result.Error!.Message;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

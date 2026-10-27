@@ -1,0 +1,19 @@
+@* The end of a list, where a dragged row is dropped to go to its bottom. *@
+@if (Visible)
+{
+    <div class="col-drop-end list-drop-end @(Dragging ? "active" : "")" data-testid="list-drop-end"
+         @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDrop.InvokeAsync()">
+        @(Dragging ? "Drop here to move to the end" : "")
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public bool Dragging { get; set; }
+
+    [Parameter]
+    public EventCallback OnDrop { get; set; }
+}

@@ -52,6 +52,9 @@ public sealed class BoardFiltersTests : BunitTestBase
     private static List<string> Keys(IRenderedComponent<BoardPage> cut) =>
         cut.FindAll("article.bcard").Select(c => c.GetAttribute("data-drag-key")!).ToList();
 
+    /// <summary>Opens the toolbar's "Filter" panel, which holds the assignee filter.</summary>
+    private static void OpenFilter(IRenderedComponent<BoardPage> cut) => cut.Find("button[aria-controls=board-filter-panel]").Click();
+
     [Fact]
     public void Cards_show_the_assignees_initials_with_the_name_as_text_and_the_due_date()
     {
@@ -80,8 +83,8 @@ public sealed class BoardFiltersTests : BunitTestBase
     {
         var cut = RenderBoard();
 
-        Assert.Contains("no longer on the project", cut.Find("[data-testid='card-WEB-5']").TextContent, StringComparison.Ordinal);
-        Assert.DoesNotContain("no longer on the project", cut.Find("[data-testid='card-WEB-2']").TextContent, StringComparison.Ordinal);
+        Assert.Contains("no longer in the space", cut.Find("[data-testid='card-WEB-5']").TextContent, StringComparison.Ordinal);
+        Assert.DoesNotContain("no longer in the space", cut.Find("[data-testid='card-WEB-2']").TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,6 +112,7 @@ public sealed class BoardFiltersTests : BunitTestBase
     public void P2_US2_AS6_The_assignee_filter_offers_Unassigned_and_everyone_on_the_cards()
     {
         var cut = RenderBoard();
+        OpenFilter(cut);
 
         var options = cut.FindAll("#assignee-filter option").Select(o => o.TextContent.Trim()).ToList();
         Assert.Equal(["Anyone", "Me (Amina Khan)", "Unassigned", "Bilal Ahmed", "Gone Away"], options);
@@ -128,6 +132,7 @@ public sealed class BoardFiltersTests : BunitTestBase
     public void Only_my_tasks_and_the_assignee_filter_are_the_same_choice()
     {
         var cut = RenderBoard();
+        OpenFilter(cut);
 
         cut.Find("#assignee-filter").Change("me");
 

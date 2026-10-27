@@ -1,0 +1,127 @@
+@using System.Globalization
+@using Upms.Application.Work
+@inject IDependencyService Dependencies
+@inject LiveAnnouncer Announcer
+
+@* An item's dependencies (Phase 3 FR-047–FR-049): what it waits for and what waits for it, with late marks as words, not
+   color alone (FR-051). Contributors add them by finding the other item, and remove them. *@
+<section class="drawer-section" data-testid="dependencies" aria-labelledby="dependencies-title">
+    <div class="section-head">
+        <h3 id="dependencies-title" class="section-title">Linked work items</h3>
+        @if (!ReadOnly)
+        {
+            <button type="button" class="btn btn-ghost btn-sm" data-testid="add-dependency" @onclick="() => _dialog!.Open()">Add linked work item</button>
+        }
+    </div>
+    @if (List.WaitsFor.Count == 0 && List.Blocks.Count == 0)
+    {
+        <p class="hint">No dependencies.</p>
+    }
+    @if (List.WaitsFor.Count > 0)
+    {
+        <h4 class="hint dep-heading">Waits for</h4>
+        <ul class="child-list" data-testid="waits-for">
+            @foreach (var item in List.WaitsFor)
+            {
+                <li data-testid="dependency" @key="item.Key">@Row(item, waiting: ItemKey, waitedFor: item.Key)</li>
+            }
+        </ul>
+    }
+    @if (List.Blocks.Count > 0)
+    {
+        <h4 class="hint dep-heading">Blocks</h4>
+        <ul class="child-list" data-testid="blocks">
+            @foreach (var item in List.Blocks)
+            {
+                <li data-testid="dependency" @key="item.Key">@Row(item, waiting: item.Key, waitedFor: ItemKey)</li>
+            }
+        </ul>
+    }
+</section>
+
+@if (!ReadOnly)
+{
+    <AddDependencyDialog @ref="_dialog" ProjectKey="@ProjectKey" ItemKey="@ItemKey" OnAdded="AddedAsync" />
+}
+
+@code {
+    private AddDependencyDialog? _dialog;
+
+    /// <summary>"Link work item" under the title opens the same dialog.</summary>
+    public void OpenAdd() => _dialog?.Open();
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    /// <summary>The item the drawer shows.</summary>
+    [Parameter, EditorRequired]
+    public string ItemKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public DependencyList List { get; set; } = DependencyList.Empty;
+
+    /// <summary>True for Viewers: nothing is added or removed (Phase 3 FR-055).</summary>
+    [Parameter]
+    public bool ReadOnly { get; set; }
+
+    /// <summary>Raised after a change; the drawer reads the item again, with its history.</summary>
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    private RenderFragment Row(DependencyView item, string waiting, string waitedFor) => __builder =>
+    {
+        <a class="child-link" href="spaces/@ProjectKey/board?task=@item.Key"><TypeIcon Type="item.Type" /> <span class="key">@item.Key</span> <span class="child-title">@item.Title</span></a>
+        <span class="hint">@item.Status.Name@(DatesText(item) is { } dates ? $" · {dates}" : "")</span>
+        @if (item.IsLate)
+        {
+            <span class="overdue-label" data-testid="late" title="Starts before the item it waits for is due">Late</span>
+        }
+        @if (!ReadOnly)
+        {
+            <button type="button" class="btn btn-sm btn-ghost" data-testid="remove-dependency" disabled="@_busy"
+                    aria-label="Remove the dependency: @waiting waits for @waitedFor"
+                    @onclick="() => RemoveAsync(waiting, waitedFor)">Remove</button>
+        }
+    };
+
+    private static string? DatesText(DependencyView item) => (item.StartDate, item.DueDate) switch
+    {
+        ({ } start, { } due) => $"{start.ToString("d MMM", CultureInfo.InvariantCulture)} – {due.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}",
+        ({ } start, null) => $"Starts {start.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}",
+        (null, { } due) => $"Due {due.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}",
+        _ => null,
+    };
+
+    private async Task AddedAsync(string message)
+    {
+        Announcer.Announce(message);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task RemoveAsync(string waiting, string waitedFor)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Dependencies.RemoveAsync(waiting, waitedFor, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                Announcer.Announce(result.Error!.Message);
+                return;
+            }
+
+            Announcer.Announce($"{waiting} no longer waits for {waitedFor}.");
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

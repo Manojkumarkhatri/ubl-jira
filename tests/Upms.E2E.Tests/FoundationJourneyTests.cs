@@ -39,7 +39,7 @@ public sealed partial class FoundationJourneyTests(AppFixture app) : BrowserTest
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Profile", Exact = true })).ToBeVisibleAsync();
         await page.GetByLabel("Display name", new() { Exact = true }).FillAsync("Farah A.");
         await page.GetByLabel("Time zone", new() { Exact = true }).SelectOptionAsync("Asia/Karachi");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Save" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Save", Exact = true }).ClickAsync();
         await Assertions.Expect(page.GetByText("Saved", new() { Exact = true })).ToBeVisibleAsync();
         await page.AssertNoAccessibilityViolationsAsync();
     }
@@ -69,7 +69,7 @@ public sealed partial class FoundationJourneyTests(AppFixture app) : BrowserTest
         var password = await App.CreateUserAsync("hina", "Hina Shah");
 
         var page = await SignInAsync("hina", password);
-        await GotoAsync(page, "/projects");
+        await GotoAsync(page, "/spaces");
         await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Accounts" })).ToHaveCountAsync(0);
 
         await page.GotoAsync("/admin/users");

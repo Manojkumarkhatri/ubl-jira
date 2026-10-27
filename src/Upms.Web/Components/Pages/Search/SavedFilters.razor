@@ -1,0 +1,252 @@
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@inject ISavedFilterService Filters
+@* Saved filters beside the results (Phase 4 FR-039–FR-041): "My filters" and "Shared with me"; saving the current search;
+   and for one's own filter, rename, update with this search, share with projects, and delete. *@
+<aside class="saved-filters" aria-labelledby="saved-filters-title" data-testid="saved-filters">
+    <h2 id="saved-filters-title" class="section-title">Saved filters</h2>
+    <span class="sr-only" role="status">@_status</span>
+    @if (_error is not null)
+    {
+        <p class="error-text" role="alert">@_error</p>
+    }
+
+    <h3 class="subhead">My filters</h3>
+    @if (_list.Mine.Count == 0)
+    {
+        <p class="hint">None yet. Save a search to run it again later.</p>
+    }
+    else
+    {
+        <ul class="filter-list">
+            @foreach (var filter in _list.Mine)
+            {
+                <li @key="filter.Id"><a href="@($"search?filter={filter.Id}")" aria-current="@(filter.Id == FilterId ? "true" : null)">@filter.Name</a>
+                    @if (filter.SharedWith.Count > 0)
+                    {
+                        @* An expression, so the leading space survives Razor's whitespace trimming. *@
+                        <span class="hint">@($" shared with {string.Join(", ", filter.SharedWith.Select(p => p.Key))}")</span>
+                    }
+                </li>
+            }
+        </ul>
+    }
+
+    <h3 class="subhead">Shared with me</h3>
+    @if (_list.SharedWithMe.Count == 0)
+    {
+        <p class="hint">No filters are shared with you.</p>
+    }
+    else
+    {
+        <ul class="filter-list" data-testid="shared-filters">
+            @foreach (var filter in _list.SharedWithMe)
+            {
+                <li @key="filter.Id"><a href="@($"search?filter={filter.Id}")">@filter.Name</a> <span class="hint">by @filter.OwnerName</span></li>
+            }
+        </ul>
+    }
+
+    @if (Current is { IsMine: true } mine)
+    {
+        <div class="filter-actions" role="group" aria-label="@($"Filter {mine.Name}")">
+            <h3 class="subhead">@mine.Name</h3>
+            @if (_mode == Mode.Rename)
+            {
+                <label for="filter-rename">New name</label>
+                <input id="filter-rename" class="input" maxlength="80" @bind="_name" @bind:event="oninput" />
+                <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="RenameAsync">Rename</button>
+                <button type="button" class="btn btn-sm" @onclick="() => _mode = Mode.None">Cancel</button>
+            }
+            else if (_mode == Mode.Share)
+            {
+                <fieldset>
+                    <legend>Share with the members of</legend>
+                    @foreach (var project in Projects.Where(p => p.MyRole is not null || p.AdministratorAccess))
+                    {
+                        <label class="checkbox"><input type="checkbox" checked="@_shareKeys.Contains(project.Key)" @onchange="e => ToggleShare(project.Key, e.Value is true)" /> @project.Key – @project.Name</label>
+                    }
+                </fieldset>
+                <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="ShareAsync">Save sharing</button>
+                <button type="button" class="btn btn-sm" @onclick="() => _mode = Mode.None">Cancel</button>
+            }
+            else if (_mode == Mode.Delete)
+            {
+                <span class="confirm-text">Delete the filter @mine.Name?</span>
+                <button type="button" class="btn btn-sm btn-danger" data-testid="confirm-delete-filter" disabled="@_busy" @onclick="DeleteAsync">Delete filter</button>
+                <button type="button" class="btn btn-sm" @onclick="() => _mode = Mode.None">Keep it</button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="() => { _mode = Mode.Rename; _name = mine.Name; }">Rename</button>
+                <button type="button" class="btn btn-ghost btn-sm" disabled="@(_busy || mine.Query == CurrentQuery)" @onclick="UpdateAsync">Update with this search</button>
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="StartShare">Share</button>
+                <button type="button" class="btn btn-ghost btn-sm btn-danger" @onclick="() => _mode = Mode.Delete">Delete</button>
+            }
+        </div>
+    }
+
+    <form class="filter-save" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+        <label for="filter-name">Save this search as</label>
+        <input id="filter-name" class="input" maxlength="80" @bind="_newName" @bind:event="oninput" aria-describedby="filter-name-error" />
+        <span id="filter-name-error" class="error-text">@_saveError</span>
+        <button type="submit" class="btn btn-sm" disabled="@(_busy || CurrentQuery.Length == 0)">Save as filter</button>
+    </form>
+</aside>
+
+@code {
+    private SavedFilterList _list = new([], []);
+    private HashSet<string> _shareKeys = new(StringComparer.OrdinalIgnoreCase);
+    private Mode _mode;
+    private string _name = string.Empty;
+    private string _newName = string.Empty;
+    private string? _status;
+    private string? _error;
+    private string? _saveError;
+    private bool _busy;
+
+    private enum Mode
+    {
+        None,
+        Rename,
+        Share,
+        Delete,
+    }
+
+    /// <summary>The current search as a saved filter keeps it.</summary>
+    [Parameter, EditorRequired]
+    public string CurrentQuery { get; set; } = string.Empty;
+
+    /// <summary>The saved filter the search came from, if any.</summary>
+    [Parameter]
+    public long? FilterId { get; set; }
+
+    /// <summary>The projects the viewer can see, for sharing.</summary>
+    [Parameter]
+    public IReadOnlyList<ProjectSummary> Projects { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<long> OnSaved { get; set; }
+
+    [Parameter]
+    public EventCallback OnDeleted { get; set; }
+
+    private SavedFilterView? Current => FilterId is { } id ? _list.Mine.Concat(_list.SharedWithMe).FirstOrDefault(f => f.Id == id) : null;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        var listed = await Filters.ListAsync(CancellationToken.None);
+        if (listed.IsSuccess)
+        {
+            _list = listed.Value!;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            var saved = await Filters.SaveAsync(_newName, CurrentQuery, CancellationToken.None);
+            if (!saved.IsSuccess)
+            {
+                _saveError = saved.Error!.MessageFor("Name");
+                return;
+            }
+
+            _saveError = null;
+            _newName = string.Empty;
+            _status = $"Saved as {saved.Value!.Name}.";
+            await ReloadAsync();
+            await OnSaved.InvokeAsync(saved.Value.Id);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task RenameAsync() => ChangeAsync(f => Filters.RenameAsync(f.Id, _name, f.Version, CancellationToken.None), f => $"Renamed to {f.Name}.");
+
+    private Task UpdateAsync() => ChangeAsync(f => Filters.UpdateAsync(f.Id, CurrentQuery, f.Version, CancellationToken.None), f => $"{f.Name} now runs this search.");
+
+    private Task ShareAsync() => ChangeAsync(f => Filters.ShareAsync(f.Id, _shareKeys.ToList(), CancellationToken.None),
+        f => f.SharedWith.Count == 0 ? $"{f.Name} is no longer shared." : $"{f.Name} is shared with {string.Join(", ", f.SharedWith.Select(p => p.Key))}.");
+
+    private void StartShare()
+    {
+        _shareKeys = new HashSet<string>(Current?.SharedWith.Select(p => p.Key) ?? [], StringComparer.OrdinalIgnoreCase);
+        _mode = Mode.Share;
+    }
+
+    private void ToggleShare(string key, bool on)
+    {
+        if (on)
+        {
+            _shareKeys.Add(key);
+        }
+        else
+        {
+            _shareKeys.Remove(key);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Current is not { } filter)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var deleted = await Filters.DeleteAsync(filter.Id, CancellationToken.None);
+            _mode = Mode.None;
+            if (!deleted.IsSuccess)
+            {
+                _error = deleted.Error!.Message;
+                return;
+            }
+
+            _status = $"Deleted the filter {filter.Name}.";
+            await ReloadAsync();
+            await OnDeleted.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ChangeAsync(Func<SavedFilterView, Task<Upms.Application.Common.Results.Result<SavedFilterView>>> change, Func<SavedFilterView, string> said)
+    {
+        if (Current is not { } filter || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var changed = await change(filter);
+            if (!changed.IsSuccess)
+            {
+                _error = changed.Error!.MessageFor("Name");
+                await ReloadAsync(); // a conflict shows the current version
+                return;
+            }
+
+            _error = null;
+            _mode = Mode.None;
+            _status = said(changed.Value!);
+            await ReloadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

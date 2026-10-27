@@ -1,0 +1,80 @@
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Work
+
+@* A planned or active sprint's heading (Phase 3 FR-023–FR-026, FR-028): name, state, dates, goal and totals, and the
+   Project Admins' actions. *@
+<div class="sprint-head">
+    <h2 id="sprint-@Sprint.Id-title">@Sprint.Name</h2>
+    <span class="sprint-state @(Sprint.State == SprintState.Active ? "active" : "")">@(Sprint.State == SprintState.Active ? "Active" : "Planned")</span>
+    @if (Sprint.StartDate is { } start && Sprint.EndDate is { } end)
+    {
+        <span class="hint" data-testid="sprint-dates">@DateRange(start, end)</span>
+        @if (Sprint.State == SprintState.Active && end < Today)
+        {
+            <span class="overdue-label" data-testid="sprint-overdue">Overdue</span>
+        }
+    }
+    <span class="spacer"></span>
+    @if (CanManage)
+    {
+        <button type="button" class="btn btn-sm btn-ghost" data-testid="edit-sprint" aria-label="Edit @Sprint.Name" @onclick="() => OnEdit.InvokeAsync(Sprint)">Edit</button>
+        @if (Sprint.State == SprintState.Planned)
+        {
+            <button type="button" class="btn btn-sm" data-testid="start-sprint" aria-label="Start @Sprint.Name" @onclick="() => OnStart.InvokeAsync(Sprint)">Start sprint</button>
+            <button type="button" class="btn btn-sm btn-ghost btn-danger" data-testid="delete-sprint" aria-label="Delete @Sprint.Name" @onclick="() => OnDelete.InvokeAsync(Sprint)">Delete</button>
+        }
+        else
+        {
+            <button type="button" class="btn btn-sm" data-testid="complete-sprint" aria-label="Complete @Sprint.Name" @onclick="() => OnComplete.InvokeAsync(Sprint)">Complete sprint</button>
+        }
+    }
+</div>
+@if (!string.IsNullOrEmpty(Sprint.Goal))
+{
+    <p class="sprint-goal" data-testid="sprint-goal">@Sprint.Goal</p>
+}
+<p class="hint sprint-totals">
+    <span data-testid="sprint-totals">@TotalsText(Sprint.Totals)</span>
+    @if (Sprint.State == SprintState.Active)
+    {
+        <span data-testid="sprint-progress"> · Done: @Points(Sprint.Totals.CompletedEstimate) · Remaining: @Points(Sprint.Totals.RemainingEstimate) points</span>
+    }
+</p>
+
+@code {
+    [Parameter, EditorRequired]
+    public SprintSection Sprint { get; set; } = default!;
+
+    /// <summary>The viewer's today, for the overdue mark (spec edge case "Sprint past its end date").</summary>
+    [Parameter, EditorRequired]
+    public DateOnly Today { get; set; }
+
+    [Parameter]
+    public bool CanManage { get; set; }
+
+    [Parameter]
+    public EventCallback<SprintSection> OnEdit { get; set; }
+
+    [Parameter]
+    public EventCallback<SprintSection> OnStart { get; set; }
+
+    [Parameter]
+    public EventCallback<SprintSection> OnComplete { get; set; }
+
+    [Parameter]
+    public EventCallback<SprintSection> OnDelete { get; set; }
+
+    /// <summary>"2 items · 5 points · 1 without estimate"; unestimated items count as 0 (spec edge case).</summary>
+    public static string TotalsText(SprintTotals totals) =>
+        $"{ItemCount(totals.Items)} · {Points(totals.Estimate)} {(totals.Estimate == 1 ? "point" : "points")}"
+        + (totals.Unestimated > 0 ? $" · {totals.Unestimated} without estimate" : "");
+
+    public static string ItemCount(int items) => items == 1 ? "1 item" : $"{items} items";
+
+    /// <summary>"21 Sep – 5 Oct 2026".</summary>
+    public static string DateRange(DateOnly start, DateOnly end) =>
+        $"{start.ToString(start.Year == end.Year ? "d MMM" : "d MMM yyyy", CultureInfo.InvariantCulture)} – {end.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}";
+
+    private static string Points(decimal value) => WorkItem.FormatEstimate(value) ?? "0";
+}

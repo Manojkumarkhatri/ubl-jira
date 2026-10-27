@@ -1,0 +1,170 @@
+@page "/spaces/{Key}/docs/{DocId:long}"
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@inject ISpaceViewService SpaceViews
+@inject ISpaceDocService Docs
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+
+<PageTitle>@(_doc?.Title ?? "Page") · Docs · U-PMS</PageTitle>
+
+@* One page of the space's Docs: read it, or edit its title and text with the same editor as descriptions. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_space is null || _doc is null)
+{
+    <p aria-busy="true">Loading the page…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@Key" Title="@_space.SpaceName" Current="ProjectPage.Docs" Template="_space.Template"
+                   CanManage="_space.CanManage" CanRestoreDeleted="_space.IsAdministrator" />
+
+    <article class="doc-page">
+        <nav class="doc-crumbs" aria-label="Docs"><a href="spaces/@Key/docs">Docs</a> <span aria-hidden="true">/</span></nav>
+        @if (_editing)
+        {
+            <label class="sr-only" for="doc-edit-title">Title</label>
+            <input id="doc-edit-title" class="doc-title-input" maxlength="200" @bind="_title" />
+            @if (_error is not null)
+            {
+                <p class="field-error" role="alert">@_error</p>
+            }
+            <RichTextEditor Id="doc-body" Label="Page text" Initial="_doc.Body" SpaceKey="@Key" Placeholder="@("Write the page… Type @ to mention someone.")"
+                            SaveLabel="Publish" OnSave="SaveAsync" OnCancel="CancelEdit" AutoFocus="false" />
+        }
+        else
+        {
+            <div class="doc-head">
+                <h1>@_doc.Title</h1>
+                <div class="doc-actions">
+                    @if (_doc.CanEdit)
+                    {
+                        <button type="button" class="btn" @onclick="StartEdit"><Icon Name="pencil" /> Edit</button>
+                    }
+                    @if (_doc.CanDelete)
+                    {
+                        @if (_confirmDelete)
+                        {
+                            <span class="confirm-text">Delete this page? This can't be undone.</span>
+                            <button type="button" class="btn btn-danger" @onclick="DeleteAsync">Delete</button>
+                            <button type="button" class="btn btn-ghost" @onclick="() => _confirmDelete = false">Cancel</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="icon-btn" aria-label="Delete this page" title="Delete" @onclick="() => _confirmDelete = true"><Icon Name="trash" /></button>
+                        }
+                    }
+                </div>
+            </div>
+            <p class="doc-meta">
+                Created by @_doc.CreatedBy · <LocalTime Value="_doc.CreatedAt" Format="d MMM yyyy" />
+                @if (_doc.UpdatedAt > _doc.CreatedAt.AddMinutes(1))
+                {
+                    <span> · Last updated by @_doc.UpdatedBy, <LocalTime Value="_doc.UpdatedAt" /></span>
+                }
+            </p>
+            @if (_doc.Body is null)
+            {
+                <p class="hint doc-empty">This page is empty.@(_doc.CanEdit ? " Select Edit to write it." : "")</p>
+            }
+            else
+            {
+                <div class="doc-body"><FormattedTextView Text="_doc.Body" /></div>
+            }
+        }
+    </article>
+}
+
+@code {
+    private SpaceViews? _space;
+    private SpaceDocView? _doc;
+    private bool _notFound;
+    private bool _editing;
+    private bool _confirmDelete;
+    private string _title = "";
+    private string? _error;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    [Parameter]
+    public long DocId { get; set; }
+
+    /// <summary><c>?edit=1</c> opens a new page in edit mode.</summary>
+    [SupplyParameterFromQuery(Name = "edit")]
+    public string? EditValue { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var space = await SpaceViews.GetAsync(Key, CancellationToken.None);
+        var doc = await Docs.GetAsync(Key, DocId, CancellationToken.None);
+        _notFound = !space.IsSuccess || !doc.IsSuccess;
+        _space = space.Value;
+        _doc = doc.Value;
+        if (_doc is { CanEdit: true } && EditValue == "1" && !_editing)
+        {
+            StartEdit();
+        }
+    }
+
+    private void StartEdit()
+    {
+        _title = _doc!.Title;
+        _error = null;
+        _editing = true;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        if (EditValue is not null)
+        {
+            Navigation.NavigateTo($"spaces/{Key}/docs/{DocId}", replace: true);
+        }
+    }
+
+    private async Task SaveAsync(RichTextEditor.EditorSave save)
+    {
+        var saved = await Docs.SaveAsync(Key, DocId, _title, save.Document, CancellationToken.None);
+        if (!saved.IsSuccess)
+        {
+            var refused = saved.Error!;
+            if (refused.FieldErrors?.ContainsKey("Title") == true)
+            {
+                _error = refused.MessageFor("Title");
+                save.Error = "Fix the title, then publish again.";
+            }
+            else
+            {
+                save.Error = refused.Message;
+            }
+
+            return;
+        }
+
+        _doc = saved.Value!;
+        _editing = false;
+        Announcer.Announce("Page published.");
+        if (EditValue is not null)
+        {
+            Navigation.NavigateTo($"spaces/{Key}/docs/{DocId}", replace: true);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var deleted = await Docs.DeleteAsync(Key, DocId, CancellationToken.None);
+        if (deleted.IsSuccess)
+        {
+            Announcer.Announce("Page deleted.");
+            Navigation.NavigateTo($"spaces/{Key}/docs");
+        }
+        else
+        {
+            _error = deleted.Error!.Message;
+        }
+    }
+}

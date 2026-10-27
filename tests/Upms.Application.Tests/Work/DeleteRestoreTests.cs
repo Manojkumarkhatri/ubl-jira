@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Upms.Application.Common;
 using Upms.Application.Common.Results;
 using Upms.Application.Tests.Fixtures;
@@ -56,9 +57,11 @@ public sealed class DeleteRestoreTests(SqlServerFixture fixture) : DrawerTestBas
         await AddSubtaskAsync(card.Key, "Wireframes");
         await DeleteAsync(card.Key);
 
+        // Anyone who sees the space reads its archived items, as in Jira; only administrators restore them.
         ActAs(Owner);
-        Assert.Equal(ErrorKind.Forbidden, (await CallAsync<IWorkItemService, Result<Page<DeletedItemView>>>(s =>
-            s.ListDeletedAsync("WEB", PageRequest.First, Ct))).Error!.Kind);
+        Assert.Single((await CallAsync<IWorkItemService, Result<Page<DeletedItemView>>>(s =>
+            s.ListDeletedAsync("WEB", PageRequest.First, Ct))).ValueOrThrow().Items);
+        Assert.Equal(ErrorKind.Forbidden, (await CallAsync<IWorkItemService, Result>(s => s.RestoreAsync(card.Key, Ct))).Error!.Kind);
 
         ActAs(await Data.AdministratorAsync());
         var deleted = (await CallAsync<IWorkItemService, Result<Page<DeletedItemView>>>(s =>
@@ -68,7 +71,7 @@ public sealed class DeleteRestoreTests(SqlServerFixture fixture) : DrawerTestBas
 
         Assert.True((await CallAsync<IWorkItemService, Result>(s => s.RestoreAsync(card.Key, Ct))).IsSuccess);
 
-        Assert.Equal([card.Key], await KeysInAsync(ToDo));
+        Assert.Equal([card.Key, "WEB-2"], await KeysInAsync(ToDo)); // the card and its restored sub-task (Jira parity pass FR-027a)
         Assert.Single((await RequireDetailsAsync(card.Key)).Subtasks.Items);
         var fields = (await HistoryAsync(card.Key)).Items.Select(h => h.Field).ToList();
         Assert.Contains(WorkItemField.Deleted, fields);
@@ -95,5 +98,49 @@ public sealed class DeleteRestoreTests(SqlServerFixture fixture) : DrawerTestBas
 
         Assert.Equal(ErrorKind.NotFound, (await EditAsync(card.Key, new WorkItemEdit.Title("Revived"), version)).Error!.Kind);
         Assert.Equal(ErrorKind.NotFound, (await MoveAsync(card, Done, CardPlacement.AtEnd)).Error!.Kind);
+    }
+}
+
+/// <summary>Deleting and restoring cards of a Scrum project's sprints (Phase 3 data-model.md "WorkItem"; research R10,
+/// R11).</summary>
+public sealed class ScrumDeleteRestoreTests(SqlServerFixture fixture) : ScrumTestBase(fixture)
+{
+    [Fact]
+    public async Task A_card_deleted_from_the_active_sprint_is_removed_and_restored_to_the_backlog()
+    {
+        var story = await StoryAsync("Refund to card", 3);
+        var sprint = await NewSprintAsync();
+        await MoveAsync(story, Into(sprint));
+        await StartAsync(sprint.Id);
+
+        Assert.True((await CallAsync<IWorkItemService, Result>(s => s.DeleteAsync(story, Ct))).IsSuccess);
+
+        Assert.Null(await SprintIdOfAsync(story));
+        Assert.Equal([(story, SprintScopeKind.Committed, (decimal?)3m), (story, SprintScopeKind.Removed, 3m)], await ScopeEventsAsync(sprint.Id));
+
+        ActAs(await Data.AdministratorAsync());
+        Assert.True((await CallAsync<IWorkItemService, Result>(s => s.RestoreAsync(story, Ct))).IsSuccess);
+        ActAs(Owner);
+        Assert.Equal([story], await BacklogKeysAsync());
+        Assert.Empty((await SprintAsync(sprint.Id)).Items);
+    }
+
+    [Fact]
+    public async Task A_card_deleted_from_a_planned_sprint_leaves_it_without_a_scope_event()
+    {
+        var story = await StoryAsync("Refund to card");
+        var sprint = await NewSprintAsync();
+        await MoveAsync(story, Into(sprint));
+
+        Assert.True((await CallAsync<IWorkItemService, Result>(s => s.DeleteAsync(story, Ct))).IsSuccess);
+
+        Assert.Null(await SprintIdOfAsync(story));
+        Assert.Empty(await ScopeEventsAsync(sprint.Id));
+        var sprintChanges = await QueryAsync(db => db.WorkItemChanges.AsNoTracking()
+            .Where(c => c.Field == WorkItemField.Sprint && db.WorkItems.IgnoreQueryFilters().Any(w => w.Id == c.WorkItemId && w.Key == story))
+            .OrderBy(c => c.Id)
+            .Select(c => new { c.OldValue, c.NewValue })
+            .ToListAsync(Ct));
+        Assert.Equal([(null, "WEB Sprint 1"), ("WEB Sprint 1", null)], sprintChanges.Select(c => (c.OldValue, c.NewValue)));
     }
 }

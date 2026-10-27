@@ -1,0 +1,290 @@
+@page "/spaces/{Key}/calendar"
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@using Upms.Web.Components.Layout
+@using Upms.Web.Components.Pages.Drawer
+@implements IDisposable
+@inject ICalendarService Calendars
+@inject ITimelineService Timelines
+@inject ViewerToday ViewerToday
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject CreateWorkLauncher Launcher
+
+<PageTitle>@(_view?.SpaceName ?? Key) · Calendar · U-PMS</PageTitle>
+
+@* The Calendar view, as Jira's: a month of work items on their due dates (or start dates when they have no due date).
+   Dragging an item to another day moves its dates; "+" on a day opens the Create form with that due date; an item
+   opens its details. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_view is null)
+{
+    <p aria-busy="true">Loading the calendar…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@_view.SpaceKey" Title="@_view.SpaceName" Current="ProjectPage.Calendar" Template="_view.Template"
+                   CanManage="_view.CanManage" CanRestoreDeleted="_view.CanRestoreDeleted" />
+
+    <div class="cal-toolbar">
+        <div class="board-search">
+            <Icon Name="search" />
+            <input type="search" class="input" aria-label="Search the calendar" placeholder="Search calendar" @bind="_search" @bind:event="oninput" />
+        </div>
+        @if (_view.UnscheduledCount > 0)
+        {
+            <a class="cal-unscheduled" href="spaces/@_view.SpaceKey/list">@_view.UnscheduledCount without dates</a>
+        }
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-subtle" data-testid="cal-today" @onclick="() => GoTo(_today)">Today</button>
+        <div class="cal-nav" role="group" aria-label="Month">
+            <button type="button" class="icon-btn" aria-label="Previous month" @onclick="() => GoTo(_month.AddMonths(-1))"><Icon Name="chevron-right" Class="flip" /></button>
+            <h2 class="cal-month" aria-live="polite">@_month.ToString("MMMM yyyy", CultureInfo.CurrentCulture)</h2>
+            <button type="button" class="icon-btn" aria-label="Next month" @onclick="() => GoTo(_month.AddMonths(1))"><Icon Name="chevron-right" /></button>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">
+            @_error
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _error = null">Dismiss</button>
+        </div>
+    }
+    @if (_view.Items.Count >= CalendarView.MaxItems)
+    {
+        <p class="hint">Showing the first @CalendarView.MaxItems work items of this month.</p>
+    }
+
+    <table class="cal-grid" data-testid="calendar">
+        <caption class="sr-only">Work items in @_month.ToString("MMMM yyyy", CultureInfo.CurrentCulture), by due date</caption>
+        <thead>
+            <tr>
+                @for (var d = 0; d < 7; d++)
+                {
+                    var weekday = _first.AddDays(d);
+                    <th scope="col"><abbr title="@weekday.ToString("dddd", CultureInfo.CurrentCulture)">@weekday.ToString("ddd", CultureInfo.CurrentCulture)</abbr></th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @for (var week = _first; week <= _last; week = week.AddDays(7))
+            {
+                <tr>
+                    @for (var d = 0; d < 7; d++)
+                    {
+                        var day = week.AddDays(d);
+                        var items = ItemsOn(day);
+                        var expanded = _expandedDays.Contains(day);
+                        var shown = expanded ? items : items.Take(VisiblePerDay).ToList();
+                        <td class="cal-day @(day.Month != _month.Month ? "is-other" : "") @(day == _today ? "is-today" : "") @(_dropDay == day ? "is-drop" : "")"
+                            @ondragover:preventDefault="true" @ondragenter="() => _dropDay = day" @ondrop="() => DropAsync(day)">
+                            <div class="cal-day-head">
+                                <span class="cal-date" aria-label="@day.ToString("d MMMM", CultureInfo.CurrentCulture)">@(day.Day == 1 ? day.ToString("d MMM", CultureInfo.CurrentCulture) : day.Day)</span>
+                                @if (_view.CanContribute)
+                                {
+                                    <button type="button" class="cal-add" aria-label="Create work due @day.ToString("d MMMM", CultureInfo.CurrentCulture)" title="Create"
+                                            @onclick="() => Launcher.Open(_view.SpaceKey, null, day)"><Icon Name="plus" Size="12" /></button>
+                                }
+                            </div>
+                            @if (shown.Count > 0)
+                            {
+                                <ul class="cal-items">
+                                    @foreach (var item in shown)
+                                    {
+                                        <li>
+                                            <a href="@TaskHref(item.Key)" class="cal-item cal-@CategoryClass(item.Category)" draggable="@(_view.CanContribute ? "true" : "false")"
+                                               data-drag-key="@(_view.CanContribute ? item.Key : null)" @ondragstart="() => _dragKey = item.Key"
+                                               @ondragend="() => { _dragKey = null; _dropDay = null; }" title="@item.Key @item.Title · @item.Status">
+                                                <TypeIcon Type="item.Type" />
+                                                <span class="cal-item-title">@item.Title</span>
+                                                <span class="sr-only">, @item.Key, @item.Status</span>
+                                                @if (item.Assignee is { } who)
+                                                {
+                                                    <Avatar UserId="who.UserId" Initials="@who.Initials" />
+                                                }
+                                            </a>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            @if (items.Count > VisiblePerDay)
+                            {
+                                <button type="button" class="cal-more" @onclick="() => ToggleDay(day)">
+                                    @(expanded ? "Show less" : $"+{items.Count - VisiblePerDay} more")
+                                </button>
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (!string.IsNullOrEmpty(TaskKey))
+    {
+        <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+    }
+}
+
+@code {
+    private const int VisiblePerDay = 3;
+    private readonly HashSet<DateOnly> _expandedDays = [];
+    private CalendarView? _view;
+    private bool _notFound;
+    private string? _error;
+    private string _search = "";
+    private DateOnly _today;
+    private DateOnly _month;
+    private DateOnly _first;
+    private DateOnly _last;
+    private DateOnly? _loadedMonth;
+    private int _request;
+    private string? _dragKey;
+    private DateOnly? _dropDay;
+    private bool _saving;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary><c>?month=2026-10</c>; the current month when absent.</summary>
+    [SupplyParameterFromQuery(Name = "month")]
+    public string? MonthValue { get; set; }
+
+    /// <summary><c>?task={KEY-N}</c> opens the item's details over the calendar.</summary>
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    protected override void OnInitialized() => Launcher.Created += OnCreated;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_today == default)
+        {
+            _today = await ViewerToday.GetAsync();
+        }
+
+        _month = DateOnly.TryParseExact(MonthValue, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out var month)
+            ? month
+            : new DateOnly(_today.Year, _today.Month, 1);
+        if (_loadedMonth != _month)
+        {
+            _loadedMonth = _month;
+            _expandedDays.Clear();
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>The weeks that hold the month, Monday first; a late answer for a month no longer shown is ignored.</summary>
+    private async Task LoadAsync()
+    {
+        _first = _month.AddDays(-(((int)_month.DayOfWeek + 6) % 7));
+        var end = _month.AddMonths(1).AddDays(-1);
+        _last = end.AddDays(6 - (((int)end.DayOfWeek + 6) % 7)).AddDays(-6);
+        var request = ++_request;
+        var loaded = await Calendars.GetAsync(Key, _first, _last.AddDays(6), CancellationToken.None);
+        if (request != _request)
+        {
+            return;
+        }
+
+        if (!loaded.IsSuccess)
+        {
+            _notFound = loaded.Error!.Kind is ErrorKind.NotFound or ErrorKind.Forbidden;
+            _error = _notFound ? null : loaded.Error.Message;
+            return;
+        }
+
+        _view = loaded.Value!;
+    }
+
+    private List<CalendarItem> ItemsOn(DateOnly day) =>
+        _view!.Items.Where(i => i.Date == day && Matches(i)).ToList();
+
+    private bool Matches(CalendarItem item) =>
+        string.IsNullOrWhiteSpace(_search)
+        || item.Title.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase)
+        || item.Key.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string CategoryClass(StatusCategory category) => category switch
+    {
+        StatusCategory.Done => "done",
+        StatusCategory.InProgress => "progress",
+        _ => "todo",
+    };
+
+    private string TaskHref(string key) => Navigation.GetUriWithQueryParameter("task", key);
+
+    private void GoTo(DateOnly day) =>
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["month"] = new DateOnly(day.Year, day.Month, 1) == new DateOnly(_today.Year, _today.Month, 1) ? null : day.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+            ["task"] = null,
+        }));
+
+    private void ToggleDay(DateOnly day)
+    {
+        if (!_expandedDays.Remove(day))
+        {
+            _expandedDays.Add(day);
+        }
+    }
+
+    /// <summary>Moves the item's dates by the days it was dragged, keeping its length; one move at a time.</summary>
+    private async Task DropAsync(DateOnly day)
+    {
+        var key = _dragKey;
+        _dragKey = null;
+        _dropDay = null;
+        if (key is null || _saving || _view?.Items.FirstOrDefault(i => i.Key == key) is not { } item || item.Date == day)
+        {
+            return;
+        }
+
+        var shift = day.DayNumber - item.Date.DayNumber;
+        _saving = true;
+        try
+        {
+            var moved = await Timelines.RescheduleAsync(item.Key, item.StartDate?.AddDays(shift), item.DueDate?.AddDays(shift), item.Version,
+                CancellationToken.None);
+            if (moved.IsSuccess)
+            {
+                Announcer.Announce($"{item.Key} moved to {day.ToString("d MMMM", CultureInfo.CurrentCulture)}.");
+            }
+            else
+            {
+                _error = moved.Error!.Kind == ErrorKind.Conflict
+                    ? $"{item.Key} was changed by someone else. The calendar now shows the latest dates."
+                    : moved.Error.Message;
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void CloseDrawer() => Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
+
+    // An item made with the Create form in this space shows at once.
+    private void OnCreated(string spaceKey, string itemKey)
+    {
+        if (string.Equals(spaceKey, Key, StringComparison.OrdinalIgnoreCase))
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                StateHasChanged();
+            });
+        }
+    }
+
+    public void Dispose() => Launcher.Created -= OnCreated;
+}

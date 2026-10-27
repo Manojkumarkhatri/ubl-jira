@@ -16,15 +16,16 @@ public sealed class P2_US2_AssignAndScheduleTests(AppFixture app) : BrowserTest(
 
     private static async Task CreateProjectAsync(IPage page, string name, string key)
     {
-        await GotoAsync(page, "/projects");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create project" }).First.ClickAsync();
+        await GotoAsync(page, "/spaces");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create space" }).First.ClickAsync();
         var dialog = page.GetByTestId("create-project");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Use template" }).ClickAsync();
         await dialog.GetByLabel("Name").FillAsync(name);
         // The suggested key appears first; typing over it before it arrives would mix the two.
         await Assertions.Expect(dialog.GetByLabel("Key")).Not.ToHaveValueAsync("");
         await dialog.GetByLabel("Key").FillAsync(key);
-        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create project" }).ClickAsync();
-        await WaitForPathAsync(page, $"/projects/{key}/board");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Create space" }).ClickAsync();
+        await WaitForPathAsync(page, $"/spaces/{key}/board");
         await WaitForInteractivityAsync(page);
     }
 
@@ -108,14 +109,14 @@ public sealed class P2_US2_AssignAndScheduleTests(AppFixture app) : BrowserTest(
         await CloseDrawerAsync(rashid);
 
         // Support Desk: a task for Sadia in another project.
-        await GotoAsync(rashid, "/projects/SUP/board");
+        await GotoAsync(rashid, "/spaces/SUP/board");
         await OpenCardAsync(rashid, "SUP-1");
         await AssignAsync(rashid, "Sadia Karim");
         await CloseDrawerAsync(rashid);
 
         // P2_US2_AS2: Sadia assigns LCH-3 to herself in one step.
         var sadia = await SignInAsync("sadia", sadiaPassword);
-        await GotoAsync(sadia, "/projects/LCH/board");
+        await GotoAsync(sadia, "/spaces/LCH/board");
         await OpenCardAsync(sadia, "LCH-3");
         await Drawer(sadia).GetByTestId("assign-to-me").ClickAsync();
         await Assertions.Expect(Drawer(sadia).GetByTestId("drawer-saved")).ToContainTextAsync("Assigned to you");
@@ -137,9 +138,11 @@ public sealed class P2_US2_AssignAndScheduleTests(AppFixture app) : BrowserTest(
         await sadia.GetByTestId("only-mine").ClickAsync();
         await Assertions.Expect(sadia.Locator("article.bcard")).ToHaveCountAsync(3);
 
-        // P2_US2_AS7: "My tasks" lists her open tasks by project, soonest due first.
-        await sadia.GetByRole(AriaRole.Link, new() { Name = "My tasks" }).ClickAsync();
-        await WaitForPathAsync(sadia, "/my-tasks");
+        // P2_US2_AS7: "My tasks" (since the Jira parity pass, For you › Assigned to me) lists her open tasks by project, soonest due first.
+        await sadia.GetByRole(AriaRole.Link, new() { Name = "For you", Exact = true }).ClickAsync();
+        await WaitForPathAsync(sadia, "/for-you");
+        await sadia.GetByRole(AriaRole.Link, new() { Name = "Assigned to me" }).ClickAsync();
+        await WaitForPathAsync(sadia, "/for-you/assigned");
         await WaitForInteractivityAsync(sadia);
         var rows = sadia.GetByTestId("my-task");
         await Assertions.Expect(rows).ToHaveCountAsync(3);
@@ -160,7 +163,7 @@ public sealed class P2_US2_AssignAndScheduleTests(AppFixture app) : BrowserTest(
         // Narrow screens (FR-041).
         await sadia.SetViewportSizeAsync(360, 740);
         await sadia.AssertNoAccessibilityViolationsAsync();
-        await GotoAsync(sadia, "/projects/LCH/board");
+        await GotoAsync(sadia, "/spaces/LCH/board");
         await sadia.AssertNoAccessibilityViolationsAsync();
         await OpenCardAsync(sadia, "LCH-2");
         await sadia.AssertNoAccessibilityViolationsAsync();

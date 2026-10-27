@@ -33,7 +33,7 @@ public sealed class SubtaskListTests : BunitTestBase
         var rows = cut.FindAll("[data-testid=subtask]");
         Assert.Equal(2, rows.Count);
         var link = rows[0].QuerySelector("a")!;
-        Assert.Equal("projects/WEB/board?task=WEB-2", link.GetAttribute("href"));
+        Assert.Equal("spaces/WEB/board?task=WEB-2", link.GetAttribute("href"));
         Assert.Contains("Wireframes", rows[0].TextContent, StringComparison.Ordinal);
         Assert.Equal("3", rows[0].QuerySelector("select")!.GetAttribute("value"));
     }
@@ -65,6 +65,7 @@ public sealed class SubtaskListTests : BunitTestBase
     {
         var cut = RenderList();
 
+        cut.Find(".add-child-toggle").Click(); // "Add child work item" opens the box, as in Jira
         cut.Find("#add-subtask").Input("Review with marketing");
         cut.Find("#add-subtask").KeyDown(new KeyboardEventArgs { Key = "Enter" });
 

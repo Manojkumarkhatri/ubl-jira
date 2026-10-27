@@ -1,7 +1,9 @@
-@page "/projects/{Key}/settings"
+@page "/spaces/{Key}/settings"
 @using Upms.Application.Projects
 @inject IProjectService Projects
+@inject ISpaceTrashService Trash
 @inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
 
 <PageTitle>Settings · @Key · U-PMS</PageTitle>
 
@@ -15,7 +17,9 @@ else if (_details is null)
 }
 else
 {
-    <ProjectHeader ProjectKey="@_details.Key" Title="Project settings" Current="ProjectPage.Settings" CanManage="_details.CanManage" />
+    <ProjectHeader ProjectKey="@_details.Key" Title="Space settings" Current="ProjectPage.Settings" CanManage="_details.CanManage"
+                   Template="_details.Template" />
+    <SettingsTabs SpaceKey="@_details.Key" Current="details" />
 
     <section class="card form-card" aria-labelledby="details-heading">
         <h2 id="details-heading">Details</h2>
@@ -37,7 +41,7 @@ else
             <div class="field">
                 <label for="settings-key">Key</label>
                 <input id="settings-key" class="input" value="@_details.Key" readonly aria-describedby="settings-key-hint" />
-                <span id="settings-key-hint" class="hint">A project's key never changes.</span>
+                <span id="settings-key-hint" class="hint">A space's key never changes.</span>
             </div>
             <div class="field">
                 <label for="settings-description">Description</label>
@@ -55,17 +59,96 @@ else
         </form>
     </section>
 
+    <section class="card form-card" aria-labelledby="template-heading">
+        <h2 id="template-heading">Template</h2>
+        <p data-testid="template-current">This space uses the <strong>@ProjectHeader.TemplateName(_details.Template)</strong> template.</p>
+        @if (_templateError is not null)
+        {
+            <div class="alert alert-error" role="alert" data-testid="template-error">@_templateError</div>
+        }
+        @if (SwitchTarget is { } target)
+        {
+            <button type="button" class="btn" data-testid="switch-template" @onclick="() => _switchDialog.Open()">
+                Switch to @ProjectHeader.TemplateName(target)
+            </button>
+        }
+        else
+        {
+            <p class="hint">Stage-gate spaces keep their template, because their work item types differ.</p>
+        }
+    </section>
+
+    <ModalDialog @ref="_switchDialog" Title="@($"Switch to {ProjectHeader.TemplateName(SwitchTarget ?? ProjectTemplate.Kanban)}?")"
+                 TestId="switch-template-dialog">
+        <ChildContent>
+            @if (SwitchTarget == ProjectTemplate.Scrum)
+            {
+                <p>The open stories, tasks and bugs go to the backlog in board order: column by column, keeping each column's order.</p>
+                <p>The board then shows only the active sprint. Columns and work items do not change.</p>
+            }
+            else
+            {
+                <p>The board shows all open work again. Completed sprints and their reports stay readable.</p>
+                <p>A space with an active or planned sprint cannot switch.</p>
+            }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn" @onclick="() => _switchDialog.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-primary" disabled="@_switching" @onclick="SwitchAsync">
+                Switch to @ProjectHeader.TemplateName(SwitchTarget ?? ProjectTemplate.Kanban)
+            </button>
+        </Footer>
+    </ModalDialog>
+
     <BoardColumnsEditor ProjectKey="@Key" />
+
+    @* Jira's "Move to trash" (owner, 2026-10-26): an Admin, the department's Head or whoever manages the space, with the
+       "Delete spaces" right. *@
+    @if (_canDelete)
+    {
+        <section class="card form-card danger-card" aria-labelledby="delete-space-heading">
+            <h2 id="delete-space-heading">Delete space</h2>
+            <p>The space and its work items leave every board, list and search. Nothing is erased: an Admin can restore it from the trash.</p>
+            <button type="button" class="btn btn-danger-solid" data-testid="delete-space" @onclick="AskDelete"><Icon Name="trash" Size="16" /> Move to trash</button>
+        </section>
+
+        <ModalDialog @ref="_deleteDialog" Title="@($"Move {_details.Name} to the trash?")" TestId="delete-space-dialog">
+            <ChildContent>
+                <p>Everyone in the space loses it from their boards, lists, search and MIS until an Admin restores it.</p>
+                <div class="field">
+                    <label for="delete-space-key">Type the key <strong>@_details.Key</strong> to confirm</label>
+                    <input id="delete-space-key" class="input" autocomplete="off" @bind="_confirmKey" @bind:event="oninput"
+                           aria-describedby="delete-space-error" />
+                    <span id="delete-space-error" class="error-text" role="alert">@_deleteError</span>
+                </div>
+            </ChildContent>
+            <Footer>
+                <button type="button" class="btn" @onclick="() => _deleteDialog!.CloseAsync()">Cancel</button>
+                <button type="button" class="btn btn-danger-solid" data-testid="confirm-delete-space"
+                        disabled="@(_deleting || !string.Equals(_confirmKey.Trim(), _details.Key, StringComparison.OrdinalIgnoreCase))"
+                        @onclick="DeleteSpaceAsync">Move to trash</button>
+            </Footer>
+        </ModalDialog>
+    }
 }
 
 @code {
     private ProjectDetails? _details;
+
     private bool _notFound;
     private string _name = "";
     private string _description = "";
     private AppError? _error;
     private DetailsConflict? _conflict;
     private bool _saved;
+    private ModalDialog _switchDialog = default!;
+    private string? _templateError;
+    private bool _switching;
+    private bool _canDelete;
+    private ModalDialog? _deleteDialog;
+    private string _confirmKey = "";
+    private string? _deleteError;
+    private bool _deleting;
 
     [Parameter]
     public string Key { get; set; } = "";
@@ -83,6 +166,40 @@ else
         _details = result.Value;
         _name = _details.Name;
         _description = _details.Description ?? "";
+        _canDelete = await Trash.CanDeleteAsync(Key, CancellationToken.None);
+    }
+
+    private void AskDelete()
+    {
+        _confirmKey = "";
+        _deleteError = null;
+        _deleteDialog?.Open();
+    }
+
+    private async Task DeleteSpaceAsync()
+    {
+        if (_deleting || _details is null)
+        {
+            return;
+        }
+
+        _deleting = true;
+        try
+        {
+            var result = await Trash.DeleteAsync(_details.Key, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _deleteError = result.Error!.Message;
+                return;
+            }
+
+            // A full load, so the sidebar's spaces and recent lists drop it too.
+            Navigation.NavigateTo($"spaces?trashed={Uri.EscapeDataString(_details.Key)}", forceLoad: true);
+        }
+        finally
+        {
+            _deleting = false;
+        }
     }
 
     private string? ErrorFor(string field) =>
@@ -100,7 +217,7 @@ else
             _error = null;
             _conflict = null;
             _saved = true;
-            Announcer.Announce("Project details saved.");
+            Announcer.Announce("Space details saved.");
             return;
         }
 
@@ -110,6 +227,46 @@ else
             // Keep the user's text; offer the latest values next to it (FR-032 pattern).
             _conflict = new DetailsConflict(result.Error.Message, latest);
             _details = latest;
+        }
+    }
+
+    /// <summary>Kanban and Scrum switch into each other; Stage-gate projects keep their template (Phase 3 FR-005).</summary>
+    private ProjectTemplate? SwitchTarget => _details?.Template switch
+    {
+        ProjectTemplate.Kanban => ProjectTemplate.Scrum,
+        ProjectTemplate.Scrum => ProjectTemplate.Kanban,
+        _ => null,
+    };
+
+    private async Task SwitchAsync()
+    {
+        if (SwitchTarget is not { } target || _switching)
+        {
+            return;
+        }
+
+        _switching = true;
+        try
+        {
+            var result = await Projects.SwitchTemplateAsync(Key, target, _details!.DetailsVersion, CancellationToken.None);
+            await _switchDialog.CloseAsync();
+            if (result.IsSuccess)
+            {
+                _details = result.Value!;
+                _templateError = null;
+                Announcer.Announce($"The space now uses the {ProjectHeader.TemplateName(target)} template.");
+                return;
+            }
+
+            _templateError = result.Error!.Message;
+            if (result.Error.Kind == ErrorKind.Conflict && result.Error.Current is ProjectDetails latest)
+            {
+                _details = latest;
+            }
+        }
+        finally
+        {
+            _switching = false;
         }
     }
 

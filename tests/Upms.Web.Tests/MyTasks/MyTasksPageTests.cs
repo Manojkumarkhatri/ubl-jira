@@ -11,7 +11,7 @@ using Upms.Web.Tests.Fakes;
 
 namespace Upms.Web.Tests.MyTasks;
 
-/// <summary>The "My tasks" page (Phase 2 FR-025, FR-026). "Today" is 27 Sep 2026.</summary>
+/// <summary>The "My tasks" page (Phase 2 FR-025, FR-026; Phase 3 FR-041). "Today" is 27 Sep 2026.</summary>
 public sealed class MyTasksPageTests : BunitTestBase
 {
     private readonly FakeMyTasksService _tasks = new();
@@ -31,11 +31,38 @@ public sealed class MyTasksPageTests : BunitTestBase
     private IRenderedComponent<MyTasksPage> RenderPage() => Render<MyTasksPage>();
 
     [Fact]
+    public void P3_US3_AS3_Gates_waiting_for_the_user_come_first_and_open_the_stage()
+    {
+        _tasks.Gates.Add(new WaitingGateRow("CBU", "Core Banking Upgrade", "CBU-1", "Initiation", "Musa Ali",
+            new DateTimeOffset(2026, 9, 26, 10, 0, 0, TimeSpan.Zero)));
+
+        var cut = RenderPage();
+
+        var section = cut.Find("[data-testid=gates-waiting]");
+        Assert.Equal("Gates waiting for you", section.QuerySelector("h2")!.TextContent.Trim());
+        var row = section.QuerySelector("[data-testid=waiting-gate]")!;
+        Assert.Contains("Core Banking Upgrade", row.TextContent, StringComparison.Ordinal);
+        Assert.Contains("Requested by Musa Ali", row.TextContent, StringComparison.Ordinal);
+        Assert.Equal("spaces/CBU/stages?stage=CBU-1", row.QuerySelector("a")!.GetAttribute("href"));
+        Assert.Equal("Initiation gate", row.QuerySelector("a")!.TextContent.Trim());
+        Assert.True(section.CompareDocumentPosition(cut.FindAll("[data-testid=my-tasks-group]")[0]).HasFlag(AngleSharp.Dom.DocumentPositions.Following));
+    }
+
+    [Fact]
+    public void Without_gates_waiting_the_section_is_not_shown()
+    {
+        var cut = RenderPage();
+
+        Assert.Empty(cut.FindAll("[data-testid=gates-waiting]"));
+    }
+
+    [Fact]
     public void P2_US2_AS7_Rows_are_grouped_by_project_with_overdue_marks_and_parent_keys()
     {
         var cut = RenderPage();
 
-        Assert.Equal("My tasks", cut.Find("h1").TextContent.Trim());
+        Assert.Equal("For you", cut.Find("h1").TextContent.Trim());
+        Assert.Equal("page", cut.Find("nav[aria-label='For you'] a[href='for-you/assigned']").GetAttribute("aria-current"));
         Assert.Equal(["Payroll", "Website Revamp"], cut.FindAll("h2.group-title").Select(h => h.TextContent.Split('(')[0].Trim()));
         var groups = cut.FindAll("[data-testid=my-tasks-group]");
         Assert.Equal(["PAY-1"], groups[0].QuerySelectorAll("[data-testid=my-task]").Select(r => r.GetAttribute("data-key")));
@@ -50,12 +77,23 @@ public sealed class MyTasksPageTests : BunitTestBase
     }
 
     [Fact]
+    public void P3_FR009_Each_row_shows_its_type_with_the_name_as_text()
+    {
+        _tasks.Rows[0] = _tasks.Rows[0] with { Type = WorkItemType.Epic };
+
+        var cut = RenderPage();
+
+        var row = cut.Find($"[data-key='{_tasks.Rows[0].Key}']");
+        Assert.Equal("Epic", row.QuerySelector(".type-icon .sr-only")!.TextContent.Trim());
+    }
+
+    [Fact]
     public void Each_project_heading_links_to_its_board_by_name()
     {
         // A link read out of context, as in a screen reader's list of links, says which project it opens.
         var cut = RenderPage();
 
-        Assert.Equal("Website Revamp (WEB)", cut.Find("h2.group-title a[href='projects/WEB/board']").TextContent.Trim());
+        Assert.Equal("Website Revamp (WEB)", cut.Find("h2.group-title a[href='spaces/WEB/board']").TextContent.Trim());
     }
 
     [Fact]
@@ -84,14 +122,14 @@ public sealed class MyTasksPageTests : BunitTestBase
 
         var link = cut.Find("[data-key='WEB-1'] a.task-link");
 
-        Assert.Equal("my-tasks?task=WEB-1", link.GetAttribute("href"));
+        Assert.Equal("for-you/assigned?task=WEB-1", link.GetAttribute("href"));
     }
 
     [Fact]
     public void P2_US2_AS7_Completing_a_task_in_the_drawer_removes_it_when_the_drawer_closes()
     {
         var navigation = Services.GetRequiredService<NavigationManager>();
-        navigation.NavigateTo("my-tasks?task=WEB-1");
+        navigation.NavigateTo("for-you/assigned?task=WEB-1");
         var cut = RenderPage();
         Assert.NotEmpty(cut.FindAll("[data-testid=drawer]"));
 

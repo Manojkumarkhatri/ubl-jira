@@ -21,6 +21,15 @@ public readonly record struct Result
     public static Result Fail(AppError error) => new(error, null);
 
     public static implicit operator Result(AppError error) => Fail(error);
+
+    /// <summary>Throws when the call failed.</summary>
+    public void ThrowIfFailed()
+    {
+        if (Error is { } error)
+        {
+            throw new InvalidOperationException($"{error.Kind}: {error.Message}");
+        }
+    }
 }
 
 /// <summary>The outcome of an operation that returns a value on success.</summary>

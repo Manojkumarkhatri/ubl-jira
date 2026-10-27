@@ -17,6 +17,25 @@ public sealed class ProjectTeamTests
     private static HashSet<Guid> Active(params Guid[] userIds) => [.. userIds];
 
     [Fact]
+    public void A_portfolio_gives_and_takes_back_access_but_never_lowers_someone_added_by_hand()
+    {
+        var project = NewProject();
+        project.AddMember(Bilal, ProjectRole.Viewer, Owen, Now);
+        var lead = Guid.NewGuid();
+
+        Assert.True(project.SyncPortfolioAccess(new Dictionary<Guid, ProjectRole> { [lead] = ProjectRole.ProjectAdmin, [Bilal] = ProjectRole.Member }, Now));
+        Assert.True(Member(project, lead).FromPortfolio);
+        Assert.Equal(ProjectRole.ProjectAdmin, Member(project, lead).Role);
+        Assert.Equal(ProjectRole.Member, Member(project, Bilal).Role); // raised by the grant
+        Assert.False(Member(project, Bilal).FromPortfolio);
+
+        Assert.True(project.SyncPortfolioAccess(new Dictionary<Guid, ProjectRole> { [Bilal] = ProjectRole.Viewer }, Now));
+        Assert.DoesNotContain(project.Members, m => m.UserId == lead); // no longer a lead
+        Assert.Equal(ProjectRole.Member, Member(project, Bilal).Role); // never lowered
+        Assert.False(project.SyncPortfolioAccess(new Dictionary<Guid, ProjectRole> { [Bilal] = ProjectRole.Viewer }, Now));
+    }
+
+    [Fact]
     public void P2_US1_AS1_The_creator_is_the_first_and_only_member_as_Project_Admin()
     {
         var project = NewProject();
@@ -53,7 +72,7 @@ public sealed class ProjectTeamTests
         var again = project.AddMember(Bilal, ProjectRole.Member, Owen, Now);
 
         Assert.Equal(Project.DuplicateMemberCode, again.Error!.Code);
-        Assert.Contains("Viewer", again.Error.Message, StringComparison.Ordinal);
+        Assert.Contains("looks only", again.Error.Message, StringComparison.Ordinal);
         Assert.Equal(2, project.Members.Count);
         Assert.Equal(2, project.MembersVersion);
     }

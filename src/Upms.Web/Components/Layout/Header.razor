@@ -1,31 +1,76 @@
 @inject IAccountService Accounts
+@inject Upms.Application.Work.ICreateWorkService CreateWork
+@inject CreateWorkLauncher Launcher
+@inject NavigationManager Navigation
+@inject SidebarState SidebarState
+@implements IDisposable
 
 <header class="topbar">
-    <a class="brand" href="projects">
-        <span class="brand-mark" aria-hidden="true">U</span>
-        <span>U-PMS <small>UBL Project Management</small></span>
+    @if (_profile is not null)
+    {
+        @* The sidebar's buttons (Jira parity pass FR-023; research R5): wide screens collapse or open it, phones open it
+           as a panel. CSS shows the one that fits. *@
+        <button type="button" class="icon-btn sidebar-toggle wide-only" data-testid="sidebar-toggle" aria-label="Sidebar"
+                aria-controls="sidebar" aria-expanded="@(SidebarState.Collapsed ? "false" : "true")" @onclick="SidebarState.ToggleCollapsedAsync">☰</button>
+        <button type="button" class="icon-btn sidebar-toggle narrow-only" data-testid="menu-button" aria-label="Menu" aria-haspopup="dialog"
+                @onclick="() => SidebarState.SetPanel(true)">☰</button>
+    }
+    <a class="brand" href="./">
+        <AppLogo Size="34" />
+        <span class="brand-text"><b>U-PMS</b> <small>UBL-Project Management System</small></span>
     </a>
-    <nav class="top-nav" aria-label="Main">
-        <NavItem Href="projects">Projects</NavItem>
-        <NavItem Href="my-tasks">My tasks</NavItem>
-        @if (_profile?.IsAdministrator == true)
-        {
-            <NavItem Href="admin/users">Accounts</NavItem>
-        }
-    </nav>
     <span class="spacer"></span>
     @if (_profile is not null)
     {
-        <UserMenu DisplayName="@_profile.DisplayName" />
+        <SearchBox />
+        @if (_canCreate)
+        {
+            @* One form for every work type, on every screen (Jira parity pass FR-001). *@
+            <button type="button" class="btn btn-primary create-button" data-testid="create-button" @onclick="() => Launcher.Open()">
+                <span aria-hidden="true">+</span> Create
+            </button>
+        }
+        <NotificationBell />
+        <UserMenu DisplayName="@_profile.DisplayName" Type="@_profile.Type" />
     }
 </header>
 
 @code {
     private MyProfile? _profile;
+    private bool _canCreate;
 
     protected override async Task OnInitializedAsync()
     {
         var result = await Accounts.GetProfileAsync(CancellationToken.None);
         _profile = result.IsSuccess ? result.Value : null;
+        await CheckCanCreateAsync();
+        Navigation.LocationChanged += OnLocationChanged;
+        SidebarState.Changed += OnSidebarChanged;
+    }
+
+    /// <summary>Create is offered to people who can add work to at least one space (FR-001, US1 scenario 8).</summary>
+    private async Task CheckCanCreateAsync() =>
+        _canCreate = _profile is not null && await CreateWork.SpacesAsync(null, CancellationToken.None) is { IsSuccess: true } spaces
+            && spaces.Value!.Spaces.Count > 0;
+
+    // Someone without Create may have just made their first space or been added to one: look again as they move on.
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (!_canCreate && _profile is not null)
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await CheckCanCreateAsync();
+                StateHasChanged();
+            });
+        }
+    }
+
+    private void OnSidebarChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        SidebarState.Changed -= OnSidebarChanged;
     }
 }

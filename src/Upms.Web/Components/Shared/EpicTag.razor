@@ -1,0 +1,24 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@* The epic or stage an item is in, as a tag: an epic in its color, a stage in a neutral style, with its kind in words
+   (Jira parity pass FR-025; research R15). *@
+@if (Container is { } container)
+{
+    <span class="tag @CssClass(container)" title="@container.Key @container.Title" data-testid="epic-tag"><span class="sr-only">@KindName(container): </span>@(ShowKey ? $"{container.Key} {container.Title}" : container.Title)</span>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ContainerView? Container { get; set; }
+
+    /// <summary>Shows the key before the title, where rows name the epic or stage in full.</summary>
+    [Parameter]
+    public bool ShowKey { get; set; }
+
+    /// <summary>"epic-tag epic-teal" for an epic, "stage-tag" for a stage.</summary>
+    public static string CssClass(ContainerView container) => container.Type == WorkItemType.Epic
+        ? $"epic-tag epic-{(container.Color ?? EpicColor.Gray).ToString().ToLowerInvariant()}"
+        : "stage-tag";
+
+    private static string KindName(ContainerView container) => container.Type == WorkItemType.Stage ? "Stage" : "Epic";
+}

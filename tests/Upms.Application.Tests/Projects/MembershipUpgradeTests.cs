@@ -50,36 +50,35 @@ public sealed class MembershipUpgradeTests(SqlServerFixture fixture) : IAsyncLif
     [Fact]
     public async Task P2_US1_AS9_Owners_become_Project_Admins_and_everyone_who_worked_on_a_project_becomes_a_Member()
     {
-        var data = new TestData(_harness);
-        var owen = await data.UserAsync("owen");
-        var cara = await data.UserAsync("cara");
-        var erin = await data.UserAsync("erin");
-        var dan = await data.UserAsync("dan");
-        var gone = await data.UserAsync("gone", isActive: false);
-        var uma = await data.UserAsync("uma");
-        var olga = await data.UserAsync("olga", isActive: false);
+        var owen = await UserAsync("owen");
+        var cara = await UserAsync("cara");
+        var erin = await UserAsync("erin");
+        var dan = await UserAsync("dan");
+        var gone = await UserAsync("gone", isActive: false);
+        var uma = await UserAsync("uma");
+        var olga = await UserAsync("olga", isActive: false);
 
         // Phase 1 data, written with the Phase 1 schema: WEB owned by owen, where cara created WEB-1 and a later deleted
         // WEB-2, erin changed WEB-1, dan commented on it and gone (now deactivated) created WEB-3; OPS, owned by olga
         // (now deactivated), has no work. uma never worked anywhere.
         await ExecuteAsync($"""
             INSERT INTO Projects ([Key], Name, NormalizedName, Description, OwnerId, NextItemNumber, BoardVersion, DetailsVersion, CreatedAt, UpdatedAt)
-            VALUES ('WEB', N'Website Revamp', N'WEBSITE REVAMP', NULL, '{owen.Id}', 4, 1, 1, '{At:O}', '{At:O}'),
-                   ('OPS', N'Operations', N'OPERATIONS', NULL, '{olga.Id}', 1, 1, 1, '{At:O}', '{At:O}');
+            VALUES ('WEB', N'Website Revamp', N'WEBSITE REVAMP', NULL, '{owen}', 4, 1, 1, '{At:O}', '{At:O}'),
+                   ('OPS', N'Operations', N'OPERATIONS', NULL, '{olga}', 1, 1, 1, '{At:O}', '{At:O}');
             INSERT INTO ProjectStatuses (ProjectId, Name, NormalizedName, Category, Position, WipLimit)
             SELECT Id, N'To Do', N'TO DO', 'ToDo', 0, NULL FROM Projects;
             DECLARE @web bigint = (SELECT Id FROM Projects WHERE [Key] = 'WEB');
             DECLARE @todo bigint = (SELECT Id FROM ProjectStatuses WHERE ProjectId = @web);
             INSERT INTO WorkItems (ProjectId, Number, [Key], [Type], ParentId, Title, Description, Priority, StatusId, [Rank],
                 CreatedById, CreatedAt, UpdatedAt, ResolvedAt, IsDeleted, DeletedAt, DeletedById)
-            VALUES (@web, 1, 'WEB-1', 'Task', NULL, N'Design the home page', NULL, 'Medium', @todo, 'a', '{cara.Id}', '{At:O}', '{At:O}', NULL, 0, NULL, NULL),
-                   (@web, 2, 'WEB-2', 'Task', NULL, N'Old idea', NULL, 'Medium', @todo, 'b', '{cara.Id}', '{At:O}', '{At:O}', NULL, 1, '{At:O}', '{owen.Id}'),
-                   (@web, 3, 'WEB-3', 'Task', NULL, N'Write the copy', NULL, 'Medium', @todo, 'c', '{gone.Id}', '{At:O}', '{At:O}', NULL, 0, NULL, NULL);
+            VALUES (@web, 1, 'WEB-1', 'Task', NULL, N'Design the home page', NULL, 'Medium', @todo, 'a', '{cara}', '{At:O}', '{At:O}', NULL, 0, NULL, NULL),
+                   (@web, 2, 'WEB-2', 'Task', NULL, N'Old idea', NULL, 'Medium', @todo, 'b', '{cara}', '{At:O}', '{At:O}', NULL, 1, '{At:O}', '{owen}'),
+                   (@web, 3, 'WEB-3', 'Task', NULL, N'Write the copy', NULL, 'Medium', @todo, 'c', '{gone}', '{At:O}', '{At:O}', NULL, 0, NULL, NULL);
             DECLARE @web1 bigint = (SELECT Id FROM WorkItems WHERE [Key] = 'WEB-1');
             INSERT INTO WorkItemChanges (WorkItemId, ChangeSetId, ActorId, OccurredAt, Field, OldValue, NewValue, Note)
-            VALUES (@web1, NEWID(), '{erin.Id}', '{At:O}', 'Priority', 'Medium', 'High', NULL);
+            VALUES (@web1, NEWID(), '{erin}', '{At:O}', 'Priority', 'Medium', 'High', NULL);
             INSERT INTO Comments (WorkItemId, AuthorId, Body, CreatedAt, EditedAt, IsDeleted, DeletedAt)
-            VALUES (@web1, '{dan.Id}', N'Looks good', '{At:O}', NULL, 0, NULL);
+            VALUES (@web1, '{dan}', N'Looks good', '{At:O}', NULL, 0, NULL);
             """);
 
         await MigrateToLatestAsync();
@@ -88,15 +87,15 @@ public sealed class MembershipUpgradeTests(SqlServerFixture fixture) : IAsyncLif
         Assert.Equal(
             new[]
             {
-                ("OPS", olga.Id, ProjectRole.ProjectAdmin),
-                ("WEB", owen.Id, ProjectRole.ProjectAdmin),
-                ("WEB", cara.Id, ProjectRole.Member),
-                ("WEB", dan.Id, ProjectRole.Member),
-                ("WEB", erin.Id, ProjectRole.Member),
-                ("WEB", gone.Id, ProjectRole.Member),
+                ("OPS", olga, ProjectRole.ProjectAdmin),
+                ("WEB", owen, ProjectRole.ProjectAdmin),
+                ("WEB", cara, ProjectRole.Member),
+                ("WEB", dan, ProjectRole.Member),
+                ("WEB", erin, ProjectRole.Member),
+                ("WEB", gone, ProjectRole.Member),
             }.OrderBy(m => m.Item1).ThenBy(m => m.Item2).ToList(),
             members.Select(m => (m.Key, m.UserId, m.Role)).OrderBy(m => m.Key).ThenBy(m => m.UserId).ToList());
-        Assert.DoesNotContain(members, m => m.UserId == uma.Id);
+        Assert.DoesNotContain(members, m => m.UserId == uma);
         Assert.All(members, m => Assert.Null(m.AddedById));
 
         var audit = await UpgradeAuditAsync();
@@ -106,12 +105,25 @@ public sealed class MembershipUpgradeTests(SqlServerFixture fixture) : IAsyncLif
             Assert.Null(e.ActorUserId);
             Assert.Contains("\"Source\":\"Phase 2 upgrade\"", e.Details, StringComparison.Ordinal);
         });
-        Assert.Contains(audit, e => e.SubjectUserId == owen.Id && e.Target == "WEB" && e.Details!.Contains("\"Role\":\"ProjectAdmin\"", StringComparison.Ordinal));
+        Assert.Contains(audit, e => e.SubjectUserId == owen && e.Target == "WEB" && e.Details!.Contains("\"Role\":\"ProjectAdmin\"", StringComparison.Ordinal));
 
         // Running the upgrade again adds nothing.
         await ExecuteAsync(ProjectMembers.UpgradeSql);
         Assert.Equal(members.Count, (await MembersAsync()).Count);
         Assert.Equal(audit.Count, (await UpgradeAuditAsync()).Count);
+    }
+
+    /// <summary>A Phase 1 account, written with the Phase 1 schema (later phases add columns the account model now needs).</summary>
+    private async Task<Guid> UserAsync(string name, bool isActive = true)
+    {
+        var id = Guid.NewGuid();
+        await ExecuteAsync($"""
+            INSERT INTO AspNetUsers (Id, DisplayName, OrganizationRole, IsActive, MustChangePassword, CreatedAt, UserName, NormalizedUserName,
+                Email, NormalizedEmail, EmailConfirmed, SecurityStamp, PhoneNumberConfirmed, TwoFactorEnabled, LockoutEnabled, AccessFailedCount)
+            VALUES ('{id}', N'{name} Tester', 'User', {(isActive ? 1 : 0)}, 0, '{At:O}', N'{name}', N'{name.ToUpperInvariant()}',
+                N'{name}@example.com', N'{name.ToUpperInvariant()}@EXAMPLE.COM', 1, N'{Guid.NewGuid():N}', 0, 0, 1, 0);
+            """);
+        return id;
     }
 
     private async Task MigrateToLatestAsync()

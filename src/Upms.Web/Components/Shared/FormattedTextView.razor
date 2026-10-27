@@ -1,0 +1,35 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@* A description or comment, read-only (Phase 4 FR-001, FR-004): old plain text exactly as before, a document as the
+   server renders it from the allowlist (research R3), with images from the item's checked attachments (FR-023). *@
+@if (Text is { Format: TextFormat.Document } document && FormattedText.Parse(document.Content, "Body").Value is { } parsed && !parsed.IsEmpty)
+{
+    <div class="formatted-text @Class">@((MarkupString)FormattedTextRenderer.ToHtml(parsed, ImageStateOf))</div>
+}
+else
+{
+    <PlainText Text="@(Text is { Format: TextFormat.Document } ? null : Text?.Content)" Placeholder="@Placeholder" Class="@Class" />
+}
+
+@code {
+    [Parameter]
+    public RichText? Text { get; set; }
+
+    /// <summary>The item's files, for the images the text shows.</summary>
+    [Parameter]
+    public IReadOnlyList<AttachmentView>? Attachments { get; set; }
+
+    /// <summary>Shown, muted, when there is no text.</summary>
+    [Parameter]
+    public string? Placeholder { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    private ImageState ImageStateOf(long attachmentId) => Attachments?.FirstOrDefault(a => a.Id == attachmentId) switch
+    {
+        { IsImage: true, Status: AttachmentCheckStatus.Passed } => ImageState.Ready,
+        { IsImage: true, Status: AttachmentCheckStatus.Checking } => ImageState.Checking,
+        _ => ImageState.Missing,
+    };
+}

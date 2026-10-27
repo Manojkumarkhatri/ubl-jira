@@ -1,0 +1,16 @@
+@* The parts of a space's settings, as Jira's settings sidebar: details, work types and their fields, and the space's
+   fields. *@
+<nav class="settings-tabs" aria-label="Space settings">
+    <a href="spaces/@SpaceKey/settings" aria-current="@(Current == "details" ? "page" : null)">Details</a>
+    <a href="spaces/@SpaceKey/settings/work-types" aria-current="@(Current == "work-types" ? "page" : null)">Work types</a>
+    <a href="spaces/@SpaceKey/settings/fields" aria-current="@(Current == "fields" ? "page" : null)">Fields</a>
+</nav>
+
+@code {
+    [Parameter, EditorRequired]
+    public string SpaceKey { get; set; } = "";
+
+    /// <summary>"details", "work-types" or "fields".</summary>
+    [Parameter]
+    public string Current { get; set; } = "details";
+}

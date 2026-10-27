@@ -22,6 +22,12 @@ public enum ListSort
     StartDate,
     DueDate,
     Updated,
+
+    /// <summary>By type name (Phase 3 FR-020).</summary>
+    Type,
+
+    /// <summary>By when the item was created, as Jira's "Created" column.</summary>
+    Created,
 }
 
 public enum DueFilter
@@ -38,8 +44,13 @@ public enum DueFilter
 }
 
 /// <summary>What the list shows. Filters of different kinds combine; the assignee filters ("me", "unassigned" and
-/// people) match any of them. The default is the newest key first (FR-029).</summary>
+/// people) match any of them, and so do the container filters (epics or stages, and "none"). The default is the newest
+/// key first (FR-029).</summary>
 /// <param name="Text">Words that must all appear in the title or the description.</param>
+/// <param name="Types">Phase 3 FR-020: only these types.</param>
+/// <param name="ContainerKeys">Phase 3 FR-020: only items in these epics or stages.</param>
+/// <param name="NoContainer">Phase 3 FR-020: items in no epic or stage.</param>
+/// <param name="Labels">Phase 4 FR-046: items with any of these labels.</param>
 public sealed record WorkItemListQuery(
     ListSort Sort = ListSort.Key,
     bool Descending = true,
@@ -51,7 +62,11 @@ public sealed record WorkItemListQuery(
     IReadOnlyList<Guid>? AssigneeIds = null,
     DueFilter Due = DueFilter.Any,
     string? Text = null,
-    int Page = 1);
+    int Page = 1,
+    IReadOnlyList<WorkItemType>? Types = null,
+    IReadOnlyList<string>? ContainerKeys = null,
+    bool NoContainer = false,
+    IReadOnlyList<string>? Labels = null);
 
 /// <param name="People">Everyone on the team and anyone else the project's tasks are assigned to, for the assignee
 /// filter.</param>
@@ -65,10 +80,14 @@ public sealed record WorkItemListView(
     long FirstToDoColumnId,
     IReadOnlyList<StatusOption> Columns,
     IReadOnlyList<AssigneeOption> People,
-    Page<WorkItemRow> Rows);
+    Page<WorkItemRow> Rows,
+    ProjectTemplate Template = ProjectTemplate.Kanban,
+    WorkTypeSet WorkTypes = WorkTypeSet.All);
 
 /// <param name="ParentKey">The parent task of a sub-task.</param>
 /// <param name="IsOpen">Not in a "done" column, so it can be overdue.</param>
+/// <param name="Container">The epic or stage (Phase 3 FR-020).</param>
+/// <param name="Labels">The item's labels (Phase 4 FR-045).</param>
 public sealed record WorkItemRow(
     string Key,
     string Title,
@@ -79,4 +98,22 @@ public sealed record WorkItemRow(
     DateOnly? StartDate,
     DateOnly? DueDate,
     DateTimeOffset UpdatedAt,
-    bool IsOpen);
+    bool IsOpen,
+    WorkItemType Type = WorkItemType.Task,
+    ContainerView? Container = null,
+    decimal? Estimate = null,
+    IReadOnlyList<string>? Labels = null)
+{
+    public IReadOnlyList<string> Labels { get; init; } = Labels ?? [];
+
+    /// <summary>Who created it, as Jira's "Reporter".</summary>
+    public AssigneeRef? Reporter { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>When it was done; null while it is open ("Unresolved").</summary>
+    public DateTimeOffset? ResolvedAt { get; init; }
+
+    /// <summary>For changing it from the list.</summary>
+    public byte[] Version { get; init; } = [];
+}

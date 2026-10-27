@@ -71,6 +71,31 @@ What the tree review confirmed:
 - My tasks: one region per project named by its heading, each with a table "Your open tasks in …, soonest due
   first".
 
+### Phase 3 screens (create project, backlog, sprints, Stages, timeline plan, drawer sections)
+
+- **Component tests** check the names that screen readers read: the type in words beside its symbol, the Move group of
+  each backlog row with Escape, each gate's state and each stage's place in words, each timeline bar's name with its
+  dates, progress and what it waits for (with "(late)"), the arrows hidden from screen readers, and the timeline's
+  Actions group with Escape (`BacklogPageTests`, `StagesPageTests`, `TimelinePlanPageTests`, `DependencyListTests`).
+- **axe-core** scans at 1280 px and 360 px of the create-project dialog, the backlog, the sprint dialogs and report, the
+  Stages view and its dialogs, "My tasks" with a gate waiting, and the timeline with containers, markers and arrows are
+  written in the `P3_US1`–`P3_US4` journeys. **They have not run yet**: the machine used to build Phase 3 has no
+  Playwright browser. Run them before the manual pass below.
+
+### Phase 4 screens (editor, notifications, attachments, search, labels, email choice)
+
+- **Component tests** check the names that screen readers read: the editor's labelled text box and its toolbar as one
+  tab stop with arrow keys, the table tools, the "@" suggestions as a list box with the active option, the bell's
+  unread count in words and its panel, the attachment list with each file's state in words and the preview dialog,
+  the search box as a combo box with recent items, the search page's removable filter chips and saved-filter panel,
+  the label combo box and "Remove label …" buttons, the board's quick filters as toggle buttons, and the profile's
+  email choice as a radio group (`RichTextEditorTests`, `NotificationBellTests`, `AttachmentsSectionTests`,
+  `SearchBoxTests`, `SearchPageTests`, `LabelsSectionTests`, `BoardQuickFilterTests`, `ProfileTests`).
+- **axe-core** scans at 1280 px and 360 px of the editor with its suggestions, the notification panel, the attachment
+  list and a preview, the search box with recent items, the search page with the saved-filter panel, the label combo
+  box, a quick-filtered board and the profile are written in the `P4_US1`–`P4_US5` journeys. Run them before the
+  manual pass below.
+
 ## 2. Manual pass with NVDA and Edge (to do)
 
 **Setup**: Windows 10/11, current Microsoft Edge, current NVDA with default settings (browse mode on), a test
@@ -161,7 +186,7 @@ one task should be assigned to the tester in a second project.
 
 1. Open List. Press D: the region "Filters" holds "Words, search box", "Search, button" and the combo boxes
    Status, Status type, Priority, Assignee and Due.
-2. Choose "Status type: In progress". Expect the count to be read (for example "4 tasks") and the list "Active
+2. Choose "Status type: In progress". Expect the count to be read (for example "4 items") and the list "Active
    filters" to hold "Remove filter Status type: In progress, button". Then "Clear filters, button".
 3. In the table "Tasks and sub-tasks of …", Tab to the "Due" header button and press Enter. Expect the header to
    read as sorted ascending; press Enter again for descending.
@@ -195,6 +220,175 @@ one task should be assigned to the tester in a second project.
    "Overdue" where it applies, or "No due date".
 4. Open a task from its link, set its status to Done and close the drawer. Expect the row to be gone and focus on
    the "My tasks" heading.
+
+### Phase 3 screens: setup
+
+Use three projects, with the tester as Project Admin in each:
+
+- **Kanban**: at least one epic with two items in it.
+- **Scrum**: ten estimated stories in the backlog, one completed sprint and one planned sprint.
+- **Stage-gate**: its four stages. The first stage's gate has two approvers, the tester and a colleague. The second
+  stage holds a task.
+
+In the Stage-gate project, schedule the stages and three tasks, add a milestone, and make one task wait for another.
+A second account, named as an approver, is needed for the gate steps.
+
+### Phase 3: create project and drawer (user story 1)
+
+1. "Create project": after the name and key, expect the group "Template" with three radio buttons ("Kanban", "Scrum",
+   "Stage-gate"), each with its description.
+2. On a board, read a card: its type is read in words ("Bug", "Story") before the title; the symbol is not read.
+3. Open an epic. Expect "Type, combo box, Epic", then the section "Items in this epic" with a progress bar named by its
+   text (for example "1 of 2 done (50%)") and a box to add an item. Open a story: the "Estimate" field and the "Epic"
+   combo box.
+4. In the List view, the Filters region also holds "Type" and "Epic" (or "Stage"). A chosen value is read in the list
+   "Active filters" as "Remove filter Type: Bug, button".
+
+### Phase 3: backlog and sprints (user story 2)
+
+1. Open Backlog from the project header. Expect one heading level 2 per sprint, then "Backlog". Each sprint reads its
+   totals (items and points) and its dates or state.
+2. Tab to a row: its link (the title), then "Move MOB-7 to…, button, collapsed". Enter expands the group "Move MOB-7":
+   "Move to top", "Move to bottom", "Move up", "Move down" and "Move to MOB Sprint 2". Choose one and expect "MOB-7 moved
+   to MOB Sprint 2, position 3 of 6." with focus back on the row's Move button. Escape closes the group without moving.
+3. "Create sprint": expect "Created MOB Sprint 3.". "Start MOB Sprint 3, button" opens the dialog "Start MOB Sprint 3"
+   with the start date, the end date (two weeks later) and the goal, each labelled.
+4. On the board, the active sprint's banner is a heading with its name, then its dates ("Overdue" once its end has
+   passed) and, for Project Admins, "Complete sprint, button". The dialog "Complete MOB Sprint 3" says how many items
+   are done and open, and asks where the open items go.
+5. From "Past sprints", open a report. Expect the sprint's name as a heading, then four tables whose captions name
+   them ("Added", "Removed", "Completed" and "Not completed"), each with a line that explains it.
+
+### Phase 3: stages and gates (user story 3)
+
+1. Open Stages. Expect one heading level 2 per stage, each followed by its place ("Current", "Locked" or "Approved"),
+   its dates and progress, the list "Approvers" and the gate's state in words.
+2. "Set up the Initiation gate, button" opens the dialog "Set up the Initiation gate". Type in the person search: the
+   list "People found" names each person with their user name, and the search's description says that people outside
+   the project become Viewers. "Remove Omar Ali, button" removes an approver. Expect "Saved the Initiation gate."
+3. On a locked stage's task, try to start it (drawer status or board Move). Expect the alert "This work cannot start
+   until the Initiation gate is approved." The drawer also reads "This work can start once the Initiation gate is
+   approved."
+4. "Request approval", as the colleague: the dialog "Request approval of the Initiation gate?" lists the stage's open
+   items first.
+5. As the approver, open "My tasks": the region "Gates waiting for you" lists "Initiation gate, link" with the project and
+   who requested it. Follow it: focus lands on the stage. "Send back the Initiation gate, button" opens a dialog whose
+   note is required; sending without one reads the error. Then "Approve the Initiation gate". Expect the stage's place
+   to read "Approved" and the next stage "Current".
+
+### Phase 3: timeline plan (user story 4)
+
+1. Open Timeline in the Stage-gate project. Each stage's row reads "Hide the items of CBU-1, button, expanded", the
+   stage link, "0% done", and "Actions for CBU-1, button, collapsed". Its bar reads "CBU-1 Initiation, 1 Oct 2026 to 14
+   Oct 2026, 0% done, To do, unassigned". The gate marker's text follows ("Gate approved").
+2. Collapse a stage with Enter: its items are no longer read, and the button reads "Show the items of …, collapsed".
+3. The milestone reads "CBU-5 Planning sign-off, milestone on 28 Oct 2026, To do, unassigned, button". Press Right twice
+   (Shift+Right does the same): expect "CBU-5: due 30 Oct 2026. Enter saves, Escape cancels.". Enter reads "CBU-5 is now
+   due 30 Oct 2026."
+4. A waiting task's bar ends with "waits for CBU-10", or "waits for CBU-10 (late)". The arrows themselves are not read.
+5. "Actions for CBU-11": Enter expands a group of buttons ("Open", "Add dependency", and "Schedule" for items without
+   dates). Escape closes it with focus back on the button. "Add dependency" opens the dialog "Add a dependency to
+   CBU-11": the combo box "This item" ("waits for…" or "blocks…"), the search box "Find the other item", and the list
+   "Items found". A refused link reads its reason (for example the loop). A saved one reads "CBU-11 now waits for
+   CBU-10."
+6. In a Scrum project, the lane "Sprints" reads each sprint's name, state, and dates.
+7. In a drawer, the section "Dependencies" has the headings "Waits for" and "Blocks". Each item reads its key, title,
+   status and dates, "Late" where it applies, and "Remove the dependency: CBU-11 waits for CBU-10, button".
+
+### Phase 4: formatted text, mentions and watchers (user story 1)
+
+1. In a drawer, Tab to "Edit description, button" and press Enter. Expect the description's text box ("edit, multi
+   line") and then the toolbar as one tab stop: "Formatting: Description, toolbar", the group "Text" and "Bold, toggle
+   button, not pressed"; Right moves through the tools and the groups "Blocks" and "Table menu".
+2. Press Ctrl+B, type a word, press Ctrl+B. Expect "Bold, toggle button, pressed" while on, and the word read as bold
+   later in browse mode (NVDA reads "bold" with formatting announcements on).
+3. Type "@bi". Expect "People to mention, list" and the first option read, for example "Bilal Ahmed, bilal, 1 of 1".
+   Enter inserts the mention; once saved, the comment reads "@Bilal Ahmed".
+4. Insert a table from the toolbar. Inside it, the tools of the "Table menu" group are enabled and read their names;
+   outside it they read "unavailable".
+5. "Watch, button" toggles to "Stop watching". The count reads "2 watchers, button, collapsed" and opens the list.
+
+### Phase 4: notifications (user story 1)
+
+1. In the header, the bell reads "Notifications, 2 unread, button, collapsed". Enter opens the panel: "Notifications,
+   dialog", "Mark all as read, button", then each notification as a link with its sentence ("Amina Khan mentioned you
+   on WEB-1 Plan the launch"), its time, and "Mark as read: …, button" (or "Mark as unread").
+2. Escape closes the panel with focus back on the bell. Opening a notification opens the item's drawer.
+
+### Phase 4: attachments (user story 2)
+
+1. The drawer's "Attachments" section reads "Attach files, button". After choosing a file, expect "report.pdf attached.
+   It is being checked for malware.", then the file's row with its size, uploader and time.
+2. A file being checked reads "Being checked" and has no link. A checked image reads "Enlarge home.png, button";
+   Enter opens the dialog "home.png" with the image's name as its text, and Escape closes it with focus back.
+3. "Download report.pdf, link" downloads; "Remove report.pdf, button" asks to confirm and reads the result.
+
+### Phase 4: search and saved filters (user story 3)
+
+1. On any page, Tab to "Search or type a key, combo box, collapsed". With it empty, expect it to expand and read
+   "Recently viewed, list" with each item ("WEB-4 Book the venue, Website Revamp"); Down and Enter open one.
+2. Type "mob-99" and Enter: expect "No work item MOB-99 was found." Type words and Enter: the search page opens and reads
+   "3 results".
+3. On the search page, the filters are labelled ("Space", "Type", "Status type"…); each chosen filter adds a chip
+   read as "Remove filter Status type: To do, button". The results table reads its caption "Search results".
+4. In "Saved filters, complementary", "Save this search as, edit" and "Save as filter" save it; the status reads
+   "Saved as Unassigned refunds.". "Rename", "Update with this search", "Share" (a group of checkboxes, one per project)
+   and "Delete" (with "Delete filter" and "Keep it") read their results. ("Share" lists spaces since the Jira parity pass.)
+
+### Phase 4: labels and quick filters (user story 4)
+
+1. In a drawer, "Labels, heading level 3", each label followed by "Remove label launch, button", and "Add label, combo
+   box". Typing "lau" reads "Labels in use, list" and "launch, 1 of 1"; Enter adds it and reads "Added the label
+   launch.". Viewers hear the labels only.
+2. On the board, after "Only my tasks" and "Assignee", the groups "Types", "Epics" (or "Stages") and "Labels" read
+   their toggle buttons, for example "Bug, toggle button, not pressed". Pressing one reads "Showing 2 of 9 cards.",
+   and each column's count reads "1 of 3 match the filter".
+
+### Phase 4: email choice (user story 5)
+
+1. On the profile, "Email notifications, heading level 2", then the radio group: "All notifications, radio button, not
+   checked, 1 of 3", "Only notifications aimed at me, radio button, checked", "None". Each reads its hint.
+2. Choose "None" with the arrow keys and press "Save email choice". Expect "Email choice saved."
+
+### Jira parity pass: layout, sidebar and "For you" (user story 4)
+
+1. On any page, the landmarks read "banner", "Main, navigation" (the sidebar) and "main". The sidebar's buttons read
+   "Recent, button, collapsed", "Starred, button, collapsed", "Spaces, button, expanded" and "Filters, button,
+   collapsed"; Enter opens one, and its links follow. "For you" is a link.
+2. In the header, "Sidebar, button, expanded" hides the sidebar and reads "collapsed"; reload: it is still collapsed.
+3. At 360 px, "Menu, button, has popup dialog" opens the "Menu" dialog with the same list; Escape closes it and focus
+   returns to the button.
+4. On a space page, "Star WEB, toggle button, not pressed" stars the space ("pressed"). The tabs read as links in the
+   "Space, navigation" ("Board, current page"). "More space pages, button, collapsed" opens a menu: Down and Up move
+   between "Members", "Space settings" and "Deleted items"; Escape returns to the button.
+5. On "Summary", the counts read as links ("3 created in the last 7 days"); each section is a heading level 2 with a
+   table or a list ("Work items by status type" caption); the epic progress bars read "Card refunds, 40% done".
+6. On "For you", the tabs "Worked on", "Viewed", "Assigned to me" and "Starred" read as links in the "For you"
+   navigation, with the current one marked.
+
+### Jira parity pass: Create form, gallery and columns (user stories 1 to 3)
+
+1. "Create, button" in the header opens the "Create" dialog with focus on "Summary *". Each field reads its label;
+   "Description" is the formatted text editor; "Parent" reads as a combo box with its suggestions as a list.
+2. Leave "Summary" empty and press "Create": the error reads "Enter a title." and focus moves to the field. With
+   "Create another" checked, a created item reads "Created WEB-12: …" and focus returns to "Summary".
+3. Escape with text typed asks "Discard this work item?" with "Discard" and "Keep editing".
+4. "Create space" opens the gallery: the templates read as radio buttons ("Scrum, radio button, 2 of 4") and the
+   preview reads "Preview of the Scrum template, region". "Use template" moves to the details step with focus on "Name".
+5. On the board as a Space admin, each column header has "Column actions for In Progress, button"; its menu reads
+   "Rename", "Set limit", "Move left", "Move right", "Change status type" and "Delete" as menu items. "Add column" at
+   the end opens its dialog.
+
+### Jira parity pass: cards, lanes and epic colors (user story 5)
+
+1. A card reads its summary first (the link), then "Epic: Card refunds", its labels, "Story", the key ("Sub-task of
+   WEB-2" for a sub-task), "High priority", "3 estimate", "2/5 sub-tasks done", "Due 9 Oct" and "Assigned to Sara Khan".
+2. "Group by, combo box" offers None, Epic (Stage), Assignee and Sub-tasks. With lanes, each lane header reads
+   "WEB-1 Card refunds, 2 cards, button, expanded"; Enter collapses it.
+3. On a card, "Move WEB-4 to…" opens the move list; in epic or person lanes it ends with "Lane: Sara Khan"; choosing it
+   reads "Moved WEB-4 to Sara Khan, To Do.". In Sub-tasks lanes there is no "Lane" choice.
+4. In an epic's drawer, "Epic color, radio group" reads "Purple, radio button, checked, 1 of 8"; arrow keys choose
+   another and the status reads "Color changed to Teal".
 
 ### Idle warning
 

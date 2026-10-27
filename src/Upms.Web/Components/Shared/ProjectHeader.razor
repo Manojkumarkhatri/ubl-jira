@@ -1,44 +1,214 @@
-@* The header of every project page (Phase 2 contracts/ui-routes.md, "Project header"): the breadcrumb, the page
-   heading, page-specific actions, and the project's pages, with the current one marked for assistive technology. *@
-<div class="page-head">
-    <div>
-        <div class="crumbs"><a href="projects">Projects</a> / @if (Current == ProjectPage.Board) {@ProjectKey} else {<a href="projects/@ProjectKey/board">@ProjectKey</a>}</div>
+@implements IDisposable
+@using Upms.Application.Projects
+@inject Upms.Web.Components.Layout.SidebarState SidebarState
+@inject ISpaceViewService SpaceViews
+@inject LiveAnnouncer Announcer
+@inject IJSRuntime JS
+@* The header of every space page, as in today's Jira Cloud (Jira parity pass FR-021a; contracts/ui-routes.md "Every
+   page"): the space's name and template, a star, the space's view tabs, "Shortcuts", the "+" panel where Space admins
+   add views to the navigation or remove them, Share and Full screen, and a "More" menu with Members and Space settings.
+   Opening a space page puts the space first among the person's recent spaces. *@
+<div class="space-head">
+    <div class="crumbs"><a href="spaces">Spaces</a></div>
+    <div class="space-title-row">
+        <span class="space-icon space-icon-@SpaceColor(ProjectKey)" aria-hidden="true">@ProjectKey[..1]</span>
         <h1>@Title</h1>
+        <span class="sr-only">, @TemplateName(Template) space</span>
+        <a class="icon-btn space-head-btn" href="spaces/@ProjectKey/members" aria-label="Members of @Title" title="Members"><Icon Name="people" /></a>
+        <div class="space-more">
+            <button type="button" id="space-more-button" class="icon-btn space-head-btn" aria-haspopup="menu" aria-expanded="@(_moreOpen ? "true" : "false")"
+                    aria-controls="@(_moreOpen ? "space-more-menu" : null)" aria-label="More space pages" data-testid="space-more" title="More"
+                    @onclick="ToggleMore"><Icon Name="more" /></button>
+            @if (_moreOpen)
+            {
+                <div class="menu-backdrop" @onclick="() => _moreOpen = false"></div>
+                <ul id="space-more-menu" class="column-menu-list" role="menu" aria-label="More space pages" @onkeydown="MoreKeyDown">
+                    @for (var i = 0; i < MorePages.Count; i++)
+                    {
+                        var entry = MorePages[i];
+                        <li role="none">
+                            <a id="space-more-@i" role="menuitem" tabindex="-1" class="column-menu-item" href="spaces/@ProjectKey/@entry.Path"
+                               aria-current="@CurrentFor(entry.Page)">@entry.Label</a>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+        <StarButton SpaceKey="@ProjectKey" />
+        @* Pages whose heading already names them (Members, Space settings) don't repeat it. *@
+        @if (MoreCurrentLabel is { } label && !string.Equals(label, Title, StringComparison.Ordinal))
+        {
+            <span class="more-current" aria-hidden="true">· @label</span>
+        }
+        <span class="spacer"></span>
+        @ChildContent
+        <div class="space-share">
+            @* app.js copies the address on the click itself, so browsers allow it. *@
+            <button type="button" class="icon-btn space-head-btn" aria-label="Share: copy the link to this page" title="Share" data-testid="space-share"
+                    data-copy-link><Icon Name="share" /></button>
+            <span class="share-note" role="status"></span>
+        </div>
+        <button type="button" class="icon-btn space-head-btn" aria-pressed="@(_fullScreen ? "true" : "false")" data-testid="space-full-screen"
+                aria-label="@(_fullScreen ? "Exit full screen" : "Enter full screen")" title="@(_fullScreen ? "Exit full screen" : "Enter full screen")"
+                @onclick="ToggleFullScreenAsync"><Icon Name="@(_fullScreen ? "fullscreen-exit" : "fullscreen")" /></button>
     </div>
-    <span class="spacer"></span>
-    @ChildContent
+    @* app.js moves the tabs that do not fit into "More", as Jira does; the current tab always stays. *@
+    <nav class="project-nav space-tabs" aria-label="Space" @ref="_tabs">
+        @foreach (var view in Tabs)
+        {
+            <a href="spaces/@ProjectKey/@view.Path" data-view="@view.Path" aria-current="@CurrentFor(view.Page)"><Icon Name="@view.Path" /> @view.Label</a>
+        }
+        <details class="tab-more" hidden>
+            <summary>More <span class="tab-more-count"></span> <Icon Name="chevron-down" Size="12" /></summary>
+            <ul class="tab-popover tab-more-list">
+                @foreach (var view in Tabs)
+                {
+                    <li data-view="@view.Path"><a href="spaces/@ProjectKey/@view.Path" aria-current="@CurrentFor(view.Page)"><Icon Name="@view.Path" /> @view.Label</a></li>
+                }
+            </ul>
+        </details>
+        @if (_shortcuts.Count > 0 || _canEditViews)
+        {
+            <div class="tab-menu">
+                <button type="button" id="space-shortcuts-button" class="tab-menu-btn" aria-haspopup="true" aria-expanded="@(_panel == Panel.Shortcuts ? "true" : "false")"
+                        aria-controls="@(_panel == Panel.Shortcuts ? "space-shortcuts" : null)" data-testid="space-shortcuts" @onclick="() => Toggle(Panel.Shortcuts)">
+                    Shortcuts <Icon Name="chevron-down" Size="12" />
+                </button>
+                @if (_panel == Panel.Shortcuts)
+                {
+                    <div class="menu-backdrop" @onclick="() => _panel = Panel.None"></div>
+                    <div id="space-shortcuts" class="tab-popover shortcuts-popover" role="region" aria-label="Shortcuts" @onkeydown="PanelKeyDown">
+                        @if (_shortcuts.Count == 0)
+                        {
+                            <p class="hint">Add links your team uses often, such as a design file or a shared folder.</p>
+                        }
+                        else
+                        {
+                            <ul class="shortcut-list">
+                                @foreach (var shortcut in _shortcuts)
+                                {
+                                    <li>
+                                        <a href="@shortcut.Url" target="_blank" rel="noopener noreferrer"><Icon Name="shortcut" /> @shortcut.Name</a>
+                                        @if (_canEditViews)
+                                        {
+                                            <button type="button" class="icon-btn" aria-label="Remove shortcut @shortcut.Name" title="Remove" disabled="@_saving"
+                                                    @onclick="() => RemoveShortcutAsync(shortcut.Id)"><Icon Name="close" Size="12" /></button>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        @if (_canEditViews)
+                        {
+                            @if (_addingShortcut)
+                            {
+                                <form class="shortcut-form" @onsubmit="AddShortcutAsync" @onsubmit:preventDefault>
+                                    <label for="shortcut-url">Web address</label>
+                                    <input id="shortcut-url" type="url" placeholder="https://" maxlength="500" @bind="_shortcutUrl" required />
+                                    <label for="shortcut-name">Name</label>
+                                    <input id="shortcut-name" type="text" maxlength="60" @bind="_shortcutName" required />
+                                    @if (_shortcutError is { } error)
+                                    {
+                                        <p class="field-error" role="alert">@error</p>
+                                    }
+                                    <div class="shortcut-form-actions">
+                                        <button type="button" class="btn btn-subtle" @onclick="() => _addingShortcut = false">Cancel</button>
+                                        <button type="submit" class="btn btn-primary" disabled="@_saving">Add</button>
+                                    </div>
+                                </form>
+                            }
+                            else
+                            {
+                                <button type="button" id="shortcut-add" class="btn btn-subtle shortcut-add" @onclick="StartShortcut"><Icon Name="plus" /> Add shortcut</button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        }
+        @if (_canEditViews)
+        {
+            <div class="tab-menu">
+                <button type="button" id="space-add-view-button" class="tab-add-btn" aria-haspopup="true" aria-expanded="@(_panel == Panel.Views ? "true" : "false")"
+                        aria-controls="@(_panel == Panel.Views ? "space-add-view" : null)" aria-label="Add a view" title="Add view" data-testid="space-add-view"
+                        @onclick="() => Toggle(Panel.Views)"><Icon Name="plus" /></button>
+                @if (_panel == Panel.Views)
+                {
+                    <div class="menu-backdrop" @onclick="() => _panel = Panel.None"></div>
+                    <div id="space-add-view" class="tab-popover views-popover" role="region" aria-label="Views" @onkeydown="PanelKeyDown">
+                        <h2 class="popover-title">Views</h2>
+                        <ul class="view-choice-list">
+                            @foreach (var name in _available)
+                            {
+                                var view = ViewOf(name);
+                                var shown = _views.Contains(name);
+                                <li>
+                                    <span class="view-choice-icon"><Icon Name="@view.Path" /></span>
+                                    <span class="view-choice-text"><b>@view.Label</b><span class="hint">@Describe(view.Page)</span></span>
+                                    @if (shown)
+                                    {
+                                        <button type="button" class="btn btn-subtle" disabled="@(_saving || _views.Count == 1)"
+                                                aria-label="Remove @view.Label from the navigation" @onclick="() => SetShownAsync(name, false)">Remove</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-primary" disabled="@_saving"
+                                                aria-label="Add @view.Label to the navigation" @onclick="() => SetShownAsync(name, true)">Add to navigation</button>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        }
+    </nav>
 </div>
-<nav class="project-nav" aria-label="Project">
-    <a href="projects/@ProjectKey/board" aria-current="@CurrentFor(ProjectPage.Board)">Board</a>
-    <a href="projects/@ProjectKey/list" aria-current="@CurrentFor(ProjectPage.List)">List</a>
-    <a href="projects/@ProjectKey/timeline" aria-current="@CurrentFor(ProjectPage.Timeline)">Timeline</a>
-    <a href="projects/@ProjectKey/members" aria-current="@CurrentFor(ProjectPage.Members)">Members</a>
-    @if (CanManage)
-    {
-        <a href="projects/@ProjectKey/settings" aria-current="@CurrentFor(ProjectPage.Settings)">Project settings</a>
-    }
-    @if (CanRestoreDeleted)
-    {
-        <a href="projects/@ProjectKey/deleted" aria-current="@CurrentFor(ProjectPage.Deleted)">Deleted tasks</a>
-    }
-</nav>
 
 @code {
+    private bool _moreOpen;
+    private int _focused;
+    private string? _focusId;
+    private string? _loadedFor;
+    private IReadOnlyList<string> _views = [];
+    private IReadOnlyList<string> _available = [];
+    private IReadOnlyList<ShortcutView> _shortcuts = [];
+    private bool _canEditViews;
+    private Panel _panel;
+    private bool _saving;
+    private bool _addingShortcut;
+    private string _shortcutName = "";
+    private string _shortcutUrl = "";
+    private string? _shortcutError;
+    private bool _fullScreen;
+    private ElementReference _tabs;
+
+    private enum Panel
+    {
+        None,
+        Shortcuts,
+        Views,
+    }
+
     [Parameter, EditorRequired]
     public string ProjectKey { get; set; } = "";
 
-    /// <summary>The page heading, for example the project name on the board.</summary>
+    /// <summary>The page heading, for example the space name on the board.</summary>
     [Parameter, EditorRequired]
     public string Title { get; set; } = "";
 
     [Parameter]
     public ProjectPage Current { get; set; }
 
-    /// <summary>Project Admins and administrators see "Project settings".</summary>
+    /// <summary>The space's template: its name is shown beside the heading and it decides the view tabs.</summary>
+    [Parameter]
+    public ProjectTemplate Template { get; set; }
+
+    /// <summary>Space admins and administrators see "Space settings".</summary>
     [Parameter]
     public bool CanManage { get; set; }
 
-    /// <summary>Administrators see "Deleted tasks".</summary>
+    /// <summary>Administrators restore archived work items.</summary>
     [Parameter]
     public bool CanRestoreDeleted { get; set; }
 
@@ -46,5 +216,279 @@
     [Parameter]
     public RenderFragment? ChildContent { get; set; }
 
+    /// <summary>The colour of a space's icon, from its key, so a space keeps its colour everywhere.</summary>
+    public static int SpaceColor(string key) => key.Sum(c => c) % 6;
+
+    /// <summary>The template's name as people read it.</summary>
+    public static string TemplateName(ProjectTemplate template) => template switch
+    {
+        ProjectTemplate.Scrum => "Scrum",
+        ProjectTemplate.StageGate => "Stage-gate",
+        _ => "Kanban",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        SidebarState.Changed += OnSidebarChanged;
+        await SidebarState.VisitedAsync(ProjectKey);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == ProjectKey)
+        {
+            return;
+        }
+
+        // Until the space's own choice arrives, the template's views show, so the tabs do not jump.
+        _loadedFor = ProjectKey;
+        _views = SpaceViewNames.DefaultsFor(Template);
+        _available = SpaceViewNames.AvailableFor(Template);
+        var loaded = await SpaceViews.GetAsync(ProjectKey, CancellationToken.None);
+        if (loaded.IsSuccess && _loadedFor == ProjectKey)
+        {
+            Apply(loaded.Value!);
+        }
+    }
+
+    private void Apply(SpaceViews views)
+    {
+        _views = views.Views;
+        _available = views.Available;
+        _shortcuts = views.Shortcuts;
+        _canEditViews = views.CanManage;
+    }
+
+    /// <summary>The tabs the space shows, and the current view too when it is not one of them, so the place is never lost.</summary>
+    private IEnumerable<ViewTab> Tabs =>
+        _available.Where(v => _views.Contains(v) || ViewOf(v).Page == Current).Select(ViewOf);
+
+    private static ViewTab ViewOf(string name) => name switch
+    {
+        SpaceViewNames.Summary => new(ProjectPage.Summary, name, "Summary"),
+        SpaceViewNames.Backlog => new(ProjectPage.Backlog, name, "Backlog"),
+        SpaceViewNames.Board => new(ProjectPage.Board, name, "Board"),
+        SpaceViewNames.List => new(ProjectPage.List, name, "List"),
+        SpaceViewNames.Calendar => new(ProjectPage.Calendar, name, "Calendar"),
+        SpaceViewNames.Timeline => new(ProjectPage.Timeline, name, "Timeline"),
+        SpaceViewNames.Stages => new(ProjectPage.Stages, name, "Stages"),
+        SpaceViewNames.Approvals => new(ProjectPage.Approvals, name, "Approvals"),
+        SpaceViewNames.Forms => new(ProjectPage.Forms, name, "Forms"),
+        SpaceViewNames.Docs => new(ProjectPage.Docs, name, "Docs"),
+        SpaceViewNames.Attachments => new(ProjectPage.Attachments, name, "Attachments"),
+        SpaceViewNames.Archived => new(ProjectPage.Deleted, name, "Archived work items"),
+        _ => new(ProjectPage.Reports, SpaceViewNames.Reports, "Reports"),
+    };
+
+    private static string Describe(ProjectPage page) => page switch
+    {
+        ProjectPage.Summary => "Status, activity and workload at a glance.",
+        ProjectPage.Backlog => "Plan sprints from a ranked backlog.",
+        ProjectPage.Board => "Move work across columns.",
+        ProjectPage.List => "Every work item in a sortable table.",
+        ProjectPage.Calendar => "Work items on their due dates.",
+        ProjectPage.Timeline => "Plan work on a timeline.",
+        ProjectPage.Stages => "Stages and their gate decisions.",
+        ProjectPage.Approvals => "Gates waiting for approval, and their decisions.",
+        ProjectPage.Forms => "Forms whose responses become work items.",
+        ProjectPage.Docs => "Pages of notes, requirements and decisions.",
+        ProjectPage.Attachments => "Every file added to work items.",
+        ProjectPage.Deleted => "Deleted work items, kept for restoring.",
+        _ => "Created vs resolved and other charts.",
+    };
+
+    private IReadOnlyList<ViewTab> MorePages =>
+    [
+        new(ProjectPage.Members, "members", "Members"),
+        .. CanManage ? [new ViewTab(ProjectPage.Settings, "settings", "Space settings")] : Array.Empty<ViewTab>(),
+    ];
+
+    /// <summary>On a page of the "More" menu, its name shows on the button, so the current place is always visible.</summary>
+    private string? MoreCurrentLabel => MorePages.FirstOrDefault(p => p.Page == Current)?.Label;
+
     private string? CurrentFor(ProjectPage page) => page == Current ? "page" : null;
+
+    private void Toggle(Panel panel)
+    {
+        _panel = _panel == panel ? Panel.None : panel;
+        _moreOpen = false;
+        _addingShortcut = false;
+    }
+
+    private void PanelKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _focusId = _panel == Panel.Views ? "space-add-view-button" : "space-shortcuts-button";
+            _panel = Panel.None;
+        }
+    }
+
+    private async Task SetShownAsync(string name, bool shown)
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var chosen = shown ? _available.Where(v => _views.Contains(v) || v == name).ToList() : _views.Where(v => v != name).ToList();
+            var saved = await SpaceViews.SetViewsAsync(ProjectKey, chosen, CancellationToken.None);
+            if (saved.IsSuccess)
+            {
+                Apply(saved.Value!);
+                Announcer.Announce(shown ? $"{ViewOf(name).Label} added to the navigation." : $"{ViewOf(name).Label} removed from the navigation.");
+            }
+            else
+            {
+                Announcer.Announce(saved.Error!.Message);
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void StartShortcut()
+    {
+        _addingShortcut = true;
+        _shortcutName = "";
+        _shortcutUrl = "";
+        _shortcutError = null;
+        _focusId = "shortcut-url";
+    }
+
+    private async Task AddShortcutAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var saved = await SpaceViews.AddShortcutAsync(ProjectKey, _shortcutName, _shortcutUrl, CancellationToken.None);
+            if (saved.IsSuccess)
+            {
+                Apply(saved.Value!);
+                _addingShortcut = false;
+                _focusId = "shortcut-add";
+                Announcer.Announce($"Shortcut {_shortcutName.Trim()} added.");
+            }
+            else
+            {
+                _shortcutError = saved.Error!.Message;
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RemoveShortcutAsync(long id)
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var saved = await SpaceViews.RemoveShortcutAsync(ProjectKey, id, CancellationToken.None);
+            if (saved.IsSuccess)
+            {
+                Apply(saved.Value!);
+                _focusId = "space-shortcuts-button";
+                Announcer.Announce("Shortcut removed.");
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ToggleFullScreenAsync()
+    {
+        try
+        {
+            _fullScreen = await JS.InvokeAsync<bool>("upms.fullScreen.toggle");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private void ToggleMore()
+    {
+        _moreOpen = !_moreOpen;
+        _panel = Panel.None;
+        _focused = 0;
+        _focusId = _moreOpen ? "space-more-0" : "space-more-button";
+    }
+
+    private void MoreKeyDown(KeyboardEventArgs e)
+    {
+        var count = MorePages.Count;
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                _focused = (_focused + 1) % count;
+                break;
+            case "ArrowUp":
+                _focused = (_focused - 1 + count) % count;
+                break;
+            case "Home":
+                _focused = 0;
+                break;
+            case "End":
+                _focused = count - 1;
+                break;
+            case "Escape":
+                _moreOpen = false;
+                _focusId = "space-more-button";
+                return;
+            case "Tab":
+                _moreOpen = false;
+                return;
+            default:
+                return;
+        }
+
+        _focusId = $"space-more-{_focused}";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender && await JS.InvokeAsync<bool>("upms.fullScreen.isOn"))
+            {
+                _fullScreen = true;
+                StateHasChanged();
+            }
+
+            await JS.InvokeVoidAsync("upms.fitTabs", _tabs);
+            if (_focusId is { } id)
+            {
+                _focusId = null;
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private void OnSidebarChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => SidebarState.Changed -= OnSidebarChanged;
+
+    private sealed record ViewTab(ProjectPage Page, string Path, string Label);
 }

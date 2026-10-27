@@ -1,5 +1,6 @@
 using Bunit;
 using Microsoft.AspNetCore.Components.Web;
+using Upms.Domain.Work;
 using Upms.Web.Components.Pages.Board;
 
 namespace Upms.Web.Tests.Board;
@@ -8,15 +9,50 @@ namespace Upms.Web.Tests.Board;
 public sealed class InlineCreateTests : BunitTestBase
 {
     private readonly List<string> _created = [];
+    private readonly List<WorkItemType> _types = [];
     private string? _nextError;
 
-    private IRenderedComponent<InlineCreate> RenderBox() => Render<InlineCreate>(p => p
+    private IRenderedComponent<InlineCreate> RenderBox(IReadOnlyList<WorkItemType>? types = null,
+        WorkItemType defaultType = WorkItemType.Task) => Render<InlineCreate>(p => p
         .Add(x => x.ColumnName, "To Do")
-        .Add(x => x.OnCreate, title =>
+        .Add(x => x.Types, types ?? [])
+        .Add(x => x.DefaultType, defaultType)
+        .Add(x => x.OnCreate, (title, type) =>
         {
             _created.Add(title);
+            _types.Add(type);
             return Task.FromResult(_nextError);
         }));
+
+    [Fact]
+    public void P3_FR010_The_box_offers_the_types_and_starts_on_the_default()
+    {
+        var cut = RenderBox([WorkItemType.Story, WorkItemType.Task, WorkItemType.Bug], WorkItemType.Story);
+
+        var choice = cut.Find("select.type-choice");
+        Assert.Equal(["Story", "Task", "Bug"], choice.QuerySelectorAll("option").Select(o => o.TextContent.Trim()));
+        Assert.Equal("Story", choice.GetAttribute("value"));
+        Assert.Contains("Type", cut.Find($"label[for='{choice.Id}']").TextContent, StringComparison.Ordinal);
+
+        choice.Change("Bug");
+        cut.Find("input").Input("Refund shows twice");
+        cut.Find("input").KeyDown(new KeyboardEventArgs { Key = "Enter" });
+
+        Assert.Equal([WorkItemType.Bug], _types);
+        Assert.Equal("Bug", cut.Find("select.type-choice").GetAttribute("value")); // the next item keeps the choice
+    }
+
+    [Fact]
+    public void With_one_type_there_is_no_choice()
+    {
+        var cut = RenderBox([WorkItemType.Task]);
+
+        Assert.Empty(cut.FindAll("select.type-choice"));
+        cut.Find("input").Input("Collect quotes");
+        cut.Find("input").KeyDown(new KeyboardEventArgs { Key = "Enter" });
+
+        Assert.Equal([WorkItemType.Task], _types);
+    }
 
     [Fact]
     public void The_box_is_labelled_for_its_column()

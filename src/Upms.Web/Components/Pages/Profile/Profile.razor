@@ -51,6 +51,33 @@ else
         </EditForm>
     </section>
 
+    <section class="card form-card" aria-labelledby="email-heading">
+        <h2 id="email-heading">Email notifications</h2>
+        @* Which notifications also come by email (Phase 4 FR-049, FR-051; contracts/ui-routes.md). *@
+        <form class="form" @onsubmit="SaveEmailChoiceAsync" @onsubmit:preventDefault="true">
+            <fieldset class="field" aria-describedby="email-hint">
+                <legend class="sr-only">Email notifications</legend>
+                @foreach (var (choice, label, hint) in EmailChoices)
+                {
+                    <div class="radio-row">
+                        <input type="radio" id="email-@choice" name="email-choice" value="@choice" checked="@(_emailChoice == choice)"
+                               @onchange="() => _emailChoice = choice" />
+                        <label for="email-@choice">@label</label>
+                        <span class="hint">@hint</span>
+                    </div>
+                }
+            </fieldset>
+            <p id="email-hint" class="hint">Every notification still shows in the app. Emails never contain descriptions or comment text.</p>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" data-testid="save-email-choice" disabled="@_savingEmail">Save email choice</button>
+                @if (_emailSaved)
+                {
+                    <span class="saved" role="status">Saved</span>
+                }
+            </div>
+        </form>
+    </section>
+
     <section class="card form-card" aria-labelledby="password-heading">
         <h2 id="password-heading">Password</h2>
         <p><a class="btn" href="Account/ChangePassword">Change password</a></p>
@@ -64,6 +91,16 @@ else
     private AppError? _error;
     private bool _saving;
     private bool _saved;
+    private EmailChoice _emailChoice = EmailChoice.AimedAtMe;
+    private bool _savingEmail;
+    private bool _emailSaved;
+
+    private static readonly (EmailChoice Choice, string Label, string Hint)[] EmailChoices =
+    [
+        (EmailChoice.All, "All notifications", "Also comments and status changes on items you watch."),
+        (EmailChoice.AimedAtMe, "Only notifications aimed at me", "Assignments, mentions, gate approvals and blocked uploads. This is the default."),
+        (EmailChoice.None, "None", "No emails from U-PMS."),
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -73,6 +110,7 @@ else
         {
             _input.DisplayName = _profile.DisplayName;
             _input.TimeZoneId = _profile.TimeZoneId ?? "";
+            _emailChoice = _profile.EmailChoice;
             _organizationZone = _profile.TimeZoneId is null ? _profile.EffectiveTimeZoneId : "organization setting";
         }
     }
@@ -92,6 +130,30 @@ else
             _saved = true;
             ViewerTimeZone.Invalidate();
             Announcer.Announce("Profile saved.");
+        }
+    }
+
+    // One save at a time; the answer is the account's choice as saved.
+    private async Task SaveEmailChoiceAsync()
+    {
+        if (_savingEmail)
+        {
+            return;
+        }
+
+        _savingEmail = true;
+        _emailSaved = false;
+        var result = await Accounts.SetEmailChoiceAsync(_emailChoice, CancellationToken.None);
+        _savingEmail = false;
+        if (result.IsSuccess)
+        {
+            _emailChoice = result.Value!.EmailChoice;
+            _emailSaved = true;
+            Announcer.Announce("Email choice saved.");
+        }
+        else
+        {
+            Announcer.Announce(result.Error!.Message);
         }
     }
 

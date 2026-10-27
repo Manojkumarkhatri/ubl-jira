@@ -28,8 +28,20 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
         var caller = allowed.Value!;
         var info = await workflow.GetBoardInfoAsync(caller.ProjectId, ct);
         var doneIds = info.Statuses.Where(s => s.Category == StatusCategory.Done).Select(s => s.Id).ToList();
+        var containerIds = query.ContainerKeys is { Count: > 0 } containerKeys
+            ? await db.WorkItems.AsNoTracking()
+                .Where(w => w.ProjectId == info.ProjectId && containerKeys.Contains(w.Key)
+                    && (w.Type == WorkItemType.Epic || w.Type == WorkItemType.Stage))
+                .Select(w => w.Id)
+                .ToListAsync(ct)
+            : null;
         var matching = Filter(db.WorkItems.AsNoTracking().Where(w => w.ProjectId == info.ProjectId), query, info.Statuses, doneIds,
-            caller.UserId, today);
+            caller.UserId, today, containerIds);
+        if (query.Labels is { Count: > 0 } labels)
+        {
+            matching = await LabelReads.WithAnyAsync(db, matching, labels, ct); // Phase 4 FR-046
+        }
+
         var page = new PageRequest(query.Page, PageSize).Normalized();
         var team = await assignees.TeamAsync(info.ProjectId, ct);
 
@@ -51,29 +63,53 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
             pageIds = await Sort(matching, query.Sort, query.Descending).Skip(page.Skip).Take(page.PageSize).Select(w => w.Id).ToListAsync(ct);
         }
 
-        var rows = await db.WorkItems.AsNoTracking()
-            .Where(w => pageIds.Contains(w.Id))
-            .Select(w => new
-            {
-                w.Id,
-                w.Key,
-                w.Title,
-                ParentKey = db.WorkItems.Where(p => p.Id == w.ParentId).Select(p => p.Key).FirstOrDefault(),
-                w.StatusId,
-                w.Priority,
-                w.AssigneeId,
-                w.StartDate,
-                w.DueDate,
-                w.UpdatedAt,
-            })
+        // The epic or stage is a left join on its key: a correlated FirstOrDefault of several columns becomes a ROW_NUMBER
+        // over every work item, which read the whole table at SC-002 volumes.
+        var rows = await (
+                from w in db.WorkItems.AsNoTracking().Where(w => pageIds.Contains(w.Id))
+                join c in db.WorkItems on w.ContainerId equals c.Id into containers
+                from container in containers.DefaultIfEmpty()
+                select new
+                {
+                    w.Id,
+                    w.Key,
+                    w.Title,
+                    ParentKey = db.WorkItems.Where(p => p.Id == w.ParentId).Select(p => p.Key).FirstOrDefault(),
+                    w.StatusId,
+                    w.Priority,
+                    w.AssigneeId,
+                    w.StartDate,
+                    w.DueDate,
+                    w.UpdatedAt,
+                    w.Type,
+                    w.Estimate,
+                    w.CreatedById,
+                    w.CreatedAt,
+                    w.ResolvedAt,
+                    w.RowVersion,
+                    ContainerKey = container != null ? container.Key : null,
+                    ContainerTitle = container != null ? container.Title : null,
+                    ContainerType = container != null ? (WorkItemType?)container.Type : null,
+                    ContainerColor = container != null ? container.Color : null,
+                })
             .ToDictionaryAsync(r => r.Id, ct);
-        var people = await assignees.DescribeAsync(team, rows.Values.Where(r => r.AssigneeId != null).Select(r => r.AssigneeId!.Value), ct);
+        var people = await assignees.DescribeAsync(team,
+            rows.Values.Where(r => r.AssigneeId != null).Select(r => r.AssigneeId!.Value).Concat(rows.Values.Select(r => r.CreatedById)), ct);
+        var labelsOf = await LabelReads.ForItemsAsync(db, pageIds, ct);
         var items = pageIds.ConvertAll(id =>
         {
             var row = rows[id];
             return new WorkItemRow(row.Key, row.Title, row.ParentKey, WorkItemReads.ToOption(info.Statuses, row.StatusId), row.Priority,
                 row.AssigneeId is { } assigneeId ? people[assigneeId] : null, row.StartDate, row.DueDate, row.UpdatedAt,
-                !doneIds.Contains(row.StatusId));
+                !doneIds.Contains(row.StatusId), row.Type,
+                row.ContainerKey is { } containerKey ? new ContainerView(containerKey, row.ContainerTitle!, row.ContainerType!.Value, row.ContainerColor) : null,
+                row.Estimate, labelsOf.GetValueOrDefault(id))
+            {
+                Reporter = people.GetValueOrDefault(row.CreatedById),
+                CreatedAt = row.CreatedAt,
+                ResolvedAt = row.ResolvedAt,
+                Version = row.RowVersion,
+            };
         });
 
         return new WorkItemListView(
@@ -85,12 +121,34 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
             info.Statuses.First(s => s.Category == StatusCategory.ToDo).Id,
             info.Statuses.Select(s => new StatusOption(s.Id, s.Name, s.Category)).ToList(),
             await PeopleAsync(info.ProjectId, team, caller.UserId, ct),
-            new Page<WorkItemRow>(items, total, page.Page, page.PageSize));
+            new Page<WorkItemRow>(items, total, page.Page, page.PageSize),
+            info.Template,
+            caller.WorkTypes);
     }
 
+    /// <param name="containerIds">The epics or stages asked for, already read from their keys (Phase 3 FR-020).</param>
     private static IQueryable<WorkItem> Filter(IQueryable<WorkItem> items, WorkItemListQuery query, IReadOnlyList<StatusInfo> statuses,
-        List<long> doneIds, Guid me, DateOnly today)
+        List<long> doneIds, Guid me, DateOnly today, List<long>? containerIds)
     {
+        if (query.Types is { Count: > 0 } types)
+        {
+            var chosenTypes = types.ToList();
+            items = items.Where(w => chosenTypes.Contains(w.Type));
+        }
+
+        if (containerIds is not null && query.NoContainer)
+        {
+            items = items.Where(w => w.ContainerId == null || containerIds.Contains(w.ContainerId.Value));
+        }
+        else if (containerIds is not null)
+        {
+            items = items.Where(w => w.ContainerId != null && containerIds.Contains(w.ContainerId.Value));
+        }
+        else if (query.NoContainer)
+        {
+            items = items.Where(w => w.ContainerId == null);
+        }
+
         if (query.ColumnIds is { Count: > 0 } columns)
         {
             var columnIds = columns.ToList();
@@ -134,7 +192,7 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
 
         foreach (var word in (query.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(MaxWords))
         {
-            items = items.Where(w => w.Title.Contains(word) || (w.Description != null && w.Description.Contains(word)));
+            items = items.Where(w => w.Title.Contains(word) || (w.DescriptionText != null && w.DescriptionText.Contains(word)));
         }
 
         return items;
@@ -153,6 +211,10 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
         (ListSort.DueDate, true) => items.OrderBy(w => w.DueDate == null).ThenByDescending(w => w.DueDate).ThenByDescending(w => w.Number),
         (ListSort.Updated, false) => items.OrderBy(w => w.UpdatedAt).ThenBy(w => w.Number),
         (ListSort.Updated, true) => items.OrderByDescending(w => w.UpdatedAt).ThenByDescending(w => w.Number),
+        (ListSort.Type, false) => items.OrderBy(w => w.Type).ThenBy(w => w.Number),
+        (ListSort.Type, true) => items.OrderByDescending(w => w.Type).ThenByDescending(w => w.Number),
+        (ListSort.Created, false) => items.OrderBy(w => w.CreatedAt).ThenBy(w => w.Number),
+        (ListSort.Created, true) => items.OrderByDescending(w => w.CreatedAt).ThenByDescending(w => w.Number),
         (_, false) => items.OrderBy(w => w.Number),
         _ => items.OrderByDescending(w => w.Number),
     };

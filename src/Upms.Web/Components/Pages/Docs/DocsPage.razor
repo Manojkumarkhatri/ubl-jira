@@ -1,0 +1,154 @@
+@page "/spaces/{Key}/docs"
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@inject ISpaceViewService SpaceViews
+@inject ISpaceDocService Docs
+@inject NavigationManager Navigation
+
+<PageTitle>@(_space?.SpaceName ?? Key) · Docs · U-PMS</PageTitle>
+
+@* The space's Docs, as Jira's: pages of notes, requirements and decisions kept next to the work, last changed first. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_space is null || _docs is null)
+{
+    <p aria-busy="true">Loading the docs…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@Key" Title="@_space.SpaceName" Current="ProjectPage.Docs" Template="_space.Template"
+                   CanManage="_space.CanManage" CanRestoreDeleted="_space.IsAdministrator" />
+
+    @if (_docs.Docs.Count == 0 && !_creating)
+    {
+        <div class="docs-hero">
+            <svg class="docs-hero-art" viewBox="0 0 240 120" aria-hidden="true" focusable="false">
+                <rect x="0" y="0" width="240" height="120" rx="8" fill="#cce0ff" />
+                <rect x="14" y="16" width="110" height="74" rx="4" fill="#fff" /><rect x="22" y="26" width="60" height="5" rx="2" fill="#dfe1e6" />
+                <rect x="22" y="38" width="90" height="4" rx="2" fill="#dfe1e6" /><rect x="22" y="48" width="70" height="4" rx="2" fill="#22a06b" />
+                <rect x="22" y="58" width="80" height="4" rx="2" fill="#ae4787" /><rect x="22" y="68" width="50" height="4" rx="2" fill="#dfe1e6" />
+                <rect x="134" y="24" width="94" height="62" rx="4" fill="#fff" transform="rotate(-4 180 55)" />
+                <rect x="146" y="34" width="22" height="22" rx="2" fill="#f8e6a0" /><rect x="174" y="34" width="22" height="22" rx="2" fill="#baf3db" />
+                <rect x="202" y="34" width="18" height="22" rx="2" fill="#dfd8fd" />
+            </svg>
+            <div>
+                <h2>Manage your space content, all in one place</h2>
+                <p>Keep meeting notes, requirements and decisions next to the work, so the team finds them where it works.</p>
+                @if (_docs.CanCreate)
+                {
+                    <button type="button" class="btn btn-primary" @onclick="StartCreate">Create a page</button>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="cal-toolbar">
+            <div class="board-search">
+                <Icon Name="search" />
+                <input type="search" class="input" aria-label="Search docs" placeholder="Search docs" @bind="_search" @bind:event="oninput" />
+            </div>
+            <span class="spacer"></span>
+            @if (_docs.CanCreate && !_creating)
+            {
+                <button type="button" class="btn btn-primary" @onclick="StartCreate"><Icon Name="plus" /> Create page</button>
+            }
+        </div>
+        @if (_creating)
+        {
+            <form class="doc-create card" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+                <label for="doc-title">Page title</label>
+                <div class="doc-create-row">
+                    <input id="doc-title" class="input" maxlength="200" placeholder="For example: Sprint 12 retrospective" @bind="_title" required />
+                    <button type="submit" class="btn btn-primary" disabled="@_busy">Create</button>
+                    <button type="button" class="btn btn-ghost" @onclick="() => _creating = false">Cancel</button>
+                </div>
+                @if (_error is not null)
+                {
+                    <p class="field-error" role="alert">@_error</p>
+                }
+            </form>
+        }
+        <ul class="doc-list">
+            @foreach (var doc in _docs.Docs.Where(Matches))
+            {
+                <li class="doc-card">
+                    <a href="spaces/@Key/docs/@doc.Id">
+                        <span class="doc-icon" aria-hidden="true"><Icon Name="docs" Size="18" /></span>
+                        <span class="doc-text">
+                            <b>@doc.Title</b>
+                            @if (doc.Preview is { } preview)
+                            {
+                                <span class="doc-preview">@preview</span>
+                            }
+                            <span class="hint">Updated by @doc.UpdatedBy · <LocalTime Value="doc.UpdatedAt" Format="d MMM yyyy" /></span>
+                        </span>
+                    </a>
+                </li>
+            }
+        </ul>
+    }
+}
+
+@code {
+    private SpaceViews? _space;
+    private SpaceDocList? _docs;
+    private bool _notFound;
+    private bool _creating;
+    private bool _busy;
+    private string _title = "";
+    private string _search = "";
+    private string? _error;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var space = await SpaceViews.GetAsync(Key, CancellationToken.None);
+        var docs = await Docs.ListAsync(Key, CancellationToken.None);
+        _notFound = !space.IsSuccess || !docs.IsSuccess;
+        _space = space.Value;
+        _docs = docs.Value;
+    }
+
+    private bool Matches(SpaceDocRow doc) =>
+        string.IsNullOrWhiteSpace(_search)
+        || doc.Title.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase)
+        || (doc.Preview?.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase) ?? false);
+
+    private void StartCreate()
+    {
+        _creating = true;
+        _title = "";
+        _error = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var created = await Docs.CreateAsync(Key, _title, CancellationToken.None);
+            if (created.IsSuccess)
+            {
+                Navigation.NavigateTo($"spaces/{Key}/docs/{created.Value!.Id}?edit=1");
+            }
+            else
+            {
+                _error = created.Error!.MessageFor("Title");
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

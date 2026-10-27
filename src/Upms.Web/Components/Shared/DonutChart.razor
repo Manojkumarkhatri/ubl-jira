@@ -1,0 +1,73 @@
+@using System.Globalization
+@* A donut chart with the total in the middle and a legend beside it, as on Jira's Summary and Reports. The legend carries
+   every number in words, so the ring itself is decorative. *@
+<div class="donut @(Compact ? "is-compact" : "")">
+    <svg class="donut-ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+        <circle cx="60" cy="60" r="@Radius" class="donut-track" />
+        @{
+            var total = Slices.Sum(s => s.Count);
+            var offset = 0.0;
+        }
+        @foreach (var slice in Slices.Where(s => s.Count > 0))
+        {
+            var length = Circumference * slice.Count / total;
+            <circle cx="60" cy="60" r="@Radius" class="donut-slice" stroke="@slice.Color"
+                    stroke-dasharray="@N(length) @N(Circumference - length)" stroke-dashoffset="@N(-offset)" transform="rotate(-90 60 60)" />
+            offset += length;
+        }
+        <text x="60" y="58" text-anchor="middle" class="donut-total">@total.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)</text>
+        <text x="60" y="74" text-anchor="middle" class="donut-caption">@Caption</text>
+    </svg>
+    <ul class="donut-legend">
+        @foreach (var slice in Slices.Where(s => s.Count > 0 || ShowZero))
+        {
+            <li>
+                <span class="donut-swatch" style="background: @slice.Color" aria-hidden="true"></span>
+                @if (slice.Href is { } href)
+                {
+                    <a href="@href">@slice.Label: @slice.Count</a>
+                }
+                else
+                {
+                    <span>@slice.Label: @slice.Count</span>
+                }
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    private const double Radius = 48;
+    private static readonly double Circumference = 2 * Math.PI * Radius;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Slice> Slices { get; set; } = [];
+
+    /// <summary>The words under the total, such as "Total work items".</summary>
+    [Parameter]
+    public string Caption { get; set; } = "Total";
+
+    /// <summary>Lists slices with no items too.</summary>
+    [Parameter]
+    public bool ShowZero { get; set; }
+
+    /// <summary>The legend under the ring rather than beside it.</summary>
+    [Parameter]
+    public bool Compact { get; set; }
+
+    private static string N(double value) => Math.Round(value, 2).ToString(CultureInfo.InvariantCulture);
+
+    public sealed record Slice(string Label, int Count, string Color, string? Href = null);
+
+    /// <summary>Colors for slices in order, as Jira's charts use them.</summary>
+    public static readonly string[] Palette = ["#1868db", "#8270db", "#22a06b", "#e2b203", "#e06c00", "#c9372c", "#2898bd", "#94c748", "#ae4787", "#758195"];
+
+    /// <summary>A status's color by its type: blues for to do, purples and yellows for in progress, greens for done.</summary>
+    public static string StatusColor(Upms.Domain.Common.StatusCategory category, int indexInCategory) => category switch
+    {
+        // The theme's palette (2026-10-28): to do in slates, in progress in blues, done in greens.
+        Upms.Domain.Common.StatusCategory.ToDo => new[] { "#8996a6", "#b7c3d1", "#5f6b7b", "#d3dbe5" }[indexInCategory % 4],
+        Upms.Domain.Common.StatusCategory.InProgress => new[] { "#1d5fb4", "#5a9be8", "#0e2643", "#9cc4f0" }[indexInCategory % 4],
+        _ => new[] { "#22a06b", "#4bce97", "#1f845a", "#94c748" }[indexInCategory % 4],
+    };
+}

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Upms.Domain.Common;
 
 namespace Upms.Domain.Identity;
 
@@ -37,6 +38,24 @@ public class User : IdentityUser<Guid>
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? LastSignInAt { get; set; }
+
+    /// <summary>Which notifications are also emailed (Phase 4 FR-049, FR-051).</summary>
+    public EmailChoice EmailNotifications { get; set; } = EmailChoice.AimedAtMe;
+
+    /// <summary>Whether the person keeps the sidebar collapsed (Jira parity pass FR-021).</summary>
+    public bool SidebarCollapsed { get; set; }
+
+    /// <summary>Which of the five kinds of user the person is; an Admin is also an <see cref="OrganizationRole.Administrator"/>.</summary>
+    public UserType UserType { get; set; } = UserType.Member;
+
+    /// <summary>The department the person belongs to; a Head sees all of it. Null for none.</summary>
+    public long? DepartmentId { get; set; }
+
+    /// <summary>Ticks given to this person beyond their type's.</summary>
+    public Rights RightsGranted { get; set; }
+
+    /// <summary>Ticks of their type taken away from this person.</summary>
+    public Rights RightsDenied { get; set; }
 
     public bool IsAdministrator => OrganizationRole == OrganizationRole.Administrator;
 

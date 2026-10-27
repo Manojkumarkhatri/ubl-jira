@@ -197,4 +197,94 @@ public sealed class WorkItemEditingTests
         Assert.True(Comment.Create(5, Amina, new string('c', 32_000), T0).IsSuccess);
         Assert.Equal("Body", Comment.Create(5, Amina, new string('c', 32_001), T0).Error!.Field);
     }
+
+    private static FormattedText Formatted(string json) => FormattedText.Parse(json, "Body").Value!;
+
+    private const string BoldPlan = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Plan","marks":[{"type":"bold"}]}]}]}""";
+
+    private const string TwoLines = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"One"}]},{"type":"paragraph","content":[{"type":"text","text":"Two"}]}]}""";
+
+    [Fact]
+    public void P4_US1_AS1_A_comment_keeps_its_document_and_its_plain_text()
+    {
+        var comment = Comment.Create(5, Amina, Formatted(BoldPlan), T0).Value!;
+
+        Assert.Equal((TextFormat.Document, Formatted(BoldPlan).Json, "Plan"), (comment.BodyFormat, comment.Body, comment.BodyText));
+    }
+
+    [Fact]
+    public void A_plain_comment_keeps_its_text_as_its_plain_text()
+    {
+        var comment = Comment.Create(5, Amina, "  Looks good  ", T0).Value!;
+
+        Assert.Equal((TextFormat.Plain, "Looks good", "Looks good"), (comment.BodyFormat, comment.Body, comment.BodyText));
+    }
+
+    [Fact]
+    public void P4_FR006_Editing_formatted_comments_keeps_the_Phase_1_rules()
+    {
+        var comment = Comment.Create(5, Amina, "First thoughts", T0).Value!;
+
+        Assert.Equal("CommentNotOwned", comment.Edit(Bilal, Formatted(TwoLines), T0.AddMinutes(1))!.Code);
+        Assert.Null(comment.Edit(Amina, Formatted(TwoLines), T0.AddMinutes(2)));
+        Assert.Equal((TextFormat.Document, "One\nTwo", T0.AddMinutes(2)), (comment.BodyFormat, comment.BodyText, comment.EditedAt));
+
+        Assert.Null(comment.Delete(Amina, T0.AddMinutes(3)));
+        Assert.Equal("Validation", comment.Edit(Amina, Formatted(BoldPlan), T0.AddMinutes(4))!.Code);
+    }
+
+    [Fact]
+    public void An_empty_formatted_comment_is_refused()
+    {
+        var empty = Formatted("""{"type":"doc","content":[{"type":"paragraph"}]}""");
+
+        Assert.Equal("Body", Comment.Create(5, Amina, empty, T0).Error!.Field);
+        Assert.Equal("Body", Comment.Create(5, Amina, "Plain", T0).Value!.Edit(Amina, empty, T0)!.Field);
+    }
+
+    [Fact]
+    public void P4_US1_AS2_A_formatted_description_is_recorded_in_history_as_plain_text()
+    {
+        var task = NewTask();
+        Assert.Null(task.Describe("Old plain text", By(Bilal)));
+
+        Assert.Null(task.Describe(Formatted(TwoLines), By(Bilal, 5)));
+
+        Assert.Equal((TextFormat.Document, Formatted(TwoLines).Json, "One\nTwo"), (task.DescriptionFormat, task.Description, task.DescriptionText));
+        Assert.Equal((WorkItemField.Description, "Old plain text", "One\nTwo"), (Last(task).Field, Last(task).OldValue, Last(task).NewValue));
+        Assert.Equal(T0.AddMinutes(5), task.UpdatedAt);
+    }
+
+    [Fact]
+    public void Saving_the_same_document_records_nothing_and_an_empty_one_clears_the_description()
+    {
+        var task = NewTask();
+        task.Describe(Formatted(BoldPlan), By(Bilal));
+        var changes = task.Changes.Count;
+
+        task.Describe(Formatted(BoldPlan), By(Bilal, 1));
+        Assert.Equal(changes, task.Changes.Count);
+
+        Assert.Null(task.Describe(Formatted("""{"type":"doc","content":[{"type":"paragraph"}]}"""), By(Bilal, 2)));
+        Assert.Equal((TextFormat.Plain, (string?)null, (string?)null), (task.DescriptionFormat, task.Description, task.DescriptionText));
+        Assert.Equal(("Plan", (string?)null), (Last(task).OldValue, Last(task).NewValue));
+    }
+
+    [Fact]
+    public void A_plain_description_is_its_own_plain_text()
+    {
+        var task = NewTask();
+
+        task.Describe("Line one\nLine two", By(Bilal));
+
+        Assert.Equal((TextFormat.Plain, "Line one\nLine two"), (task.DescriptionFormat, task.DescriptionText));
+    }
+
+    [Fact]
+    public void A_watch_records_who_watches_which_item_since_when()
+    {
+        var watch = Watch.Start(12, Bilal, T0);
+
+        Assert.Equal((12L, Bilal, T0), (watch.WorkItemId, watch.UserId, watch.StartedAt));
+    }
 }

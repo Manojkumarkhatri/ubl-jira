@@ -1,4 +1,4 @@
-@page "/my-tasks"
+@page "/for-you/assigned"
 @using Upms.Application.Work
 @using Upms.Web.Components.Pages.Board
 @using Upms.Web.Components.Pages.Drawer
@@ -7,16 +7,32 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>My tasks · U-PMS</PageTitle>
+<PageTitle>Assigned to me · For you · U-PMS</PageTitle>
 
-@* The open tasks and sub-tasks assigned to the signed-in person, grouped by project (Phase 2 FR-025, FR-026). *@
-<div class="page-head">
-    <h1 id="my-tasks-heading" tabindex="-1">My tasks</h1>
-</div>
+@* The open tasks and sub-tasks assigned to the signed-in person, grouped by project (Phase 2 FR-025, FR-026). Since
+   the Jira parity pass, it is the "Assigned to me" tab of "For you" (FR-022a). *@
+<Upms.Web.Components.Pages.ForYou.ForYouTabs Current="Upms.Web.Components.Pages.ForYou.ForYouTab.Assigned" />
 
 @if (_error is not null)
 {
     <div class="alert alert-error" role="alert">@_error</div>
+}
+
+@* Gates that await the user's decision come first (Phase 3 FR-041). *@
+@if (_gates.Count > 0)
+{
+    <section class="gates-waiting" data-testid="gates-waiting" aria-labelledby="gates-waiting-title">
+        <h2 id="gates-waiting-title" class="group-title">Gates waiting for you</h2>
+        <ul class="child-list">
+            @foreach (var gate in _gates)
+            {
+                <li data-testid="waiting-gate">
+                    <a class="child-link" href="spaces/@gate.ProjectKey/stages?stage=@gate.StageKey">@gate.StageTitle gate</a>
+                    <span class="hint">@gate.ProjectName · Requested by @gate.RequestedBy on <LocalTime Value="gate.RequestedAt" Format="d MMM yyyy" /></span>
+                </li>
+            }
+        </ul>
+    </section>
 }
 
 @if (_page is null)
@@ -25,7 +41,7 @@
 }
 else if (_page.TotalCount == 0)
 {
-    <EmptyState Title="Nothing is assigned to you" Text="Open tasks assigned to you in your projects appear here, soonest due first." />
+    <EmptyState Title="Nothing is assigned to you" Text="Open tasks assigned to you in your spaces appear here, soonest due first." />
 }
 else
 {
@@ -35,7 +51,7 @@ else
         var project = group[0];
         <section class="my-tasks-group" data-testid="my-tasks-group" aria-labelledby="group-@project.ProjectKey">
             <h2 class="group-title" id="group-@project.ProjectKey">
-                <a href="projects/@project.ProjectKey/board">@project.ProjectName <span class="key">(@project.ProjectKey)</span></a>
+                <a href="spaces/@project.ProjectKey/board">@project.ProjectName <span class="key">(@project.ProjectKey)</span></a>
             </h2>
             <div class="table-wrap">
                 <table class="tbl">
@@ -53,7 +69,8 @@ else
                         {
                             <tr data-testid="my-task" data-key="@row.Key" @key="row.Key">
                                 <td>
-                                    <a id="@LinkId(row.Key)" class="task-link" href="my-tasks?task=@row.Key">
+                                    <TypeIcon Type="row.Type" />
+                                    <a id="@LinkId(row.Key)" class="task-link" href="for-you/assigned?task=@row.Key">
                                         <span class="key">@row.Key</span> @row.Title
                                     </a>
                                     @if (row.ParentKey is { } parent)
@@ -87,6 +104,7 @@ else
 
 @code {
     private Page<MyTaskRow>? _page;
+    private IReadOnlyList<WaitingGateRow> _gates = [];
     private int _pageNumber = 1;
     private DateOnly _today;
     private string? _error;
@@ -128,6 +146,7 @@ else
     {
         _today = await ViewerToday.GetAsync();
         await LoadAsync();
+        _gates = (await MyTasks.ListGatesAsync(CancellationToken.None)).Value ?? [];
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -138,7 +157,7 @@ else
             _focusKey = null;
             try
             {
-                await JS.InvokeVoidAsync("upms.focusByIdIfLost", _page?.Items.Any(r => r.Key == key) == true ? LinkId(key) : "my-tasks-heading");
+                await JS.InvokeVoidAsync("upms.focusByIdIfLost", _page?.Items.Any(r => r.Key == key) == true ? LinkId(key) : "for-you-heading");
             }
             catch (JSDisconnectedException)
             {

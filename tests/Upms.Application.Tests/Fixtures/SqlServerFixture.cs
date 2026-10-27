@@ -49,6 +49,8 @@ public sealed class SqlServerFixture : IAsyncLifetime
                 new Table("dbo", "OrganizationSettings"),
                 new Table("dbo", "AuditEvents"),
                 new Table("dbo", "WorkItemChanges"),
+                new Table("dbo", "SprintScopeEvents"),
+                new Table("dbo", "GateDecisions"),
             ],
         });
     }
@@ -63,6 +65,8 @@ public sealed class SqlServerFixture : IAsyncLifetime
             command.CommandText = """
                 TRUNCATE TABLE [dbo].[AuditEvents];
                 IF OBJECT_ID(N'[dbo].[WorkItemChanges]') IS NOT NULL TRUNCATE TABLE [dbo].[WorkItemChanges];
+                IF OBJECT_ID(N'[dbo].[SprintScopeEvents]') IS NOT NULL TRUNCATE TABLE [dbo].[SprintScopeEvents];
+                IF OBJECT_ID(N'[dbo].[GateDecisions]') IS NOT NULL TRUNCATE TABLE [dbo].[GateDecisions];
                 UPDATE [dbo].[OrganizationSettings] SET [SetupCompletedAt] = NULL;
                 """;
             await command.ExecuteNonQueryAsync();

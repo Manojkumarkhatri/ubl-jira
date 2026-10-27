@@ -1,0 +1,81 @@
+@page "/spaces/{Key}/settings/work-types"
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
+@inject IProjectService Projects
+@inject ISpaceFieldService Fields
+
+@* Jira's "Work types" settings: the space's types, each opening its fields and layout, and which types the space uses. *@
+<PageTitle>Work types · @Key · U-PMS</PageTitle>
+
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_details is null || _list is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@_details.Key" Title="Space settings" Current="ProjectPage.Settings" CanManage="true" Template="_details.Template" />
+    <SettingsTabs SpaceKey="@_details.Key" Current="work-types" />
+
+    <section class="card form-card" aria-labelledby="type-list-heading">
+        <h2 id="type-list-heading">Work types</h2>
+        <p class="hint">Choose a work type to set the fields it shows and their order.</p>
+        <ul class="work-type-list" data-testid="work-type-list">
+            @foreach (var type in _list.Types)
+            {
+                <li>
+                    <TypeIcon Type="type" />
+                    <div class="work-type-text">
+                        <a href="spaces/@_details.Key/settings/work-types/@FieldIcons.Slug(type)">@WorkItemTypes.DisplayName(type)</a>
+                        <span class="hint">@SystemFields.TypeDescription(type)</span>
+                    </div>
+                    <a class="btn btn-sm" href="spaces/@_details.Key/settings/work-types/@FieldIcons.Slug(type)"
+                       aria-label="Configure the fields of @WorkItemTypes.DisplayName(type)">Configure fields</a>
+                </li>
+            }
+        </ul>
+    </section>
+
+    @if (_details.Template != ProjectTemplate.StageGate)
+    {
+        <WorkTypesEditor Details="_details" OnSaved="WorkTypesSavedAsync" />
+    }
+}
+
+@code {
+    private ProjectDetails? _details;
+    private SpaceFieldList? _list;
+    private bool _notFound;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var details = await Projects.GetAsync(Key, CancellationToken.None);
+        var list = await Fields.ListAsync(Key, CancellationToken.None);
+        if (!details.IsSuccess || !details.Value!.CanManage || !list.IsSuccess)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _details = details.Value;
+        _list = list.Value;
+    }
+
+    private async Task WorkTypesSavedAsync(ProjectDetails details)
+    {
+        _details = details;
+        var list = await Fields.ListAsync(Key, CancellationToken.None);
+        if (list.IsSuccess)
+        {
+            _list = list.Value;
+        }
+    }
+}

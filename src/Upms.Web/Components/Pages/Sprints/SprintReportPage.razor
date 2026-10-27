@@ -1,0 +1,112 @@
+@page "/spaces/{Key}/sprints/{Number:int}"
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Backlog
+@inject ISprintService Sprints
+
+<PageTitle>@(_report?.Name ?? "Sprint report") · U-PMS</PageTitle>
+
+@* The report of a completed sprint (Phase 3 FR-029), read from its scope log, so it never changes. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_report is not { } report)
+{
+    <p aria-busy="true">Loading the sprint report…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@report.ProjectKey" Title="@report.ProjectName" Current="ProjectPage.Backlog" Template="ProjectTemplate.Scrum"
+                   CanManage="report.CanManage" CanRestoreDeleted="report.CanRestoreDeleted">
+        <a class="btn" href="spaces/@report.ProjectKey/backlog" data-testid="back-to-backlog">Back to the backlog</a>
+    </ProjectHeader>
+
+    <div class="sprint-banner">
+        <h2 data-testid="report-title">@report.Name</h2>
+        <span class="sprint-state">Completed</span>
+        <span class="hint" data-testid="report-dates">@SprintHeader.DateRange(report.StartDate, report.EndDate) · completed <LocalTime Value="report.CompletedAt" /></span>
+    </div>
+    @if (!string.IsNullOrEmpty(report.Goal))
+    {
+        <p class="sprint-goal" data-testid="report-goal">@report.Goal</p>
+    }
+
+    @foreach (var (name, group, hint) in Groups(report))
+    {
+        <section class="report-section">
+            <div class="table-wrap">
+                <table class="tbl report-table">
+                    <caption>
+                        <span data-testid="group-name">@name</span>
+                        <span class="hint"> · <span data-testid="group-total">@Total(group)</span></span>
+                        <div class="hint">@hint</div>
+                    </caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Key</th>
+                            <th scope="col">Type</th>
+                            <th scope="col">Title</th>
+                            <th scope="col">Estimate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (group.Items.Count == 0)
+                        {
+                            <tr><td colspan="4" class="hint">None</td></tr>
+                        }
+                        @foreach (var line in group.Items)
+                        {
+                            <tr>
+                                <td class="key" data-testid="report-key">@line.Key</td>
+                                <td><TypeIcon Type="line.Type" /></td>
+                                <td>
+                                    @if (line.IsDeleted)
+                                    {
+                                        @line.Title <span class="overdue-label">Deleted</span>
+                                    }
+                                    else
+                                    {
+                                        <a href="spaces/@report.ProjectKey/board?task=@line.Key">@line.Title</a>
+                                    }
+                                </td>
+                                <td>@(WorkItem.FormatEstimate(line.Estimate) ?? "–")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    private SprintReport? _report;
+    private bool _notFound;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    [Parameter]
+    public int Number { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var result = await Sprints.GetReportAsync(Key, Number, CancellationToken.None);
+        _report = result.Value;
+        _notFound = !result.IsSuccess;
+    }
+
+    private static IEnumerable<(string Name, ReportGroup Group, string Hint)> Groups(SprintReport report)
+    {
+        yield return ("Committed", report.Committed, "In the sprint when it started.");
+        yield return ("Added", report.Added, "Moved in, or created on the board, while the sprint was active.");
+        yield return ("Removed", report.Removed, "Moved out or deleted while the sprint was active.");
+        yield return ("Completed", report.Completed, "Done when the sprint was completed.");
+        yield return ("Not completed", report.NotCompleted, "Open when the sprint was completed.");
+    }
+
+    /// <summary>"3 items · 10 points"; estimates are those of the moment each item was counted.</summary>
+    private static string Total(ReportGroup group) =>
+        $"{SprintHeader.ItemCount(group.Items.Count)} · {WorkItem.FormatEstimate(group.EstimateTotal) ?? "0"} {(group.EstimateTotal == 1 ? "point" : "points")}";
+}

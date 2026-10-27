@@ -15,6 +15,10 @@ public sealed partial class Project
     public const string DestinationRequiredCode = "DestinationRequired";
     public const string DuplicateMemberCode = "DuplicateMember";
     public const string LastProjectAdminCode = "LastProjectAdmin";
+    public const string TemplateSwitchNotAllowedCode = "TemplateSwitchNotAllowed";
+    public const string SprintsOpenCode = "SprintsOpen";
+    public const string NoStandardTypeCode = "NoStandardType";
+    public const string WorkTypeInUseCode = "WorkTypeInUse";
 
     /// <summary>A board holds at most this many columns (FR-034).</summary>
     public const int MaxColumns = 10;
@@ -31,13 +35,14 @@ public sealed partial class Project
     {
     }
 
-    private Project(string key, string name, string? description, Guid ownerId, DateTimeOffset createdAt)
+    private Project(string key, string name, string? description, Guid ownerId, ProjectTemplate template, DateTimeOffset createdAt)
     {
         Key = key;
         Name = name;
         NormalizedName = NormalizeName(name);
         Description = description;
         OwnerId = ownerId;
+        Template = template;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
     }
@@ -53,6 +58,14 @@ public sealed partial class Project
     public string NormalizedName { get; private set; } = "";
 
     public string? Description { get; private set; }
+
+    /// <summary>How the project works (Phase 3 FR-001): Kanban (every project created before Phase 3), Scrum or
+    /// Stage-gate. Only Kanban and Scrum can switch into each other (FR-005).</summary>
+    public ProjectTemplate Template { get; private set; }
+
+    /// <summary>The work types a Kanban, Scrum or blank space has turned on; all four unless changed (Jira parity pass
+    /// FR-017). Stage-gate spaces ignore it.</summary>
+    public WorkTypeSet WorkTypes { get; private set; } = WorkTypeSet.All;
 
     /// <summary>The creator (FR-011), who becomes the first Project Admin; since Phase 2 it grants no rights itself.</summary>
     public Guid OwnerId { get; private set; }
@@ -73,6 +86,52 @@ public sealed partial class Project
     /// <summary>Incremented on every membership change; team commands carry the version they saw (Phase 2 FR-013).</summary>
     public int MembersVersion { get; private set; } = 1;
 
+    /// <summary>The views shown as the space's tabs, in order, as Jira's "Add to navigation" keeps them (for example
+    /// "summary,board,list,calendar"); null shows the template's defaults.</summary>
+    public string? NavigationViews { get; private set; }
+
+    public const int NavigationViewsMaxLength = 200;
+
+    /// <summary>The portfolio the space belongs to, which gives its leads and its department's Heads access; null for none.</summary>
+    public long? PortfolioId { get; private set; }
+
+    /// <summary>In the trash, as Jira's deleted spaces: hidden everywhere until an Admin restores it (owner, 2026-10-26).
+    /// Nothing is erased, so its history stays.</summary>
+    public bool IsDeleted { get; private set; }
+
+    public DateTimeOffset? DeletedAt { get; private set; }
+
+    public Guid? DeletedById { get; private set; }
+
+    public void MoveToTrash(Guid byUserId, DateTimeOffset now)
+    {
+        IsDeleted = true;
+        DeletedAt = now;
+        DeletedById = byUserId;
+        UpdatedAt = now;
+    }
+
+    public void Restore(DateTimeOffset now)
+    {
+        IsDeleted = false;
+        DeletedAt = null;
+        DeletedById = null;
+        UpdatedAt = now;
+    }
+
+    public void MoveToPortfolio(long? portfolioId, DateTimeOffset now)
+    {
+        PortfolioId = portfolioId;
+        UpdatedAt = now;
+    }
+
+    /// <summary>Sets the space's tabs; the caller checks the names.</summary>
+    public void SetNavigationViews(string? views, DateTimeOffset now)
+    {
+        NavigationViews = views;
+        UpdatedAt = now;
+    }
+
     /// <summary>The board columns in position order.</summary>
     public IReadOnlyList<ProjectStatus> Statuses => _statuses.OrderBy(s => s.Position).ToList();
 
@@ -81,9 +140,10 @@ public sealed partial class Project
 
     public static string NormalizeName(string name) => name.Trim().ToUpperInvariant();
 
-    /// <summary>A new project with the default Kanban columns and its creator as the first Project Admin (FR-011,
-    /// FR-016, Phase 2 FR-007).</summary>
-    public static DomainResult<Project> Create(string name, string key, string? description, Guid ownerId, DateTimeOffset now)
+    /// <summary>A new project with its template's columns and its creator as the first Project Admin (FR-011, FR-016,
+    /// Phase 2 FR-007, Phase 3 FR-002).</summary>
+    public static DomainResult<Project> Create(string name, string key, string? description, Guid ownerId, DateTimeOffset now,
+        ProjectTemplate template = ProjectTemplate.Kanban)
     {
         var normalizedKey = (key ?? "").Trim().ToUpperInvariant();
         if (!KeyPattern().IsMatch(normalizedKey))
@@ -102,13 +162,159 @@ public sealed partial class Project
             return descriptionError;
         }
 
-        var project = new Project(normalizedKey, name.Trim(), NormalizeDescription(description), ownerId, now);
-        project._statuses.Add(new ProjectStatus("To Do", StatusCategory.ToDo, 0));
-        project._statuses.Add(new ProjectStatus("In Progress", StatusCategory.InProgress, 1));
-        project._statuses.Add(new ProjectStatus("Done", StatusCategory.Done, 2));
+        var project = new Project(normalizedKey, name.Trim(), NormalizeDescription(description), ownerId, template, now);
+        var columns = StartingColumns(template);
+        for (var i = 0; i < columns.Length; i++)
+        {
+            project._statuses.Add(new ProjectStatus(columns[i].Name, columns[i].Category, i));
+        }
+
         project._members.Add(new ProjectMember(ownerId, ProjectRole.ProjectAdmin, ownerId, now));
         return project;
     }
+
+    /// <summary>A space from the Blank template: a Kanban space with the columns, in order, and the work types its creator
+    /// chose (Jira parity pass FR-016, FR-017; research R13).</summary>
+    public static DomainResult<Project> Create(string name, string key, string? description, Guid ownerId, DateTimeOffset now,
+        IReadOnlyList<(string Name, StatusCategory Category)> columns, WorkTypeSet workTypes)
+    {
+        if (CheckWorkTypes(workTypes) is { } noStandardType)
+        {
+            return noStandardType;
+        }
+
+        var created = Create(name, key, description, ownerId, now, ProjectTemplate.Kanban);
+        if (!created.IsSuccess)
+        {
+            return created;
+        }
+
+        var project = created.Value!;
+        project._statuses.Clear();
+        if (columns.Count > MaxColumns)
+        {
+            return DomainError.Rule(TooManyColumnsCode, $"A board can have at most {MaxColumns} columns.");
+        }
+
+        for (var i = 0; i < columns.Count; i++)
+        {
+            if (project.ValidateColumnName(columns[i].Name, null) is { } invalid)
+            {
+                return invalid.Code == DomainError.ValidationCode ? DomainError.Invalid($"Columns[{i}].Name", invalid.Message) : invalid;
+            }
+
+            project._statuses.Add(new ProjectStatus(columns[i].Name.Trim(), columns[i].Category, i));
+        }
+
+        if (!project._statuses.Exists(s => s.Category == StatusCategory.ToDo))
+        {
+            return DomainError.Rule(LastToDoColumnCode, "A board needs at least one \"to do\" column.");
+        }
+
+        if (!project._statuses.Exists(s => s.Category == StatusCategory.Done))
+        {
+            return DomainError.Rule(LastDoneColumnCode, "A board needs at least one \"done\" column.");
+        }
+
+        project.WorkTypes = workTypes;
+        return project;
+    }
+
+    /// <summary>Turns work types on and off in a Kanban, Scrum or blank space (Jira parity pass FR-017). A type that live or
+    /// deleted items use stays on; <paramref name="itemsByType"/> counts them, from the Work module.</summary>
+    public DomainError? SetWorkTypes(WorkTypeSet workTypes, IReadOnlyDictionary<WorkTypeSet, int> itemsByType, DateTimeOffset now)
+    {
+        if (Template == ProjectTemplate.StageGate)
+        {
+            return DomainError.Rule(TemplateSwitchNotAllowedCode, "Stage-gate spaces have fixed work types.");
+        }
+
+        if (CheckWorkTypes(workTypes) is { } noStandardType)
+        {
+            return noStandardType;
+        }
+
+        foreach (var (type, count) in itemsByType.Where(t => t.Value > 0 && WorkTypes.HasFlag(t.Key) && !workTypes.HasFlag(t.Key)))
+        {
+            return DomainError.Rule(WorkTypeInUseCode,
+                $"{PluralName(type)} are still used by {count} {(count == 1 ? "item" : "items")} in this space.");
+        }
+
+        if (workTypes != WorkTypes)
+        {
+            WorkTypes = workTypes;
+            DetailsVersion++;
+            UpdatedAt = now;
+        }
+
+        return null;
+    }
+
+    private static DomainError? CheckWorkTypes(WorkTypeSet workTypes) =>
+        (workTypes & (WorkTypeSet.Story | WorkTypeSet.Task | WorkTypeSet.Bug)) == WorkTypeSet.None
+            ? DomainError.Rule(NoStandardTypeCode, "Choose at least one of Story, Task or Bug.")
+            : null;
+
+    private static string PluralName(WorkTypeSet type) => type switch
+    {
+        WorkTypeSet.Epic => "Epics",
+        WorkTypeSet.Story => "Stories",
+        WorkTypeSet.Task => "Tasks",
+        _ => "Bugs",
+    };
+
+    /// <summary>Switches between Kanban and Scrum, keeping the columns (Phase 3 FR-005). A Scrum project with an active
+    /// or planned sprint cannot become Kanban (the Work module knows, hence <paramref name="hasOpenSprints"/>); no
+    /// project switches to or from Stage-gate, because its work item types differ.</summary>
+    public DomainError? SwitchTemplate(ProjectTemplate target, bool hasOpenSprints, DateTimeOffset now)
+    {
+        if (target == Template)
+        {
+            return null;
+        }
+
+        if (target == ProjectTemplate.StageGate || Template == ProjectTemplate.StageGate)
+        {
+            return DomainError.Rule(TemplateSwitchNotAllowedCode,
+                "A space can switch only between Kanban and Scrum; Stage-gate spaces use other work item types.");
+        }
+
+        if (Template == ProjectTemplate.Scrum && hasOpenSprints)
+        {
+            return DomainError.Rule(SprintsOpenCode,
+                "Complete or delete the space's active and planned sprints before switching it to Kanban.");
+        }
+
+        Template = target;
+        DetailsVersion++;
+        UpdatedAt = now;
+        return null;
+    }
+
+    // The columns each template starts with (data-model.md, "Template rules").
+    public static (string Name, StatusCategory Category)[] StartingColumns(ProjectTemplate template) => template switch
+    {
+        ProjectTemplate.Scrum =>
+        [
+            ("To Do", StatusCategory.ToDo),
+            ("In Progress", StatusCategory.InProgress),
+            ("In Review", StatusCategory.InProgress),
+            ("Done", StatusCategory.Done),
+        ],
+        ProjectTemplate.StageGate =>
+        [
+            ("Not Started", StatusCategory.ToDo),
+            ("In Progress", StatusCategory.InProgress),
+            ("On Hold", StatusCategory.InProgress),
+            ("Completed", StatusCategory.Done),
+        ],
+        _ =>
+        [
+            ("To Do", StatusCategory.ToDo),
+            ("In Progress", StatusCategory.InProgress),
+            ("Done", StatusCategory.Done),
+        ],
+    };
 
     /// <summary>Changes the name and description; the key never changes (FR-012, FR-014).</summary>
     public DomainError? UpdateDetails(string name, string? description, DateTimeOffset now)
@@ -136,7 +342,7 @@ public sealed partial class Project
         if (_members.FirstOrDefault(m => m.UserId == userId) is { } existing)
         {
             return DomainError.Rule(DuplicateMemberCode,
-                $"This person is already a member of the project, as {existing.Role.DisplayName()}.");
+                $"This person is already a member of the space ({existing.Role.DisplayName().ToLowerInvariant()}).");
         }
 
         var member = new ProjectMember(userId, role, addedById, now);
@@ -178,6 +384,67 @@ public sealed partial class Project
         return null;
     }
 
+    /// <summary>Makes the access given by the space's portfolio or department match <paramref name="granted"/> (its leads
+    /// and Heads, each with the role their ticks give): adds those missing, removes grants no longer given, and leaves
+    /// people added by hand as they are. True when anything changed.</summary>
+    public bool SyncPortfolioAccess(IReadOnlyDictionary<Guid, ProjectRole> granted, DateTimeOffset now)
+    {
+        var changed = false;
+        foreach (var stale in _members.Where(m => m.FromPortfolio && !granted.ContainsKey(m.UserId)).ToList())
+        {
+            _members.Remove(stale);
+            changed = true;
+        }
+
+        foreach (var (userId, role) in granted)
+        {
+            if (_members.FirstOrDefault(m => m.UserId == userId) is { } existing)
+            {
+                // A grant follows the person's ticks; someone added by hand keeps their role unless the grant gives more.
+                if (existing.FromPortfolio ? existing.Role != role : Rank(role) > Rank(existing.Role))
+                {
+                    existing.ChangeRole(role);
+                    changed = true;
+                }
+
+                continue;
+            }
+
+            var member = new ProjectMember(userId, role, null, now);
+            member.SetFromPortfolio(true);
+            _members.Add(member);
+            changed = true;
+        }
+
+        if (changed)
+        {
+            TeamChanged(now);
+        }
+
+        return changed;
+    }
+
+    private static int Rank(ProjectRole role) => role switch
+    {
+        ProjectRole.ProjectAdmin => 2,
+        ProjectRole.Member => 1,
+        _ => 0,
+    };
+
+    /// <summary>Sets a member's role from their ticks after their type or ticks changed. Unlike
+    /// <see cref="ChangeMemberRole"/>, it may leave the space without a Space admin: an Admin decided the change.</summary>
+    public bool SetRoleFromRights(Guid userId, ProjectRole role, DateTimeOffset now)
+    {
+        if (_members.FirstOrDefault(m => m.UserId == userId) is not { } member || member.Role == role || member.FromPortfolio)
+        {
+            return false;
+        }
+
+        member.ChangeRole(role);
+        TeamChanged(now);
+        return true;
+    }
+
     // Only a change to an active Project Admin can lower their number; with none left, administrators can still repair
     // the project by changing inactive ones and appointing someone.
     private bool WouldLeaveNoActiveProjectAdmin(ProjectMember member, IReadOnlySet<Guid> activeUserIds) =>
@@ -187,13 +454,13 @@ public sealed partial class Project
 
     private static DomainError LastProjectAdmin() =>
         DomainError.Rule(LastProjectAdminCode,
-            "This is the project's last active Project Admin. Make someone else a Project Admin first.");
+            "This is the last active person who manages the space. Give someone else that access first.");
 
     private void EnsureOwnMember(ProjectMember member)
     {
         if (!_members.Contains(member))
         {
-            throw new InvalidOperationException("The member does not belong to this project.");
+            throw new InvalidOperationException("The member does not belong to this space.");
         }
     }
 
@@ -393,7 +660,7 @@ public sealed partial class Project
         var trimmed = name?.Trim() ?? "";
         return trimmed.Length switch
         {
-            0 => DomainError.Invalid("Name", "Enter a project name."),
+            0 => DomainError.Invalid("Name", "Enter a space name."),
             > NameMaxLength => DomainError.Invalid("Name", $"The name can have at most {NameMaxLength} characters."),
             _ => null,
         };

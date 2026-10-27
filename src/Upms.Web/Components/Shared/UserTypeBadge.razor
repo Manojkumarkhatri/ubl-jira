@@ -1,0 +1,7 @@
+@* The badge under a person's name saying which of the five kinds of user they are (owner's decision of 2026-10-20). *@
+<span class="type-badge type-@Type.CssName()" title="@Type.Description()">@Type.DisplayName()</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public UserType Type { get; set; }
+}

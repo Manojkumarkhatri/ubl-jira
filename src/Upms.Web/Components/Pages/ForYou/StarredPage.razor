@@ -1,0 +1,40 @@
+@page "/for-you/starred"
+@using Upms.Application.Projects
+@inject ISpaceNavigationService Navigation
+
+<PageTitle>Starred · For you · U-PMS</PageTitle>
+
+@* "Starred": the spaces the person starred, each with its star to take it off (Jira parity pass FR-021b, FR-022a). *@
+<ForYouTabs Current="ForYouTab.Starred" />
+
+@if (_spaces is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else if (_spaces.Count == 0)
+{
+    <EmptyState Title="No starred spaces" Text="Star a space from its page or from Spaces to keep it here and in the sidebar." />
+}
+else
+{
+    <ul class="starred-list" data-testid="starred-spaces">
+        @foreach (var space in _spaces)
+        {
+            <li @key="space.Key">
+                <StarButton SpaceKey="@space.Key" />
+                <a href="spaces/@space.Key">@space.Name</a> <span class="key">(@space.Key)</span>
+                <span class="template">@ProjectHeader.TemplateName(space.Template)</span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private IReadOnlyList<SpaceLink>? _spaces;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Navigation.StarredAsync(CancellationToken.None);
+        _spaces = result.IsSuccess ? result.Value! : [];
+    }
+}

@@ -1,0 +1,129 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject ISearchService Search
+@inject NavigationManager Navigation
+@* The search box on every screen (Phase 4 FR-032, FR-033; research R16, R25), a combobox: focused while empty it lists the
+   items opened last; a key and Enter opens that item; words and Enter open the search page. *@
+<div class="search-box" role="search">
+    <input id="global-search" class="input search-input" type="text" role="combobox" autocomplete="off" spellcheck="false"
+           aria-label="Search or type a key" placeholder="Search or type a key" aria-autocomplete="list"
+           aria-expanded="@(Open ? "true" : "false")" aria-controls="global-search-list" aria-activedescendant="@ActiveId"
+           aria-describedby="global-search-message" @bind="_text" @bind:event="oninput" @bind:after="Typed" @onfocus="FocusedAsync" @onblur="Blurred"
+           @onkeydown="KeyDownAsync" />
+    @if (Open)
+    {
+        <ul id="global-search-list" class="search-recent" role="listbox" aria-label="Recently viewed">
+            @for (var i = 0; i < _recent.Count; i++)
+            {
+                var index = i;
+                var item = _recent[i];
+                <li id="@OptionId(index)" role="option" aria-selected="@(index == _active ? "true" : "false")"
+                    class="@(index == _active ? "is-active" : "")" @onmousedown="() => Go(item)" @onmousedown:preventDefault="true">
+                    <TypeIcon Type="item.Type" /> <span class="key">@item.Key</span> <span class="recent-title">@item.Title</span>
+                    <span class="hint">@item.ProjectName</span>
+                </li>
+            }
+        </ul>
+    }
+    <span id="global-search-message" class="search-message" role="status">@_message</span>
+</div>
+
+@code {
+    private IReadOnlyList<SearchResultRow> _recent = [];
+    private string _text = "";
+    private string? _message;
+    private int _active = -1;
+    private bool _showRecent;
+
+    private bool Open => _showRecent && _text.Length == 0 && _recent.Count > 0;
+
+    private string? ActiveId => Open && _active >= 0 ? OptionId(_active) : null;
+
+    private static string OptionId(int index) => $"global-search-option-{index}";
+
+    private async Task FocusedAsync()
+    {
+        if (_text.Length == 0)
+        {
+            var recent = await Search.RecentAsync(CancellationToken.None);
+            _recent = recent.IsSuccess ? recent.Value! : [];
+            _showRecent = true;
+            _active = -1;
+        }
+    }
+
+    private void Blurred() => _showRecent = false;
+
+    // @bind keeps characters typed while the server is busy; value= with @oninput would put back an older value.
+    private void Typed()
+    {
+        _message = null;
+        _active = -1;
+        _showRecent = _text.Length == 0;
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" or "ArrowUp" when Open:
+                _active = e.Key == "ArrowDown" ? (_active + 1) % _recent.Count : (_active <= 0 ? _recent.Count : _active) - 1;
+                break;
+            case "ArrowDown" when _text.Length == 0:
+                await FocusedAsync();
+                break;
+            case "Escape":
+                _showRecent = false;
+                _message = null;
+                break;
+            case "Enter" when Open && _active >= 0:
+                Go(_recent[_active]);
+                break;
+            case "Enter":
+                await SubmitAsync();
+                break;
+        }
+    }
+
+    /// <summary>A key opens its item, or says it was not found; anything else searches (FR-032).</summary>
+    private async Task SubmitAsync()
+    {
+        var text = _text.Trim();
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        if (SearchWords.LooksLikeKey(text, out _))
+        {
+            var found = await Search.ResolveKeyAsync(text, CancellationToken.None);
+            if (!found.IsSuccess)
+            {
+                _message = found.Error!.Message;
+                return;
+            }
+
+            var key = found.Value!;
+            Reset();
+            Navigation.NavigateTo($"spaces/{key[..key.LastIndexOf('-')]}/board?task={Uri.EscapeDataString(key)}");
+            return;
+        }
+
+        Reset();
+        Navigation.NavigateTo($"search?q={Uri.EscapeDataString(text)}");
+    }
+
+    private void Go(SearchResultRow item)
+    {
+        Reset();
+        Navigation.NavigateTo($"spaces/{item.ProjectKey}/board?task={Uri.EscapeDataString(item.Key)}");
+    }
+
+    private void Reset()
+    {
+        _text = "";
+        _message = null;
+        _showRecent = false;
+        _active = -1;
+    }
+}

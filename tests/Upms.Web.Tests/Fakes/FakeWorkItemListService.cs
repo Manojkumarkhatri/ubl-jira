@@ -42,10 +42,14 @@ public sealed class FakeWorkItemListService : IWorkItemListService
 
     public bool CanContribute { get; set; } = true;
 
+    /// <summary>The project's template (Phase 3), which decides the types and the "Epic" or "Stage" column.</summary>
+    public ProjectTemplate Template { get; set; } = ProjectTemplate.Kanban;
+
     public List<(WorkItemListQuery Query, DateOnly Today)> Queries { get; } = [];
 
-    /// <summary>When set, the status-type filter is applied, so that answers for different addresses differ.</summary>
-    public bool FilterByType { get; set; }
+    /// <summary>When set, the status filters (status types and columns) are applied, so that answers for different
+    /// addresses differ.</summary>
+    public bool FilterByStatus { get; set; }
 
     private readonly Queue<TaskCompletionSource> _holds = new();
 
@@ -70,9 +74,19 @@ public sealed class FakeWorkItemListService : IWorkItemListService
             return Result<WorkItemListView>.Fail(AppError.NotFound("project"));
         }
 
-        var rows = FilterByType && query.Categories is { Count: > 0 } types ? Rows.Where(r => types.Contains(r.Status.Category)).ToList() : Rows;
+        var rows = Rows;
+        if (FilterByStatus && query.Categories is { Count: > 0 } types)
+        {
+            rows = rows.Where(r => types.Contains(r.Status.Category)).ToList();
+        }
+
+        if (FilterByStatus && query.ColumnIds is { Count: > 0 } columns)
+        {
+            rows = rows.Where(r => columns.Contains(r.Status.Id)).ToList();
+        }
+
         var page = new Page<WorkItemRow>(rows, TotalCount ?? rows.Count, query.Page, 50);
         return Result<WorkItemListView>.Ok(new WorkItemListView("WEB", "Website Revamp", CanContribute, CanManage: false,
-            CanRestoreDeleted: false, ToDo.Id, [ToDo, InProgress, Done], People, page));
+            CanRestoreDeleted: false, ToDo.Id, [ToDo, InProgress, Done], People, page, Template));
     }
 }

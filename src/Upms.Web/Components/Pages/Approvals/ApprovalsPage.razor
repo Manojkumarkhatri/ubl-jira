@@ -1,0 +1,198 @@
+@page "/spaces/{Key}/approvals"
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject ISpaceViewService SpaceViews
+@inject IStageGateService Gates
+
+<PageTitle>@(_space?.SpaceName ?? Key) · Approvals · U-PMS</PageTitle>
+
+@* The space's Approvals, as Jira's: what is waiting for a decision and what was decided. In U-PMS approvals are stage
+   gates, so a Stage-gate space lists its gates; other spaces explain where approvals come from. Decisions are made on
+   the Stages page, where the gate's details are. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_space is null)
+{
+    <p aria-busy="true">Loading the approvals…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@Key" Title="@_space.SpaceName" Current="ProjectPage.Approvals" Template="_space.Template"
+                   CanManage="_space.CanManage" CanRestoreDeleted="_space.IsAdministrator" />
+
+    @if (_space.Template != ProjectTemplate.StageGate)
+    {
+        <div class="empty-hero empty-panel">
+            <h2>Add approvals to your workflow</h2>
+            <p>Approvals make sure all requirements are met before work moves on. In U-PMS they come with Stage-gate spaces:
+                named approvers sign off each stage before the next one can start.</p>
+            <svg class="empty-art" viewBox="0 0 300 200" aria-hidden="true" focusable="false">
+                <path d="M70 40c40-40 150-30 180 20 25 45 5 110-45 130-55 22-140 5-165-40C20 110 40 70 70 40z" fill="#1868db" />
+                <rect x="60" y="55" width="180" height="110" rx="6" fill="#fff" stroke="#dfe1e6" />
+                @for (var i = 0; i < 6; i++)
+                {
+                    var y = 72 + (i * 14);
+                    <g>
+                        <rect x="72" y="@y" width="6" height="6" fill="@(i < 2 ? "#8270db" : i < 4 ? "#669df1" : "#e2483d")" />
+                        <rect x="84" y="@(y + 1)" width="40" height="4" rx="2" fill="#dfe1e6" />
+                        <rect x="134" y="@y" width="24" height="6" rx="3" fill="@(i < 2 ? "#dfe1e6" : "#cce0ff")" />
+                        <circle cx="172" cy="@(y + 3)" r="3" fill="@(i % 3 == 0 ? "#e2483d" : "#fca700")" />
+                        <circle cx="196" cy="@(y + 3)" r="3" fill="#1868db" />
+                        <circle cx="214" cy="@(y + 3)" r="3" fill="#22a06b" /><circle cx="224" cy="@(y + 3)" r="3" fill="#e2483d" />
+                    </g>
+                }
+            </svg>
+            <a class="btn btn-primary" href="create-space/stage-gate">Create a Stage-gate space</a>
+        </div>
+    }
+    else if (_stages is null)
+    {
+        <p aria-busy="true">Loading the approvals…</p>
+    }
+    else
+    {
+        var gates = _stages.Stages.Where(s => s.Gate.Approvers.Count > 0 || s.Gate.CurrentRequest is not null).ToList();
+        var waiting = gates.Count(s => s.Gate.State == GateState.AwaitingDecision);
+        var shown = _all ? gates : gates.Where(s => s.Gate.State == GateState.AwaitingDecision).ToList();
+        <div class="cal-toolbar">
+            <div class="seg" role="group" aria-label="Show">
+                <button type="button" class="seg-btn" aria-pressed="@(_all ? "false" : "true")" @onclick="() => _all = false">Awaiting decision (@waiting)</button>
+                <button type="button" class="seg-btn" aria-pressed="@(_all ? "true" : "false")" @onclick="() => _all = true">All approvals (@gates.Count)</button>
+            </div>
+            <span class="spacer"></span>
+            <a class="btn btn-ghost btn-sm" href="spaces/@Key/stages">Open Stages</a>
+        </div>
+
+        @if (shown.Count == 0)
+        {
+            <div class="empty-hero empty-panel">
+                <h2>@(_all ? "No gates are set up yet" : "Nothing is waiting for a decision")</h2>
+                <p>@(_all ? "Set up a stage's gate on the Stages page: choose its approvers and how many approvals it needs." : "Requests for approval show here until their approvers decide.")</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="tbl appr-table">
+                    <caption class="sr-only">@(_all ? "Every gate of this space" : "Gates waiting for a decision")</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Stage</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Approvals</th>
+                            <th scope="col" class="hide-sm">Approvers</th>
+                            <th scope="col" class="hide-sm">Requested</th>
+                            <th scope="col"><span class="sr-only">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var stage in shown)
+                        {
+                            var gate = stage.Gate;
+                            var approvals = gate.CurrentRequest?.Decisions.Count(d => d.Decision == GateDecisionKind.Approve) ?? 0;
+                            <tr @key="stage.Key">
+                                <td><TypeIcon Type="WorkItemType.Stage" /> <a href="spaces/@Key/stages?task=@stage.Key"><span class="key">@stage.Key</span> @stage.Title</a></td>
+                                <td><span class="lozenge-status @StateClass(gate.State)">@StateText(gate.State)</span></td>
+                                <td>@approvals of @gate.ApprovalsNeeded</td>
+                                <td class="hide-sm">
+                                    <span class="appr-people">
+                                        @foreach (var person in gate.Approvers)
+                                        {
+                                            var decision = gate.CurrentRequest?.Decisions.FirstOrDefault(d => d.ApproverId == person.UserId);
+                                            <span class="appr-person @DecisionClass(decision?.Decision)"
+                                                  title="@DecisionTitle(person.DisplayName, decision?.Decision)">
+                                                <Avatar UserId="person.UserId" Initials="@AssigneeRef.InitialsOf(person.DisplayName)" />
+                                            </span>
+                                        }
+                                        <span class="sr-only">@string.Join(", ", gate.Approvers.Select(a => a.DisplayName))</span>
+                                    </span>
+                                </td>
+                                <td class="hide-sm">
+                                    @if (gate.CurrentRequest is { } request)
+                                    {
+                                        <span>@request.RequestedBy</span> <span class="hint">· <LocalTime Value="request.RequestedAt" Format="d MMM yyyy" /></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="hint">Not requested</span>
+                                    }
+                                </td>
+                                <td class="actions">
+                                    @if (gate.CanDecide && gate.State == GateState.AwaitingDecision)
+                                    {
+                                        <a class="btn btn-sm btn-primary" href="spaces/@Key/stages?task=@stage.Key">Decide</a>
+                                    }
+                                    else
+                                    {
+                                        <a class="btn btn-sm" href="spaces/@Key/stages?task=@stage.Key">View</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    private SpaceViews? _space;
+    private StagesView? _stages;
+    private bool _notFound;
+    private bool _all;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var space = await SpaceViews.GetAsync(Key, CancellationToken.None);
+        if (!space.IsSuccess)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _space = space.Value!;
+        if (_space.Template == ProjectTemplate.StageGate)
+        {
+            var stages = await Gates.GetAsync(Key, CancellationToken.None);
+            _stages = stages.IsSuccess ? stages.Value : null;
+            _all = _all || (_stages?.Stages.All(s => s.Gate.State != GateState.AwaitingDecision) ?? false);
+        }
+    }
+
+    private static string StateText(GateState state) => state switch
+    {
+        GateState.AwaitingDecision => "Awaiting decision",
+        GateState.Approved => "Approved",
+        GateState.SentBack => "Sent back",
+        _ => "Not requested",
+    };
+
+    private static string DecisionTitle(string name, GateDecisionKind? decision) => decision switch
+    {
+        GateDecisionKind.Approve => $"{name}: approved",
+        GateDecisionKind.SendBack => $"{name}: sent back",
+        _ => name,
+    };
+
+    private static string DecisionClass(GateDecisionKind? decision) => decision switch
+    {
+        GateDecisionKind.Approve => "is-approved",
+        GateDecisionKind.SendBack => "is-sent-back",
+        _ => "",
+    };
+
+    private static string StateClass(GateState state) => state switch
+    {
+        GateState.AwaitingDecision => "st-inprogress",
+        GateState.Approved => "st-done",
+        GateState.SentBack => "appr-sent-back",
+        _ => "st-todo",
+    };
+}

@@ -1,0 +1,273 @@
+@using System.Globalization
+@using Upms.Application.Work
+@inject ISprintService Sprints
+
+@* The Project Admins' sprint dialogs (Phase 3 FR-023, FR-025, FR-028): the Phase 1 modal dialog, with focus returned
+   to the button that opened it. A refused change is explained in the dialog, which stays open. *@
+<ModalDialog @ref="_edit" Title="@($"Edit {_sprintName}")" TestId="edit-sprint-dialog" OnClosed="Reset">
+    <ChildContent>
+        <div class="field">
+            <label for="sprint-name">Name</label>
+            <input id="sprint-name" class="input" type="text" maxlength="60" autocomplete="off" @bind="_name" @bind:event="oninput"
+                   aria-invalid="@(_nameError is null ? "false" : "true")" aria-describedby="sprint-name-error" />
+            <span id="sprint-name-error" class="error-text" role="alert">@_nameError</span>
+        </div>
+        <div class="field">
+            <label for="sprint-goal">Goal <span class="hint">(optional)</span></label>
+            <textarea id="sprint-goal" class="textarea" maxlength="500" @bind="_goal" @bind:event="oninput"></textarea>
+        </div>
+        <DialogError Message="@_error" />
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _edit!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">Save</button>
+    </Footer>
+</ModalDialog>
+
+<ModalDialog @ref="_start" Title="@($"Start {_sprintName}")" TestId="start-sprint-dialog" OnClosed="Reset">
+    <ChildContent>
+        <div class="field">
+            <label for="sprint-start">Start date</label>
+            <input id="sprint-start" type="date" class="input" min="2000-01-01" max="2099-12-31" value="@_startText" @onchange="StartChanged" />
+        </div>
+        <div class="field">
+            <label for="sprint-end">End date</label>
+            <input id="sprint-end" type="date" class="input" min="2000-01-01" max="2099-12-31" value="@_endText" @onchange="EndChanged"
+                   aria-describedby="sprint-end-hint" />
+            <span id="sprint-end-hint" class="hint">Two weeks after the start unless you choose another date.</span>
+        </div>
+        <div class="field">
+            <label for="sprint-start-goal">Goal <span class="hint">(optional)</span></label>
+            <textarea id="sprint-start-goal" class="textarea" maxlength="500" @bind="_goal" @bind:event="oninput"></textarea>
+        </div>
+        <DialogError Message="@_error" />
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _start!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="StartAsync">Start sprint</button>
+    </Footer>
+</ModalDialog>
+
+<ModalDialog @ref="_complete" Title="@($"Complete {_sprintName}")" TestId="complete-sprint-dialog" OnClosed="Reset">
+    <ChildContent>
+        <p>@_completeSummary</p>
+        @if (_openItems > 0)
+        {
+            <div class="field">
+                <label for="sprint-destination">Move the open items to</label>
+                <select id="sprint-destination" class="select" value="@_destination" @onchange="e => _destination = e.Value?.ToString() ?? string.Empty">
+                    <option value="">The backlog</option>
+                    @foreach (var sprint in _destinations)
+                    {
+                        <option value="@sprint.Id">@sprint.Name</option>
+                    }
+                </select>
+            </div>
+        }
+        <p class="hint">Done items stay in the completed sprint. Its report shows what was committed, added, removed and completed.</p>
+        <DialogError Message="@_error" />
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _complete!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="CompleteAsync">Complete sprint</button>
+    </Footer>
+</ModalDialog>
+
+<ModalDialog @ref="_delete" Title="@($"Delete {_sprintName}?")" TestId="delete-sprint-dialog" OnClosed="Reset">
+    <ChildContent>
+        <p>@(_itemCount switch
+           {
+               0 => "It has no items.",
+               1 => "Its 1 item returns to the backlog.",
+               _ => $"Its {_itemCount} items return to the backlog.",
+           })</p>
+        <DialogError Message="@_error" />
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _delete!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">Delete sprint</button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _edit;
+    private ModalDialog? _start;
+    private ModalDialog? _complete;
+    private ModalDialog? _delete;
+    private long _sprintId;
+    private byte[] _version = [];
+    private string _sprintName = "";
+    private string _name = "";
+    private string _goal = "";
+    private string? _nameError;
+    private string _startText = "";
+    private string _endText = "";
+    private bool _endChosen;
+    private string _completeSummary = "";
+    private int _openItems;
+    private int _itemCount;
+    private IReadOnlyList<SprintOption> _destinations = [];
+    private string _destination = "";
+    private string? _error;
+    private bool _busy;
+
+    /// <summary>Called after a change with the message to announce; the page reads the sprints again.</summary>
+    [Parameter]
+    public EventCallback<string> OnDone { get; set; }
+
+    public void OpenEdit(SprintSection sprint)
+    {
+        Prepare(sprint.Id, sprint.Name, sprint.Version);
+        _name = sprint.Name;
+        _goal = sprint.Goal ?? "";
+        StateHasChanged();
+        _edit!.Open();
+    }
+
+    /// <summary>Proposes today as the start and two weeks later as the end (FR-025).</summary>
+    public void OpenStart(SprintSection sprint, DateOnly today)
+    {
+        Prepare(sprint.Id, sprint.Name, sprint.Version);
+        _goal = sprint.Goal ?? "";
+        _startText = Iso(today);
+        _endText = Iso(today.AddDays(Upms.Domain.Work.Sprint.DefaultLengthDays));
+        _endChosen = false;
+        StateHasChanged();
+        _start!.Open();
+    }
+
+    public void OpenComplete(long id, string name, byte[] version, int done, int open, IReadOnlyList<SprintOption> destinations)
+    {
+        Prepare(id, name, version);
+        _openItems = open;
+        _destinations = destinations;
+        _destination = "";
+        _completeSummary = $"{SprintHeader.ItemCount(done)} {(done == 1 ? "is" : "are")} done and {open} {(open == 1 ? "is" : "are")} open.";
+        StateHasChanged();
+        _complete!.Open();
+    }
+
+    public void OpenDelete(SprintSection sprint)
+    {
+        Prepare(sprint.Id, sprint.Name, sprint.Version);
+        _itemCount = sprint.Totals.Items;
+        StateHasChanged();
+        _delete!.Open();
+    }
+
+    private void Prepare(long id, string name, byte[] version)
+    {
+        _sprintId = id;
+        _sprintName = name;
+        _version = version;
+        Reset();
+    }
+
+    private void Reset()
+    {
+        _error = null;
+        _nameError = null;
+        _busy = false;
+    }
+
+    private void StartChanged(ChangeEventArgs e)
+    {
+        _startText = e.Value?.ToString() ?? "";
+        if (!_endChosen && TryParse(_startText) is { } start)
+        {
+            _endText = Iso(start.AddDays(Upms.Domain.Work.Sprint.DefaultLengthDays));
+        }
+    }
+
+    private void EndChanged(ChangeEventArgs e)
+    {
+        _endText = e.Value?.ToString() ?? "";
+        _endChosen = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        await RunAsync(_edit!, () => Sprints.UpdateAsync(_sprintId, _name, _goal, _version, CancellationToken.None), $"Saved {_name.Trim()}.");
+    }
+
+    private async Task StartAsync()
+    {
+        if (TryParse(_startText) is not { } start || TryParse(_endText) is not { } end)
+        {
+            _error = "Enter a complete start and end date: day, month and year.";
+            return;
+        }
+
+        await RunAsync(_start!, () => Sprints.StartAsync(_sprintId, start, end, _goal, _version, CancellationToken.None), $"Started {_sprintName}.");
+    }
+
+    private async Task CompleteAsync()
+    {
+        long? destination = long.TryParse(_destination, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null;
+        await RunAsync(_complete!, () => Sprints.CompleteAsync(_sprintId, destination, _version, CancellationToken.None), $"Completed {_sprintName}.");
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Sprints.DeleteAsync(_sprintId, _version, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            await _delete!.CloseAsync();
+            await OnDone.InvokeAsync($"Deleted {_sprintName}. Its items are back in the backlog.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>One change at a time; a refused change stays in the dialog with the reason.</summary>
+    private async Task RunAsync(ModalDialog dialog, Func<Task<Result<SprintSection>>> change, string message)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _nameError = null;
+        try
+        {
+            var result = await change();
+            if (!result.IsSuccess)
+            {
+                var error = result.Error!;
+                _nameError = error.FieldErrors?.ContainsKey("Name") == true ? error.MessageFor("Name") : null;
+                _error = _nameError is null
+                    ? error.FieldErrors is { Count: > 0 } fields ? error.MessageFor(fields.Keys.First()) : error.Message
+                    : null;
+                return;
+            }
+
+            await dialog.CloseAsync();
+            await OnDone.InvokeAsync(message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static DateOnly? TryParse(string text) =>
+        DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? date : null;
+}

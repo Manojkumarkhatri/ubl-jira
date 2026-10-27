@@ -1,0 +1,302 @@
+@page "/spaces/{Key}/summary"
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Application.Projects.Contracts
+@using Upms.Web.Endpoints
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Board
+@using Upms.Web.Components.Pages.Drawer
+@using Upms.Web.Components.Pages.Search
+@inject ISpaceSummaryService Summaries
+@inject ViewerToday ViewerToday
+@inject ViewerTimeZone ViewerTimeZone
+@inject TimeProvider Time
+@inject IOrganizationAdminService Organization
+
+@* A space's Summary page, laid out as Jira's: four counts, then Status overview, Recent activity, Priority breakdown,
+   Types of work, Team workload and epic or stage progress. Every count opens the search page with exactly those items;
+   numbers are always written out, so no section depends on color or a chart alone. *@
+<PageTitle>@(_summary?.SpaceName ?? Key) · Summary · U-PMS</PageTitle>
+
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_summary is not { } summary)
+{
+    <p aria-busy="true">Loading the summary…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@summary.SpaceKey" Title="@summary.SpaceName" Current="ProjectPage.Summary" Template="summary.Template"
+                   CanManage="summary.CanManage" CanRestoreDeleted="summary.CanRestoreDeleted" />
+
+    <div class="sum-page">
+        @if (_access.Can(Rights.DownloadSpaceMis))
+        {
+            @* The space's MIS (owner's decision of 2026-10-20). *@
+            <div class="sum-toolbar" data-testid="space-mis">
+                <span class="sum-toolbar-label">Space MIS</span>
+                <a class="btn btn-sm" href="@MisEndpoints.Url(MisLevel.Space, "xlsx", summary.SpaceKey, null, _today)" download>
+                    <Icon Name="download" /> Excel
+                </a>
+                <a class="btn btn-sm" href="@MisEndpoints.Url(MisLevel.Space, "print", summary.SpaceKey, null, _today)" target="_blank" rel="noopener">
+                    <Icon Name="download" /> PDF
+                </a>
+            </div>
+        }
+        <section class="sum-counts" aria-label="The last 7 days and the next 7 days" data-testid="summary-counts">
+            @CountCard("check-circle", summary.Last7Days.Completed, "completed", "in the last 7 days", Search(s => s with { Resolved = Week }))
+            @CountCard("pencil", summary.Last7Days.Updated, "updated", "in the last 7 days", Search(s => s with { Updated = Week }))
+            @CountCard("created", summary.Last7Days.Created, "created", "in the last 7 days", Search(s => s with { Created = Week }))
+            @CountCard("calendar", summary.Last7Days.DueSoon, "due soon", "in the next 7 days", Search(s => s with { Due = new DateRange(null, _today.AddDays(7)), Categories = Open }))
+        </section>
+
+        <div class="sum-grid">
+            <section class="sum-card" aria-labelledby="status-overview-title" data-testid="status-overview">
+                <h2 id="status-overview-title">Status overview</h2>
+                <p class="sum-sub">Get a snapshot of the status of your work items. <a href="spaces/@summary.SpaceKey/list">View all work items</a></p>
+                @if (summary.Statuses.Sum(s => s.Count) == 0)
+                {
+                    <p class="sum-empty">No work items yet.</p>
+                }
+                else
+                {
+                    <DonutChart Slices="StatusSlices(summary)" Caption="Total work items" />
+                }
+            </section>
+
+            <section class="sum-card" aria-labelledby="activity-title" data-testid="recent-activity">
+                <h2 id="activity-title">Recent activity</h2>
+                <p class="sum-sub">Stay up to date with what's happening across the space.</p>
+                @if (summary.RecentActivity.Count == 0)
+                {
+                    <p class="sum-empty">Nothing has changed in the last 30 days.</p>
+                }
+                else
+                {
+                    <div class="sum-activity">
+                        @foreach (var day in summary.RecentActivity.GroupBy(e => DayOf(e.At)))
+                        {
+                            <h3 class="sum-day">@DayName(day.Key)</h3>
+                            <ol class="sum-activity-list">
+                                @foreach (var entry in day)
+                                {
+                                    <li>
+                                        <Avatar UserId="entry.ActorId" Initials="@AssigneeRef.InitialsOf(entry.ActorName)" />
+                                        <div class="sum-activity-text">
+                                            <p>
+                                                <span class="sum-actor">@entry.ActorName</span>
+                                                @Verb(entry)
+                                                <a class="sum-item-chip" href="spaces/@summary.SpaceKey/board?task=@entry.ItemKey">
+                                                    <TypeIcon Type="entry.ItemType" /> <span>@entry.ItemKey: @entry.ItemTitle</span>
+                                                </a>
+                                                @if (entry.ItemStatus.Length > 0)
+                                                {
+                                                    <span class="lozenge-status st-@CategoryClass(entry.ItemCategory)" title="@entry.ItemStatus">@entry.ItemStatus</span>
+                                                }
+                                            </p>
+                                            <span class="sum-when" title="@entry.At.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)">@Ago(entry.At)</span>
+                                        </div>
+                                    </li>
+                                }
+                            </ol>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="sum-card" aria-labelledby="priority-title" data-testid="priority-breakdown">
+                <h2 id="priority-title">Priority breakdown</h2>
+                <p class="sum-sub">Get a holistic view of how work is being prioritized.</p>
+                <ColumnChart Caption="Work items by priority" Color="#8590a2"
+                             Columns="@summary.Priorities.Select(p => new ColumnChart.Column(p.Priority.ToString(), p.Count, null, p.Priority)).ToList()">
+                    <LabelTemplate>
+                        <a class="colchart-pri" href="@Search(s => s with { Priorities = [(Priority)context.Tag!] })"><PriorityIcon Priority="(Priority)context.Tag!" /> @context.Label</a>
+                    </LabelTemplate>
+                </ColumnChart>
+            </section>
+
+            <section class="sum-card" aria-labelledby="types-title" data-testid="types-of-work">
+                <h2 id="types-title">Types of work</h2>
+                <p class="sum-sub">Get a breakdown of work items by their types. <a href="@Search(s => s)">View all items</a></p>
+                @if (summary.Types.Count == 0)
+                {
+                    <p class="sum-empty">No work items yet.</p>
+                }
+                else
+                {
+                    var total = summary.Types.Sum(t => t.Count);
+                    <table class="dist-table">
+                        <caption class="sr-only">Work items by type, with their share of all work items</caption>
+                        <thead><tr><th scope="col">Type</th><th scope="col">Distribution</th></tr></thead>
+                        <tbody>
+                            @foreach (var type in summary.Types)
+                            {
+                                <tr>
+                                    <th scope="row"><a href="@Search(s => s with { Kinds = [type.Type] })"><TypeIcon Type="type.Type" /> @WorkItemTypes.DisplayName(type.Type)</a></th>
+                                    <td>@Distribution(type.Count, total)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="sum-card" aria-labelledby="workload-title" data-testid="team-workload">
+                <h2 id="workload-title">Team workload</h2>
+                <p class="sum-sub">Monitor the capacity of your team. <a href="spaces/@summary.SpaceKey/members">See the team</a></p>
+                @if (summary.Workload.Count == 0)
+                {
+                    <p class="sum-empty">No open work.</p>
+                }
+                else
+                {
+                    var total = summary.Workload.Sum(w => w.OpenCount);
+                    <table class="dist-table">
+                        <caption class="sr-only">Open work items per person, with their share of all open work</caption>
+                        <thead><tr><th scope="col">Assignee</th><th scope="col">Work distribution</th></tr></thead>
+                        <tbody>
+                            @foreach (var row in summary.Workload)
+                            {
+                                <tr>
+                                    <th scope="row">
+                                        <a href="@Search(s => row.Assignee is { } who ? s with { People = [who.UserId], Categories = Open } : s with { Unassigned = true, Categories = Open })">
+                                            @if (row.Assignee is { } who)
+                                            {
+                                                <Avatar UserId="who.UserId" Initials="@who.Initials" />
+                                            }
+                                            else
+                                            {
+                                                <span class="avatar avatar-none" aria-hidden="true"><Icon Name="person" Size="12" /></span>
+                                            }
+                                            @(row.Assignee?.DisplayName ?? "Unassigned")
+                                        </a>
+                                    </th>
+                                    <td>@Distribution(row.OpenCount, total)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="sum-card" aria-labelledby="containers-title" data-testid="container-progress">
+                <h2 id="containers-title">@(summary.Template == ProjectTemplate.StageGate ? "Stage progress" : "Epic progress")</h2>
+                <p class="sum-sub">See how each @(summary.Template == ProjectTemplate.StageGate ? "stage" : "epic") is progressing.</p>
+                @if (summary.Containers.Count == 0)
+                {
+                    <p class="sum-empty">@(summary.Template == ProjectTemplate.StageGate ? "No stages yet." : "No epics yet.")</p>
+                }
+                else
+                {
+                    <ul class="container-progress-list">
+                        @foreach (var container in summary.Containers)
+                        {
+                            <li>
+                                <a href="spaces/@summary.SpaceKey/board?task=@container.Key"><TypeIcon Type="container.Type" /> <span class="key">@container.Key</span> @container.Title</a>
+                                <span class="hint">@container.Progress.Done of @container.Progress.Total done</span>
+                                <div class="progress" role="progressbar" aria-label="@container.Title" aria-valuemin="0" aria-valuemax="100"
+                                     aria-valuenow="@container.Progress.Percent" aria-valuetext="@container.Progress.Percent% done">
+                                    <span style="width: @container.Progress.Percent%"></span>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly IReadOnlyList<StatusCategory> Open = [StatusCategory.ToDo, StatusCategory.InProgress];
+    private SpaceSummary? _summary;
+    private bool _notFound;
+    private DateOnly _today;
+    private MyAccess _access = MyAccess.None;
+    private DateOnly _utcToday;
+    private TimeZoneInfo _zone = TimeZoneInfo.Utc;
+    private DateTimeOffset _now;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary>Today and the 6 days before, as the service counts them (whole days).</summary>
+    private DateRange Week => new(_utcToday.AddDays(-6), _utcToday);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _today = await ViewerToday.GetAsync();
+        _access = await Organization.MyAccessAsync(CancellationToken.None);
+        _zone = await ViewerTimeZone.GetAsync();
+        _now = Time.GetUtcNow();
+        _utcToday = DateOnly.FromDateTime(_now.UtcDateTime);
+        var result = await Summaries.GetAsync(Key, _today, CancellationToken.None);
+        _notFound = !result.IsSuccess;
+        _summary = result.IsSuccess ? result.Value : null;
+    }
+
+    private string Search(Func<SearchState, SearchState> filter) =>
+        "search?" + filter(SearchState.Default with { Projects = [_summary!.SpaceKey] }).ToQueryString();
+
+    private static RenderFragment CountCard(string icon, int count, string what, string when, string href) => __builder =>
+    {
+        <a class="sum-count" href="@href">
+            <span class="sum-count-icon"><Icon Name="@icon" Size="18" /></span>
+            <span class="sum-count-text"><b>@count @what</b> <span>@when</span></span>
+        </a>
+    };
+
+    private static List<DonutChart.Slice> StatusSlices(SpaceSummary summary)
+    {
+        var seen = new Dictionary<StatusCategory, int>();
+        return summary.Statuses.Select(s =>
+        {
+            var index = seen.GetValueOrDefault(s.Category);
+            seen[s.Category] = index + 1;
+            return new DonutChart.Slice(s.Name, s.Count, DonutChart.StatusColor(s.Category, index));
+        }).ToList();
+    }
+
+    private static RenderFragment Distribution(int count, int total) => __builder =>
+    {
+        var share = total == 0 ? 0 : (int)Math.Round(100.0 * count / total, MidpointRounding.AwayFromZero);
+        <span class="dist-bar"><span class="dist-fill" style="width: @share%"><span class="dist-text">@share%</span></span></span>
+        <span class="sr-only">, @count</span>
+    };
+
+    private static string Verb(ActivityEntry entry) => entry.Field == WorkItemField.Created
+        ? "created"
+        : HistoryText.Describe(new ChangeView(entry.At, entry.ActorName, entry.Field, entry.OldValue, entry.NewValue, entry.Note), "item") + " on";
+
+    private DateOnly DayOf(DateTimeOffset at) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, _zone).DateTime);
+
+    private string DayName(DateOnly day) =>
+        day == _today ? "Today"
+        : day == _today.AddDays(-1) ? "Yesterday"
+        : day.ToString("dddd, d MMMM", CultureInfo.CurrentCulture);
+
+    /// <summary>"just now", "5 minutes ago", "about 14 hours ago", "3 days ago", as Jira writes it.</summary>
+    private string Ago(DateTimeOffset at)
+    {
+        var gone = _now - at;
+        return gone.TotalMinutes switch
+        {
+            < 1 => "just now",
+            < 2 => "a minute ago",
+            < 60 => $"{(int)gone.TotalMinutes} minutes ago",
+            < 120 => "about an hour ago",
+            < 1440 => $"about {(int)gone.TotalHours} hours ago",
+            < 2880 => "a day ago",
+            _ => $"{(int)gone.TotalDays} days ago",
+        };
+    }
+
+    private static string CategoryClass(StatusCategory category) => category switch
+    {
+        StatusCategory.Done => "done",
+        StatusCategory.InProgress => "inprogress",
+        _ => "todo",
+    };
+}

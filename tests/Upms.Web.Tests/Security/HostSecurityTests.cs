@@ -25,8 +25,8 @@ public sealed class HostSecurityTests(WebDatabaseFixture database) : IAsyncLifet
 
     [Theory]
     [InlineData("/")]
-    [InlineData("/projects")]
-    [InlineData("/projects/WEB/board")]
+    [InlineData("/spaces")]
+    [InlineData("/spaces/WEB/board")]
     [InlineData("/admin/users")]
     public async Task US1_AS1_Anonymous_requests_are_sent_to_sign_in(string path)
     {
@@ -61,7 +61,7 @@ public sealed class HostSecurityTests(WebDatabaseFixture database) : IAsyncLifet
         using var login = await UpmsWebApplicationFactory.PostLoginAsync(client, "amina", "temporary pass 16");
         Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
 
-        using var response = await client.GetAsync(new Uri("/projects", UriKind.Relative), Ct);
+        using var response = await client.GetAsync(new Uri("/spaces", UriKind.Relative), Ct);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.StartsWith("/Account/ChangePassword", response.Headers.Location!.OriginalString.Replace("https://localhost", "", StringComparison.Ordinal), StringComparison.Ordinal);

@@ -1,0 +1,465 @@
+@page "/create-space/{Slug}"
+@layout FocusLayout
+@using Upms.Application.Projects
+@using Upms.Domain.Projects
+@inject IProjectService Projects
+@inject IProjectMemberService Members
+@inject IPortfolioService Portfolios
+@inject IOrganizationAdminService Organization
+@inject NavigationManager Navigation
+@inject LiveAnnouncer Announcer
+@inject IJSRuntime JS
+
+<PageTitle>@(_step == 1 ? "Name your space" : "Bring your team along") · U-PMS</PageTitle>
+
+@* Jira's "Create space" in two steps: name the space (step 1, which creates it), then bring the team along (step 2, which
+   can wait). A live preview of the space sits beside the form. *@
+@if (_card is null)
+{
+    <NotFoundContent />
+}
+else
+{
+    <div class="create-space-page">
+        <div class="create-space-form-side">
+            @if (_step == 1)
+            {
+                <a class="btn btn-ghost back-to-templates" href="create-space"><Icon Name="arrow-left" /> Back to templates</a>
+            }
+            <div class="create-space-form">
+                @if (_step == 1)
+                {
+                    <h1 id="step-heading" tabindex="-1">Name your space</h1>
+                    @if (_access is { } access && !access.Can(Rights.CreateSpaces))
+                    {
+                        <div class="alert alert-warn" role="alert">Your rights do not include creating spaces. Ask an Admin or your Head.</div>
+                    }
+                    <p class="required-note">Required fields are marked with an asterisk <span class="req" aria-hidden="true">*</span></p>
+                    @if (_error is not null && FieldOf(_error) is null)
+                    {
+                        <div class="alert alert-error" role="alert">@_error.Message</div>
+                    }
+                    <form id="name-space" @onsubmit="CreateAsync" novalidate>
+                        <div class="field">
+                            <label for="space-name">Name <span class="req" aria-hidden="true">*</span></label>
+                            <input id="space-name" class="input" maxlength="80" autocomplete="off" required aria-required="true"
+                                   placeholder="Try a team name, goal, milestone..."
+                                   @bind="_name" @bind:event="oninput" @bind:after="SuggestKeyAsync"
+                                   aria-invalid="@Invalid("Name")" aria-describedby="space-name-error" />
+                            <span id="space-name-error" class="error-text">@ErrorFor("Name")</span>
+                        </div>
+                        <div class="field">
+                            <label for="space-managed">How your space is managed</label>
+                            <div class="select-with-icon">
+                                <Icon Name="people" />
+                                <select id="space-managed" class="select">
+                                    <option>Team-managed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="space-access">Access <span class="req" aria-hidden="true">*</span></label>
+                            <div class="select-with-icon">
+                                <Icon Name="lock" />
+                                <select id="space-access" class="select" aria-describedby="space-access-hint">
+                                    <option>Private</option>
+                                </select>
+                            </div>
+                            <span id="space-access-hint" class="hint">Only people you add to the space can see it and work in it.</span>
+                        </div>
+                        @if (_portfolios.Count > 0)
+                        {
+                            <div class="field">
+                                <label for="space-portfolio">Portfolio</label>
+                                <select id="space-portfolio" class="select" @bind="_portfolioId" aria-describedby="space-portfolio-hint">
+                                    <option value="">No portfolio</option>
+                                    @foreach (var portfolio in _portfolios)
+                                    {
+                                        <option value="@portfolio.Id">@portfolio.Name (@portfolio.Department)</option>
+                                    }
+                                </select>
+                                <span id="space-portfolio-hint" class="hint">Its leads and its department's Heads can open the space and report on it.</span>
+                            </div>
+                        }
+                        <div class="field">
+                            <span class="label-with-info">
+                                <label for="space-key">Key <span class="req" aria-hidden="true">*</span></label>
+                                <span class="info-tip" tabindex="0" role="note" aria-label="About the key: work item keys start with it, for example @(KeyOrExample)-1. It can't be changed later.">
+                                    <Icon Name="info" Size="14" />
+                                    <span class="info-tip-text" aria-hidden="true">Work item keys start with it, for example @(KeyOrExample)-1. It can't be changed later.</span>
+                                </span>
+                            </span>
+                            <input id="space-key" class="input key-box" maxlength="10" autocomplete="off" required aria-required="true"
+                                   @bind="_key" @bind:event="oninput" @bind:after="KeyEdited"
+                                   @onfocus="() => _keyFocused = true" @onblur="() => _keyFocused = false"
+                                   aria-invalid="@Invalid("Key")" aria-describedby="space-key-error" />
+                            <span id="space-key-error" class="error-text">@ErrorFor("Key")</span>
+                        </div>
+                        <div class="field template-field">
+                            <div class="template-field-head">
+                                <span id="template-label">Template</span>
+                                <button type="button" class="link-btn" aria-expanded="@(_details ? "true" : "false")" aria-controls="template-details"
+                                        @onclick="() => _details = !_details">@(_details ? "Hide details" : "See details")</button>
+                            </div>
+                            <div class="chosen-template" aria-labelledby="template-label" role="group">
+                                <span class="chosen-art"><TemplateArt Kind="@_card.Slug" /></span>
+                                <span class="chosen-text">
+                                    <strong>@_card.Name</strong>
+                                    <span class="gallery-product"><AppLogo Size="18" /> U-PMS</span>
+                                    <span class="hint">@_card.Description</span>
+                                </span>
+                            </div>
+                            <div id="template-details" class="template-details" hidden="@(!_details)">
+                                <p><strong>Columns:</strong> @string.Join(", ", ColumnNames)</p>
+                                <p><strong>Work types:</strong> @string.Join(", ", WorkTypeNames)</p>
+                                <p class="hint">You can add, rename and remove columns on the board, and turn work types on and off in Space settings.</p>
+                            </div>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <h1 id="step-heading" tabindex="-1">Bring your team along</h1>
+                    <p class="required-note">Get a head start by adding the people you work with.</p>
+                    @if (_error is not null)
+                    {
+                        <div class="alert alert-error" role="alert">@_error.Message</div>
+                    }
+                    <div class="field">
+                        <label for="invite-input">Enter names or emails</label>
+                        <div class="chip-box @(_inviteFocused ? "is-focused" : "")" @onclick="FocusInviteAsync">
+                            @foreach (var person in _invited)
+                            {
+                                <span class="chip" @key="person.UserId">
+                                    <Icon Name="person" Size="12" /> @person.DisplayName
+                                    <button type="button" class="chip-remove" aria-label="Remove @person.DisplayName" @onclick="() => _invited.Remove(person)" @onclick:stopPropagation>
+                                        <Icon Name="close" Size="12" />
+                                    </button>
+                                </span>
+                            }
+                            <input id="invite-input" class="chip-input" autocomplete="off" role="combobox"
+                                   aria-expanded="@(_matches.Count > 0 ? "true" : "false")" aria-controls="invite-matches" aria-autocomplete="list"
+                                   aria-activedescendant="@(_active >= 0 && _active < _matches.Count ? $"invite-match-{_active}" : null)"
+                                   placeholder="@(_invited.Count == 0 ? "e.g. Maria, maria@company.com" : "Enter more")"
+                                   @bind="_term" @bind:event="oninput" @bind:after="SearchPeopleAsync" @onkeydown="InviteKeyDown"
+                                   @onfocus="() => _inviteFocused = true" @onblur="() => _inviteFocused = false" />
+                        </div>
+                        @if (_matches.Count > 0)
+                        {
+                            <ul id="invite-matches" class="chip-matches" role="listbox" aria-label="People">
+                                @for (var i = 0; i < _matches.Count; i++)
+                                {
+                                    var person = _matches[i];
+                                    <li id="invite-match-@i" role="option" aria-selected="@(i == _active ? "true" : "false")" class="@(i == _active ? "is-active" : "")"
+                                        @onmousedown="() => Invite(person)" @onmousedown:preventDefault>
+                                        <span class="avatar avatar-@Avatar.ColorIndex(person.UserId)" aria-hidden="true">@Initials(person.DisplayName)</span>
+                                        <span>@person.DisplayName <span class="hint">@person.UserName</span></span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        else if (_term.Trim().Length > 1 && _searched)
+                        {
+                            <p class="hint" role="status">No one matches "@_term.Trim()".</p>
+                        }
+                    </div>
+                    <p class="hint">Each person gets the access their type and rights give: a Portfolio lead manages the space, a Member works on it, Read-only looks.</p>
+                }
+            </div>
+            <footer class="create-space-footer">
+                <span class="step-count">Step @_step of 2</span>
+                <span class="step-bar" aria-hidden="true"><span class="is-done"></span><span class="@(_step == 2 ? "is-done" : "")"></span></span>
+                <span class="spacer"></span>
+                @if (_step == 1)
+                {
+                    <button type="submit" form="name-space" class="btn btn-primary" disabled="@_busy">Next</button>
+                }
+                else
+                {
+                    <button type="button" class="btn" disabled="@_busy" @onclick="OpenSpace">I'll do this later</button>
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="AddTeamAsync">Next</button>
+                }
+            </footer>
+        </div>
+        <div class="create-space-preview-side">
+            <SpacePreview Name="@_name" Key="@(_createdKey ?? _key)" Template="_card.Template" Columns="ColumnNames" ShowColumnNames="_step == 2" />
+        </div>
+    </div>
+}
+
+@code {
+    // Jira's blank space starts with these three columns and with tasks, epics and sub-tasks.
+    private static readonly IReadOnlyList<NewColumn> BlankColumns =
+        [new("To Do", StatusCategory.ToDo), new("In Progress", StatusCategory.InProgress), new("Done", StatusCategory.Done)];
+
+    private const WorkTypeSet BlankWorkTypes = WorkTypeSet.Epic | WorkTypeSet.Task;
+
+    private SpaceTemplateCard? _card;
+    private int _step = 1;
+    private string _name = "";
+    private string _key = "";
+    private bool _keyEditedByUser;
+    private bool _keyFocused;
+    private int _suggestion;
+    private bool _details;
+    private bool _busy;
+    private AppError? _error;
+    private string? _createdKey;
+    private bool _focusHeading;
+
+    private readonly List<PersonOption> _invited = [];
+    private List<PersonOption> _matches = [];
+    private string _term = "";
+    private int _search;
+    private bool _searched;
+    private int _active = -1;
+    private bool _inviteFocused;
+    private IReadOnlyList<PortfolioChoice> _portfolios = [];
+    private long? _portfolioId;
+    private MyAccess? _access;
+
+    [Parameter]
+    public string Slug { get; set; } = "";
+
+    protected override void OnParametersSet() => _card = SpaceTemplates.Find(Slug);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _access = await Organization.MyAccessAsync(CancellationToken.None);
+        _portfolios = await Portfolios.ChoicesAsync(CancellationToken.None);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender || _focusHeading)
+        {
+            var id = firstRender && _step == 1 ? "space-name" : "invite-input";
+            _focusHeading = false;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private IReadOnlyList<string> ColumnNames => _card?.Template == SpaceTemplate.Blank
+        ? BlankColumns.Select(c => c.Name).ToList()
+        : TemplateCatalog.All.Single(t => t.Template == _card!.Template).Columns.Select(c => c.Name).ToList();
+
+    private IReadOnlyList<string> WorkTypeNames => _card?.Template == SpaceTemplate.Blank
+        ? ["Task", "Epic", "Sub-task"]
+        : TemplateCatalog.All.Single(t => t.Template == _card!.Template).WorkTypes;
+
+    private string KeyOrExample => string.IsNullOrWhiteSpace(_key) ? "KEY" : _key;
+
+    private async Task SuggestKeyAsync()
+    {
+        if (_keyEditedByUser || _keyFocused)
+        {
+            return;
+        }
+
+        var request = ++_suggestion;
+        var suggested = await Projects.SuggestKeyAsync(_name, CancellationToken.None);
+        if (request == _suggestion && !_keyEditedByUser && !_keyFocused)
+        {
+            _key = suggested;
+        }
+    }
+
+    private void KeyEdited()
+    {
+        _keyEditedByUser = _key.Length > 0;
+        _key = _key.ToUpperInvariant();
+    }
+
+    /// <summary>Step 1's "Next" creates the space, as Jira does; step 2 adds people to it.</summary>
+    private async Task CreateAsync()
+    {
+        if (_busy || _card is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = _card.Template == SpaceTemplate.Blank
+                ? await Projects.CreateBlankAsync(_name, _key, null, new SpaceSetup(BlankColumns, BlankWorkTypes), CancellationToken.None)
+                : await Projects.CreateAsync(_name, _key, null, TemplateOf(_card.Template), CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error;
+                return;
+            }
+
+            _createdKey = result.Value!;
+            if (_portfolioId is { } portfolioId
+                && await Portfolios.MoveSpaceAsync(_createdKey, portfolioId, CancellationToken.None) is { IsSuccess: false } moved)
+            {
+                Announcer.Announce($"The space was created, but not put into the portfolio: {moved.Error!.Message}");
+            }
+
+            _step = 2;
+            _focusHeading = true;
+            Announcer.Announce($"Created the space {_name.Trim()}. Step 2 of 2: bring your team along.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SearchPeopleAsync()
+    {
+        var term = _term.Trim();
+        var request = ++_search;
+        if (term.Length < 2 || _createdKey is null)
+        {
+            _matches = [];
+            _searched = false;
+            return;
+        }
+
+        var found = await Members.FindPeopleAsync(_createdKey, term, CancellationToken.None);
+        if (request != _search)
+        {
+            return; // a later search is on its way
+        }
+
+        _matches = (found.Value ?? []).Where(p => _invited.All(i => i.UserId != p.UserId)).Take(8).ToList();
+        _active = _matches.Count > 0 ? 0 : -1;
+        _searched = true;
+    }
+
+    private void Invite(PersonOption person)
+    {
+        if (_invited.All(i => i.UserId != person.UserId))
+        {
+            _invited.Add(person);
+            Announcer.Announce($"Added {person.DisplayName}.");
+        }
+
+        _term = "";
+        _matches = [];
+        _searched = false;
+        _active = -1;
+    }
+
+    private void InviteKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when _matches.Count > 0:
+                _active = (_active + 1) % _matches.Count;
+                break;
+            case "ArrowUp" when _matches.Count > 0:
+                _active = (_active - 1 + _matches.Count) % _matches.Count;
+                break;
+            case "Enter" when _active >= 0 && _active < _matches.Count:
+                Invite(_matches[_active]);
+                break;
+            case "Escape":
+                _matches = [];
+                break;
+            case "Backspace" when _term.Length == 0 && _invited.Count > 0:
+                _invited.RemoveAt(_invited.Count - 1);
+                break;
+        }
+    }
+
+    private async Task FocusInviteAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("upms.focusById", "invite-input");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task AddTeamAsync()
+    {
+        if (_busy || _createdKey is null)
+        {
+            return;
+        }
+
+        if (_invited.Count == 0)
+        {
+            OpenSpace();
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var team = await Members.GetTeamAsync(_createdKey, CancellationToken.None);
+            var version = team.Value?.MembersVersion ?? 0;
+            var notAdded = new List<string>();
+            foreach (var person in _invited.ToList())
+            {
+                var added = await Members.AddPersonAsync(_createdKey, person.UserId, version, CancellationToken.None);
+                if (added.IsSuccess)
+                {
+                    version = added.Value!.MembersVersion;
+                    _invited.Remove(person);
+                }
+                else
+                {
+                    notAdded.Add($"{person.DisplayName} ({added.Error!.Message})");
+                }
+            }
+
+            if (notAdded.Count > 0)
+            {
+                _error = AppError.Rule("NotAdded", $"Some people could not be added: {string.Join("; ", notAdded)}");
+                return;
+            }
+
+            OpenSpace();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OpenSpace() => Navigation.NavigateTo($"spaces/{_createdKey}/board");
+
+    private static ProjectTemplate TemplateOf(SpaceTemplate template) => template switch
+    {
+        SpaceTemplate.Scrum => ProjectTemplate.Scrum,
+        SpaceTemplate.StageGate => ProjectTemplate.StageGate,
+        _ => ProjectTemplate.Kanban,
+    };
+
+    private static string Initials(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
+
+    private static string? FieldOf(AppError error) => error.Code switch
+    {
+        ErrorCodes.DuplicateProjectKey or ErrorCodes.InvalidProjectKey => "Key",
+        ErrorCodes.DuplicateProjectName => "Name",
+        _ when error.FieldErrors is { } fields && fields.Keys.Any(k => k is "Name" or "Key") => "fields",
+        _ => null,
+    };
+
+    private string? ErrorFor(string field)
+    {
+        if (_error?.FieldErrors is { } errors && errors.TryGetValue(field, out var messages))
+        {
+            return string.Join(" ", messages);
+        }
+
+        return _error is not null && FieldOf(_error) == field ? _error.Message : null;
+    }
+
+    private string Invalid(string field) => ErrorFor(field) is null ? "false" : "true";
+}

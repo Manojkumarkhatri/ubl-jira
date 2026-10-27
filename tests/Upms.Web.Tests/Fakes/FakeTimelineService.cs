@@ -26,6 +26,15 @@ public sealed class FakeTimelineService : ITimelineService
 
     public List<TimelineItem> Unscheduled { get; } = [Item("WEB-4", "Someday", ToDo, null, null)];
 
+    /// <summary>Epics or stages with their items (Phase 3 FR-042); none unless a test adds some.</summary>
+    public List<TimelineGroup> Groups { get; set; } = [];
+
+    public List<SprintBar> Sprints { get; set; } = [];
+
+    public List<TimelineDependency> Dependencies { get; set; } = [];
+
+    public ProjectTemplate Template { get; set; } = ProjectTemplate.Kanban;
+
     public bool CanContribute { get; set; } = true;
 
     public List<bool> Loads { get; } = [];
@@ -50,7 +59,12 @@ public sealed class FakeTimelineService : ITimelineService
         }
 
         return Task.FromResult(Result<TimelineView>.Ok(new TimelineView("WEB", "Website Revamp", CanContribute, false, false, Rows,
-            Rows.Count, new Page<TimelineItem>(Unscheduled, Unscheduled.Count, 1, 50), hideCompleted)));
+            Rows.Count, new Page<TimelineItem>(Unscheduled, Unscheduled.Count, 1, 50), hideCompleted, Template)
+        {
+            Groups = Groups,
+            Sprints = Sprints,
+            Dependencies = Dependencies,
+        }));
     }
 
     public Task<Result<Page<TimelineItem>>> ListUnscheduledAsync(string projectKey, bool hideCompleted, PageRequest page, CancellationToken ct) =>
@@ -69,6 +83,19 @@ public sealed class FakeTimelineService : ITimelineService
         {
             NextResult = null;
             return next();
+        }
+
+        // Epics, stages and their items.
+        TimelineItem Swap(TimelineItem item) => item.Key == workItemKey ? item with { StartDate = start, DueDate = due, Version = [9] } : item;
+        if (Groups.SelectMany(g => g.Rows.Select(r => r.Task).Concat(g.Unscheduled).Prepend(g.Container)).FirstOrDefault(i => i.Key == workItemKey) is { } grouped)
+        {
+            Groups = Groups.ConvertAll(g => g with
+            {
+                Container = Swap(g.Container),
+                Rows = g.Rows.Select(r => r with { Task = Swap(r.Task) }).ToList(),
+                Unscheduled = g.Unscheduled.Select(Swap).ToList(),
+            });
+            return Result<TimelineItem>.Ok(Swap(grouped));
         }
 
         var unscheduled = Unscheduled.FirstOrDefault(i => i.Key == workItemKey);

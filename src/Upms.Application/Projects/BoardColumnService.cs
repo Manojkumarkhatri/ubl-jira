@@ -68,6 +68,14 @@ internal sealed class BoardColumnService(
                 return AppError.Validation("DestinationColumnId", "Choose a column on this board for its work items.");
             }
 
+            // Work of a locked stage stays in "to do": it may only go to another "to do" column (Phase 3 FR-033).
+            if (column.Category == StatusCategory.ToDo && destination is { Category: not StatusCategory.ToDo }
+                && await mover.CountInLockedStagesAsync(column.Id, ct) > 0)
+            {
+                return AppError.Rule(ErrorCodes.StageLocked,
+                    "This column holds work of a locked stage, which cannot start yet. Move its work to another \"to do\" column.");
+            }
+
             // Work items move first, recorded in their history (FR-037); the same save removes the column.
             var items = (await mover.CountInStatusesAsync([column.Id], ct)).GetValueOrDefault(column.Id);
             if (project.RemoveColumn(column, destination, items, time.GetUtcNow()) is { } error)

@@ -18,7 +18,7 @@ public abstract class IntegrationTest(SqlServerFixture fixture) : IAsyncLifetime
     public virtual async ValueTask InitializeAsync()
     {
         await fixture.ResetAsync();
-        Harness = new ServiceHarness(fixture.ConnectionString);
+        Harness = new ServiceHarness(fixture.ConnectionString, ConfigureServices);
         Data = new TestData(Harness);
     }
 
@@ -26,6 +26,11 @@ public abstract class IntegrationTest(SqlServerFixture fixture) : IAsyncLifetime
     {
         await Harness.DisposeAsync();
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Replaces services for this test class (for example a fake malware scanner).</summary>
+    protected virtual void ConfigureServices(IServiceCollection services)
+    {
     }
 
     /// <summary>Makes <paramref name="user"/> the caller of the following service calls.</summary>

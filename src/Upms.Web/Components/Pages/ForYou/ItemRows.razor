@@ -1,0 +1,34 @@
+@using Upms.Application.Work
+@* Work items in a table, for "Worked on" and "Viewed": key, title (opening the item), space, status, assignee and when. *@
+<div class="table-wrap">
+    <table class="tbl item-rows">
+        <caption class="sr-only">@Caption</caption>
+        <thead>
+            <tr><th scope="col">Key</th><th scope="col">Title</th><th scope="col">Space</th><th scope="col">Status</th><th scope="col">Assignee</th><th scope="col">@WhenLabel</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr @key="row.Key" data-testid="item-row">
+                    <td class="key">@row.Key</td>
+                    <td><TypeIcon Type="row.Type" /> <a href="spaces/@row.ProjectKey/board?task=@Uri.EscapeDataString(row.Key)">@row.Title</a></td>
+                    <td>@row.ProjectName</td>
+                    <td>@row.Status.Name</td>
+                    <td>@(row.Assignee?.DisplayName ?? "Unassigned")</td>
+                    <td><LocalTime Value="row.UpdatedAt" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<SearchResultRow> Rows { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public string Caption { get; set; } = "";
+
+    [Parameter]
+    public string WhenLabel { get; set; } = "When";
+}

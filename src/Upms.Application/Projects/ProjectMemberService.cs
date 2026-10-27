@@ -49,7 +49,7 @@ internal sealed class ProjectMemberService(
         {
             if (!Enum.IsDefined(role))
             {
-                return Refused(AppError.Validation("Role", "Choose Project Admin, Member or Viewer."));
+                return Refused(AppError.Validation("Role", "Choose a role."));
             }
 
             if ((await users.GetAsync([userId], ct)).GetValueOrDefault(userId) is not { } person)
@@ -69,13 +69,20 @@ internal sealed class ProjectMemberService(
                 : Refused(added.Error!.ToAppError());
         }, ct);
 
+    public async Task<Result<TeamView>> AddPersonAsync(string projectKey, Guid userId, int expectedMembersVersion, CancellationToken ct)
+    {
+        var person = (await users.AccessOfAsync([userId], ct)).GetValueOrDefault(userId);
+        var role = person is null ? ProjectRole.Viewer : ProjectRoleNames.For(person.Rights);
+        return await AddAsync(projectKey, userId, role, expectedMembersVersion, ct);
+    }
+
     public Task<Result<TeamView>> ChangeRoleAsync(string projectKey, Guid userId, ProjectRole role, int expectedMembersVersion,
         CancellationToken ct) =>
         ChangeAsync(projectKey, expectedMembersVersion, async (project, _) =>
         {
             if (!Enum.IsDefined(role))
             {
-                return Refused(AppError.Validation("Role", "Choose Project Admin, Member or Viewer."));
+                return Refused(AppError.Validation("Role", "Choose a role."));
             }
 
             if (project.Members.FirstOrDefault(m => m.UserId == userId) is not { } member)
@@ -175,12 +182,17 @@ internal sealed class ProjectMemberService(
         var views = members
             .Select(m => people.GetValueOrDefault(m.UserId) is { } person
                 ? new MemberView(m.UserId, person.DisplayName, person.UserName, m.Role, person.IsActive, m.UserId == allowed.UserId, m.AddedAt)
+                {
+                    Type = person.Type,
+                    FromPortfolio = m.FromPortfolio,
+                }
                 : new MemberView(m.UserId, "Unknown user", "", m.Role, false, m.UserId == allowed.UserId, m.AddedAt))
             .OrderBy(v => v.Role == ProjectRole.ProjectAdmin ? 0 : 1)
             .ThenBy(v => v.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(v => v.UserName, StringComparer.Ordinal)
             .ToList();
-        return new TeamView(project.Key, project.Name, project.MembersVersion, allowed.CanManage, views, allowed.IsAdministrator);
+        return new TeamView(project.Key, project.Name, project.MembersVersion, allowed.CanManage, views, allowed.IsAdministrator,
+            allowed.Template);
     }
 
     private static Outcome Refused(AppError error) => new(error, null);

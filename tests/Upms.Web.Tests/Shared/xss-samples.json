@@ -1,0 +1,3923 @@
+[
+ {
+  "name": "payload 1 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<script>alert(1)</script>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 1 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<script>alert(1)</script>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 1 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<script>alert(1)</script>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 1 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<script>alert(1)</script>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 1 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<script>alert(1)</script>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<script>alert(1)</script>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<script>alert(1)</script>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 2 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<img src=x onerror=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 2 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<img src=x onerror=alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 2 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<img src=x onerror=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 2 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<img src=x onerror=alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 2 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<img src=x onerror=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<img src=x onerror=alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<img src=x onerror=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 3 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<svg onload=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 3 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<svg onload=alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 3 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<svg onload=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 3 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<svg onload=alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 3 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<svg onload=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<svg onload=alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<svg onload=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 4 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "\"><script>alert(1)</script>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 4 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "\"><script>alert(1)</script>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 4 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "\"><script>alert(1)</script>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 4 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "\"><script>alert(1)</script>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 4 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "\"><script>alert(1)</script>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "\"><script>alert(1)</script>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "\"><script>alert(1)</script>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 5 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "'><img src=x onerror=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 5 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "'><img src=x onerror=alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 5 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "'><img src=x onerror=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 5 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "'><img src=x onerror=alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 5 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "'><img src=x onerror=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "'><img src=x onerror=alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "'><img src=x onerror=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 6 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<iframe src=javascript:alert(1)></iframe>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 6 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<iframe src=javascript:alert(1)></iframe>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 6 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<iframe src=javascript:alert(1)></iframe>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 6 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<iframe src=javascript:alert(1)></iframe>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 6 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<iframe src=javascript:alert(1)></iframe>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<iframe src=javascript:alert(1)></iframe>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<iframe src=javascript:alert(1)></iframe>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 7 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<a href=\"javascript:alert(1)\">click</a>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 7 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<a href=\"javascript:alert(1)\">click</a>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 7 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<a href=\"javascript:alert(1)\">click</a>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 7 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<a href=\"javascript:alert(1)\">click</a>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 7 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<a href=\"javascript:alert(1)\">click</a>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<a href=\"javascript:alert(1)\">click</a>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<a href=\"javascript:alert(1)\">click</a>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 8 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<style>body{background:url(javascript:alert(1))}</style>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 8 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<style>body{background:url(javascript:alert(1))}</style>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 8 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<style>body{background:url(javascript:alert(1))}</style>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 8 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<style>body{background:url(javascript:alert(1))}</style>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 8 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<style>body{background:url(javascript:alert(1))}</style>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<style>body{background:url(javascript:alert(1))}</style>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<style>body{background:url(javascript:alert(1))}</style>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 9 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 9 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 9 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 9 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 9 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 10 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "&lt;script&gt;alert(1)&lt;/script&gt;"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 10 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "&lt;script&gt;alert(1)&lt;/script&gt;",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 10 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "&lt;script&gt;alert(1)&lt;/script&gt;"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 10 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "&lt;script&gt;alert(1)&lt;/script&gt;"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 10 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "&lt;script&gt;alert(1)&lt;/script&gt;"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "&lt;script&gt;alert(1)&lt;/script&gt;"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "&lt;script&gt;alert(1)&lt;/script&gt;"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 11 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<body onload=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 11 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<body onload=alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 11 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<body onload=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 11 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<body onload=alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 11 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<body onload=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<body onload=alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<body onload=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 12 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<details open ontoggle=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 12 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<details open ontoggle=alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 12 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<details open ontoggle=alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 12 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<details open ontoggle=alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 12 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<details open ontoggle=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<details open ontoggle=alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<details open ontoggle=alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 13 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<object data=javascript:alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 13 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<object data=javascript:alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 13 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<object data=javascript:alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 13 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<object data=javascript:alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 13 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<object data=javascript:alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<object data=javascript:alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<object data=javascript:alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 14 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<embed src=javascript:alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 14 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<embed src=javascript:alert(1)>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 14 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<embed src=javascript:alert(1)>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 14 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<embed src=javascript:alert(1)>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 14 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<embed src=javascript:alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<embed src=javascript:alert(1)>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<embed src=javascript:alert(1)>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 15 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<form action=javascript:alert(1)><input type=submit></form>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 15 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<form action=javascript:alert(1)><input type=submit></form>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 15 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<form action=javascript:alert(1)><input type=submit></form>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 15 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<form action=javascript:alert(1)><input type=submit></form>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 15 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<form action=javascript:alert(1)><input type=submit></form>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<form action=javascript:alert(1)><input type=submit></form>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<form action=javascript:alert(1)><input type=submit></form>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 16 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<meta http-equiv=refresh content=\"0;url=javascript:alert(1)\">"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 16 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<meta http-equiv=refresh content=\"0;url=javascript:alert(1)\">",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 16 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<meta http-equiv=refresh content=\"0;url=javascript:alert(1)\">"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 16 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<meta http-equiv=refresh content=\"0;url=javascript:alert(1)\">"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 16 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<meta http-equiv=refresh content=\"0;url=javascript:alert(1)\">"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<meta http-equiv=refresh content=\"0;url=javascript:alert(1)\">"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<meta http-equiv=refresh content=\"0;url=javascript:alert(1)\">"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 17 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<base href=javascript:alert(1)//>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 17 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<base href=javascript:alert(1)//>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 17 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<base href=javascript:alert(1)//>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 17 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<base href=javascript:alert(1)//>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 17 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<base href=javascript:alert(1)//>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<base href=javascript:alert(1)//>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<base href=javascript:alert(1)//>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 18 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<div style=\"background:url(javascript:alert(1))\">x</div>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 18 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<div style=\"background:url(javascript:alert(1))\">x</div>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 18 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<div style=\"background:url(javascript:alert(1))\">x</div>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 18 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<div style=\"background:url(javascript:alert(1))\">x</div>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 18 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<div style=\"background:url(javascript:alert(1))\">x</div>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<div style=\"background:url(javascript:alert(1))\">x</div>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<div style=\"background:url(javascript:alert(1))\">x</div>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 19 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<!--<img src=\"--><img src=x onerror=alert(1)//\">"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 19 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<!--<img src=\"--><img src=x onerror=alert(1)//\">",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 19 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<!--<img src=\"--><img src=x onerror=alert(1)//\">"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 19 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<!--<img src=\"--><img src=x onerror=alert(1)//\">"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 19 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<!--<img src=\"--><img src=x onerror=alert(1)//\">"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<!--<img src=\"--><img src=x onerror=alert(1)//\">"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<!--<img src=\"--><img src=x onerror=alert(1)//\">"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 20 as text",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<scr<script>ipt>alert(1)</script>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 20 in bold and italic",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "<scr<script>ipt>alert(1)</script>",
+       "marks": [
+        {
+         "type": "bold"
+        },
+        {
+         "type": "italic"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 20 in a code block",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "content": [
+      {
+       "type": "text",
+       "text": "<scr<script>ipt>alert(1)</script>"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 20 as a mention label",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "label": "<scr<script>ipt>alert(1)</script>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "payload 20 in a table header and cell",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableHeader",
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<scr<script>ipt>alert(1)</script>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "attrs": {
+          "style": "<scr<script>ipt>alert(1)</script>"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "content": [
+            {
+             "type": "text",
+             "text": "<scr<script>ipt>alert(1)</script>"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 1",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "javascript:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 2",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "JAVASCRIPT:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 3",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": " javascript:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 4",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "java\tscript:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 5",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "java\nscript:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 6",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "jav&#x09;ascript:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 7",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "javascript&colon;alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 8",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 9",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "data:image/svg+xml,<svg onload=alert(1)>",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 10",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "vbscript:msgbox(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 11",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "file:///etc/passwd",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 12",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "//evil.example.com/",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 13",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "/relative/path",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 14",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "\\\\evil\\share",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 15",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "https://example.com\" onmouseover=\"alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 16",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "https://example.com/<script>alert(1)</script>",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 17",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "mailto:a@example.com?subject=<script>alert(1)</script>",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 18",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "http://example.com/'onerror='alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 19",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "\u0000javascript:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 20",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "%6A%61%76%61%73%63%72%69%70%74:alert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 21",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "javascript://example.com/%0Aalert(1)",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "link 22",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "click me",
+       "marks": [
+        {
+         "type": "link",
+         "attrs": {
+          "href": "jar:http://example.com/x.jar!/",
+          "target": "_self",
+          "rel": "opener",
+          "onclick": "alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 1 (iframe)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "iframe",
+     "attrs": {
+      "src": "https://evil.example.com"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 2 (script)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "script",
+     "content": [
+      {
+       "type": "text",
+       "text": "alert(1)"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 3 (svg)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "svg",
+     "attrs": {
+      "onload": "alert(1)"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 4 (style)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "style",
+     "content": [
+      {
+       "type": "text",
+       "text": "body{display:none}"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 5 (object)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "object",
+     "attrs": {
+      "data": "javascript:alert(1)"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 6 (embed)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "embed",
+     "attrs": {
+      "src": "javascript:alert(1)"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 7 (htmlBlock)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "htmlBlock",
+     "attrs": {
+      "html": "<script>alert(1)</script>"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 8 (video)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "video",
+     "attrs": {
+      "src": "https://evil.example.com/v.mp4"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 9 (audio)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "audio",
+     "attrs": {
+      "src": "https://evil.example.com/a.mp3"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 10 (horizontalRule)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "horizontalRule"
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 11 (details)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "details",
+     "content": [
+      {
+       "type": "paragraph",
+       "content": [
+        {
+         "type": "text",
+         "text": "x"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 12 (taskList)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "taskList",
+     "content": []
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 13 (image)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "image",
+     "attrs": {
+      "src": "https://evil.example.com/x.png"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 14 (image)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "image",
+     "attrs": {
+      "attachmentId": "1 onerror=alert(1)",
+      "src": "x"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 15 (PARAGRAPH)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "PARAGRAPH",
+     "content": [
+      {
+       "type": "text",
+       "text": "x"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown node 16 (paragraph)",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "img",
+       "attrs": {
+        "src": "x",
+        "onerror": "alert(1)"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown mark underline",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "x",
+       "marks": [
+        {
+         "type": "underline",
+         "attrs": {
+          "color": "red",
+          "style": "x",
+          "href": "javascript:alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown mark textStyle",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "x",
+       "marks": [
+        {
+         "type": "textStyle",
+         "attrs": {
+          "color": "red",
+          "style": "x",
+          "href": "javascript:alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown mark highlight",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "x",
+       "marks": [
+        {
+         "type": "highlight",
+         "attrs": {
+          "color": "red",
+          "style": "x",
+          "href": "javascript:alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown mark subscript",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "x",
+       "marks": [
+        {
+         "type": "subscript",
+         "attrs": {
+          "color": "red",
+          "style": "x",
+          "href": "javascript:alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown mark superscript",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "x",
+       "marks": [
+        {
+         "type": "superscript",
+         "attrs": {
+          "color": "red",
+          "style": "x",
+          "href": "javascript:alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown mark script",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "x",
+       "marks": [
+        {
+         "type": "script",
+         "attrs": {
+          "color": "red",
+          "style": "x",
+          "href": "javascript:alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "unknown mark LINK",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "x",
+       "marks": [
+        {
+         "type": "LINK",
+         "attrs": {
+          "color": "red",
+          "style": "x",
+          "href": "javascript:alert(1)"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "event attribute on a paragraph",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "attrs": {
+      "onclick": "alert(1)",
+      "class": "x",
+      "style": "x"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "x"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "event attribute on a heading",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "heading",
+     "attrs": {
+      "level": 1,
+      "onmouseover": "alert(1)"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "x"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "script in a code block language",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "codeBlock",
+     "attrs": {
+      "language": "\"><script>alert(1)</script>"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "x"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "heading level as markup",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "heading",
+     "attrs": {
+      "level": "1><script>alert(1)</script>"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "x"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "list start as markup",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "orderedList",
+     "attrs": {
+      "start": "1\" onclick=\"alert(1)"
+     },
+     "content": [
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "x"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "mention id as markup",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "mention",
+       "attrs": {
+        "id": "\"><script>alert(1)</script>",
+        "label": "x"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "text that is not a string",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": {
+        "toString": "<script>"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "content that is not an array",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "paragraph",
+     "content": "<script>alert(1)</script>"
+    }
+   ]
+  }
+ },
+ {
+  "name": "a nested document",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "doc",
+     "content": [
+      {
+       "type": "paragraph",
+       "content": [
+        {
+         "type": "text",
+         "text": "<script>alert(1)</script>"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "a table in a table",
+  "document": {
+   "type": "doc",
+   "content": [
+    {
+     "type": "table",
+     "content": [
+      {
+       "type": "tableRow",
+       "content": [
+        {
+         "type": "tableCell",
+         "content": [
+          {
+           "type": "table",
+           "content": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ }
+]

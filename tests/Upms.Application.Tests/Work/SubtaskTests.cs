@@ -33,7 +33,7 @@ public sealed class SubtaskTests(SqlServerFixture fixture) : DrawerTestBase(fixt
     }
 
     [Fact]
-    public async Task US2_AS7_A_sub_task_opens_with_a_link_to_its_parent_and_is_never_a_board_card()
+    public async Task US2_AS7_A_sub_task_opens_with_a_link_to_its_parent_and_is_its_own_board_card()
     {
         var card = await AddAsync(ToDo, "Design the home page");
         await AddSubtaskAsync(card.Key, "Wireframes");
@@ -43,7 +43,8 @@ public sealed class SubtaskTests(SqlServerFixture fixture) : DrawerTestBase(fixt
         Assert.Equal(WorkItemType.Subtask, subtask.Type);
         Assert.Equal(new ParentRef("WEB-1", "Design the home page"), subtask.Parent);
         var board = await BoardAsync();
-        Assert.Equal(["WEB-1"], board.Columns.SelectMany(c => c.Cards).Select(c => c.Key));
+        // Since the Jira parity pass, a sub-task is a card of its own, naming its parent (FR-027a).
+        Assert.Equal([("WEB-1", (string?)null), ("WEB-2", "WEB-1")], board.Columns.SelectMany(c => c.Cards).Select(c => (c.Key, c.ParentKey)));
     }
 
     [Fact]

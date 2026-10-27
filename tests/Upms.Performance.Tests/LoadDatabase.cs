@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.MsSql;
+using Upms.Domain.Common;
 using Upms.Domain.Identity;
 using Upms.Domain.Projects;
 using Upms.Infrastructure.Persistence;
@@ -26,10 +27,19 @@ public sealed class LoadDatabase : IAsyncLifetime
     /// <summary>Active users who are not Administrators, from whom Project Admins pick people to add.</summary>
     public IReadOnlyList<Guid> UserIds { get; private set; } = [];
 
+    /// <summary>An active Administrator, who searches across every project (Phase 4 research R26).</summary>
+    public Guid AdministratorId { get; private set; }
+
     /// <summary>The project whose board shows about 500 cards.</summary>
     public string LargestProjectKey { get; private set; } = "";
 
     public int WorkItems { get; private set; }
+
+    /// <summary>The Scrum projects, whose simulated users also use the backlog and sprint reports (Phase 3 research R25).</summary>
+    public IReadOnlySet<string> ScrumProjects { get; private set; } = new HashSet<string>();
+
+    /// <summary>The Stage-gate projects, whose simulated users also use the Stages view and its gates (research R25).</summary>
+    public IReadOnlySet<string> StageGateProjects { get; private set; } = new HashSet<string>();
 
     public async ValueTask InitializeAsync()
     {
@@ -54,6 +64,8 @@ public sealed class LoadDatabase : IAsyncLifetime
 
         var users = db.Users.AsNoTracking().Where(u => u.IsActive && u.OrganizationRole == OrganizationRole.User);
         UserIds = await users.OrderBy(u => u.UserName).Select(u => u.Id).ToListAsync();
+        AdministratorId = await db.Users.AsNoTracking().Where(u => u.IsActive && u.OrganizationRole == OrganizationRole.Administrator)
+            .OrderBy(u => u.UserName).Select(u => u.Id).FirstAsync();
         LargestProjectKey = await db.WorkItems.AsNoTracking()
             .GroupBy(w => w.ProjectId)
             .OrderByDescending(g => g.Count())
@@ -69,6 +81,10 @@ public sealed class LoadDatabase : IAsyncLifetime
             .ToListAsync();
         Subjects = ChooseSubjects(contributions, LargestProjectKey, Math.Max(Settings.Users, 1));
         WorkItems = await db.WorkItems.IgnoreQueryFilters().CountAsync();
+        ScrumProjects = (await db.Projects.AsNoTracking().Where(p => p.Template == ProjectTemplate.Scrum).Select(p => p.Key).ToListAsync())
+            .ToHashSet(StringComparer.Ordinal);
+        StageGateProjects = (await db.Projects.AsNoTracking().Where(p => p.Template == ProjectTemplate.StageGate).Select(p => p.Key).ToListAsync())
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>Different people as far as the data allows; each Project Admin subject has a project of their own.</summary>

@@ -10,8 +10,9 @@ public enum TimelineZoom
 }
 
 /// <summary>Where dates fall on the timeline's track (Phase 2 FR-034, research R12): 36 pixels per day in weeks, 8 in
-/// months and 3 in quarters. The range covers every scheduled date and today, with one whole week, month or quarter
-/// of room on each side; weeks start on Monday.</summary>
+/// months and 3 in quarters. The header follows Jira's: in weeks, the weeks above and every day's number below; in
+/// months and quarters, one row of month or quarter names. The range covers every scheduled date and today, with room on
+/// each side so the chart fills the screen; weeks start on Monday.</summary>
 public sealed class TimelineScale
 {
     private TimelineScale(TimelineZoom zoom, DateOnly start, DateOnly end, DateOnly today)
@@ -20,7 +21,8 @@ public sealed class TimelineScale
         Start = start;
         End = end;
         Today = today;
-        Headings = BuildHeadings();
+        Periods = BuildPeriods();
+        Days = zoom == TimelineZoom.Weeks ? BuildDays() : [];
     }
 
     public TimelineZoom Zoom { get; }
@@ -39,7 +41,14 @@ public sealed class TimelineScale
     /// <summary>The today line, in the middle of today.</summary>
     public double TodayLeft => Left(Today) + PixelsPerDay / 2;
 
-    public IReadOnlyList<TimelineHeading> Headings { get; }
+    /// <summary>Weeks, months or quarters: the header's names, the grid's lines and the shaded current one.</summary>
+    public IReadOnlyList<TimelinePeriod> Periods { get; }
+
+    /// <summary>In weeks, every day with its number under the week.</summary>
+    public IReadOnlyList<TimelineDay> Days { get; }
+
+    /// <summary>The weeks view has two header rows.</summary>
+    public bool HasDayRow => Zoom == TimelineZoom.Weeks;
 
     public static double PixelsPerDayFor(TimelineZoom zoom) => zoom switch
     {
@@ -51,9 +60,25 @@ public sealed class TimelineScale
     public static TimelineScale For(TimelineZoom zoom, IEnumerable<DateOnly> dates, DateOnly today)
     {
         var all = dates.Append(today).ToList();
-        var start = PeriodStart(zoom, PeriodStart(zoom, all.Min()).AddDays(-1));
-        var end = PeriodEnd(zoom, PeriodEnd(zoom, all.Max()).AddDays(1));
-        return new TimelineScale(zoom, start, end, today);
+        var (before, after) = zoom switch
+        {
+            TimelineZoom.Weeks => (6, 10),
+            TimelineZoom.Months => (3, 6),
+            _ => (2, 4),
+        };
+        var start = PeriodStart(zoom, all.Min());
+        var end = PeriodStart(zoom, all.Max());
+        for (var i = 0; i < before; i++)
+        {
+            start = PeriodStart(zoom, start.AddDays(-1));
+        }
+
+        for (var i = 0; i < after; i++)
+        {
+            end = NextPeriod(zoom, end);
+        }
+
+        return new TimelineScale(zoom, start, NextPeriod(zoom, end).AddDays(-1), today);
     }
 
     /// <summary>The distance from the start of the track to the start of the day.</summary>
@@ -79,25 +104,46 @@ public sealed class TimelineScale
         _ => periodStart.AddMonths(3),
     };
 
-    private static DateOnly PeriodEnd(TimelineZoom zoom, DateOnly date) => NextPeriod(zoom, PeriodStart(zoom, date)).AddDays(-1);
-
-    private List<TimelineHeading> BuildHeadings()
+    private List<TimelinePeriod> BuildPeriods()
     {
-        var headings = new List<TimelineHeading>();
+        var periods = new List<TimelinePeriod>();
         for (var period = Start; period <= End; period = NextPeriod(Zoom, period))
         {
-            var label = Zoom switch
-            {
-                TimelineZoom.Weeks => period.ToString("d MMM", CultureInfo.InvariantCulture),
-                TimelineZoom.Months => period.ToString("MMM yyyy", CultureInfo.InvariantCulture),
-                _ => $"Q{((period.Month - 1) / 3) + 1} {period.Year}",
-            };
-            headings.Add(new TimelineHeading(label, Left(period), WidthOf(period, PeriodEnd(Zoom, period))));
+            var last = NextPeriod(Zoom, period).AddDays(-1);
+            periods.Add(new TimelinePeriod(Label(period, last), Left(period), WidthOf(period, last), Today >= period && Today <= last));
         }
 
-        return headings;
+        return periods;
+    }
+
+    /// <summary>"Sep / Oct" or "Oct" for a week; "October", or "January '27" outside this year; "October - December".</summary>
+    private string Label(DateOnly first, DateOnly last)
+    {
+        var year = first.Year == Today.Year ? "" : $" '{first.Year % 100:00}";
+        return Zoom switch
+        {
+            TimelineZoom.Weeks when first.Month != last.Month =>
+                $"{first.ToString("MMM", CultureInfo.InvariantCulture)} / {last.ToString("MMM", CultureInfo.InvariantCulture)}",
+            TimelineZoom.Weeks => first.ToString("MMM", CultureInfo.InvariantCulture),
+            TimelineZoom.Months => first.ToString("MMMM", CultureInfo.InvariantCulture) + year,
+            _ => $"{first.ToString("MMMM", CultureInfo.InvariantCulture)} - {last.ToString("MMMM", CultureInfo.InvariantCulture)}{year}",
+        };
+    }
+
+    private List<TimelineDay> BuildDays()
+    {
+        var days = new List<TimelineDay>();
+        for (var day = Start; day <= End; day = day.AddDays(1))
+        {
+            days.Add(new TimelineDay(day.Day, Left(day), day == Today, day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday));
+        }
+
+        return days;
     }
 }
 
 /// <param name="Left">From the start of the track, in pixels.</param>
-public sealed record TimelineHeading(string Label, double Left, double Width);
+/// <param name="IsCurrent">Holds today; Jira shades it.</param>
+public sealed record TimelinePeriod(string Label, double Left, double Width, bool IsCurrent);
+
+public sealed record TimelineDay(int Number, double Left, bool IsToday, bool IsWeekend);

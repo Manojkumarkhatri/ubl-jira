@@ -48,10 +48,10 @@ public sealed class WorkItemServiceTests(SqlServerFixture fixture) : DrawerTestB
         await AddAsync(ToDo, "Design the home page");
         const string text = "Hero section first.\nSee https://example.com/brief for the brief.";
 
-        var saved = await EditAsync("WEB-1", new WorkItemEdit.Description(text));
+        var saved = await EditAsync("WEB-1", new WorkItemEdit.Description(Documents.Text(text)));
 
-        Assert.Equal(text, saved.Value!.Description);
-        Assert.Equal(text, (await RequireDetailsAsync("WEB-1")).Description);
+        Assert.Equal(text, saved.Value!.Description!.PlainText);
+        Assert.Equal(text, (await RequireDetailsAsync("WEB-1")).Description!.PlainText);
     }
 
     [Fact]
@@ -99,14 +99,14 @@ public sealed class WorkItemServiceTests(SqlServerFixture fixture) : DrawerTestB
         await AddAsync(ToDo, "Design the home page");
         var loaded = await RequireDetailsAsync("WEB-1");
         ActAs(await MemberAsync("bilal"));
-        await EditAsync("WEB-1", new WorkItemEdit.Description("Bilal's version"), loaded.Version);
+        await EditAsync("WEB-1", new WorkItemEdit.Description(Documents.Text("Bilal's version")), loaded.Version);
 
         ActAs(Owner);
-        var mine = await EditAsync("WEB-1", new WorkItemEdit.Description("Amina's version"), loaded.Version);
+        var mine = await EditAsync("WEB-1", new WorkItemEdit.Description(Documents.Text("Amina's version")), loaded.Version);
 
         Assert.Equal(ErrorKind.Conflict, mine.Error!.Kind);
-        Assert.Equal("Bilal's version", Assert.IsType<WorkItemDetails>(mine.Error.Current).Description);
-        Assert.Equal("Bilal's version", (await RequireDetailsAsync("WEB-1")).Description);
+        Assert.Equal("Bilal's version", Assert.IsType<WorkItemDetails>(mine.Error.Current).Description!.PlainText);
+        Assert.Equal("Bilal's version", (await RequireDetailsAsync("WEB-1")).Description!.PlainText);
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class WorkItemServiceTests(SqlServerFixture fixture) : DrawerTestB
     {
         await AddAsync(ToDo, "Design the home page");
         var loaded = await RequireDetailsAsync("WEB-1");
-        await CallAsync<ICommentService, Result<CommentView>>(s => s.AddAsync("WEB-1", "Looks good", Ct));
+        await CallAsync<ICommentService, Result<CommentView>>(s => s.AddAsync("WEB-1", Documents.Text("Looks good"), Ct));
 
         var saved = await EditAsync("WEB-1", new WorkItemEdit.Title("Design the landing page"), loaded.Version);
 

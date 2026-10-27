@@ -1,0 +1,290 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IMentionService Mentions
+@inject IAttachmentService Attachments
+@* The formatted-text editor for descriptions and comments (Phase 4 FR-001, FR-005, FR-007; research R2, R5), as Jira's:
+   people type straight away, and editor.js shows a floating toolbar when text is selected, a "/" menu for tables and
+   lists, and a table toolbar inside tables. Alt+F10 reaches the toolbars; Escape then Tab leaves the editor. *@
+<div class="rte" id="@Id" @ref="_host">
+    <div class="rte-surface" tabindex="-1">
+        <div class="rte-content" id="@($"{Id}-area")" aria-describedby="@($"{Id}-error")"></div>
+    </div>
+    <p class="rte-hint" id="@($"{Id}-hint")">Select text to format it (or press Alt+F10). Type / for a table, list or heading.</p>
+    <div class="rte-count" aria-live="polite"></div>
+    <span id="@($"{Id}-error")" class="error-text" role="alert">@(_loadError ?? _error)</span>
+    @if (!Embedded)
+    {
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-testid="@($"{Id}-save")" disabled="@(_busy || _handle is null)"
+                    @onclick="SaveAsync">@SaveLabel</button>
+            <button type="button" class="btn btn-sm" data-testid="@($"{Id}-cancel")" disabled="@_busy" @onclick="CancelAsync">Cancel</button>
+            <span class="saved" role="status">@_status</span>
+        </div>
+    }
+</div>
+
+@code {
+    private ElementReference _host;
+    private DotNetObjectReference<RichTextEditor>? _self;
+    private int? _handle;
+    private string? _error;
+    private string? _loadError;
+    private string? _status;
+    private bool _busy;
+
+    /// <summary>The element id; other ids derive from it.</summary>
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = "";
+
+    /// <summary>The editing area's accessible name, for example "Description".</summary>
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    /// <summary>The text to start from; old plain text opens as one paragraph per line (FR-004).</summary>
+    [Parameter]
+    public RichText? Initial { get; set; }
+
+    [Parameter]
+    public string? Placeholder { get; set; }
+
+    /// <summary>The item whose project's members "@" suggests; null turns suggestions off unless <see cref="SpaceKey"/> is set.
+    /// Pasted images need the item.</summary>
+    [Parameter]
+    public string? WorkItemKey { get; set; }
+
+    /// <summary>For text written before its item exists (the Create form): "@" suggests this space's members, and pasted
+    /// images are not taken (Jira parity pass FR-004).</summary>
+    [Parameter]
+    public string? SpaceKey { get; set; }
+
+    /// <summary>A field of a larger form: no Save and Cancel buttons; the form reads the text with
+    /// <see cref="GetDocumentAsync"/>.</summary>
+    [Parameter]
+    public bool Embedded { get; set; }
+
+    [Parameter]
+    public string SaveLabel { get; set; } = "Save";
+
+    /// <summary>Saves the document's JSON; the handler sets <see cref="EditorSave.Error"/> when the save is refused, and the
+    /// text stays.</summary>
+    [Parameter]
+    public EventCallback<EditorSave> OnSave { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    /// <summary>An image was pasted or dropped into the text and attached to the item (Phase 4 FR-023).</summary>
+    [Parameter]
+    public EventCallback OnAttached { get; set; }
+
+    /// <summary>Empties the editor after a save, as the comment box does.</summary>
+    [Parameter]
+    public bool ClearAfterSave { get; set; }
+
+    [Parameter]
+    public bool AutoFocus { get; set; } = true;
+
+    /// <summary>The starting document's JSON, or null to start empty.</summary>
+    public static string? StartingDocument(RichText? text) => text switch
+    {
+        null => null,
+        { Format: TextFormat.Document } => text.Content,
+        _ => FormattedText.FromPlainText(text.Content).Json,
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _self = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("upms.loadEditor");
+            _handle = await JS.InvokeAsync<int>("upms.editor.create", _host, new
+            {
+                content = StartingDocument(Initial),
+                label = Label,
+                placeholder = Placeholder,
+                hintId = $"{Id}-hint",
+                limit = FormattedText.PlainTextMaxLength,
+                dotnet = WorkItemKey is null && SpaceKey is null ? null : _self,
+                images = WorkItemKey is not null,
+            });
+            if (AutoFocus)
+            {
+                await JS.InvokeVoidAsync("upms.editor.focus", _handle);
+            }
+        }
+        catch (JSException)
+        {
+            _loadError = "The editor could not be loaded. Reload the page and try again.";
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>"@" suggestions: active members of the item's project, or of the space before the item exists (FR-008).</summary>
+    [JSInvokable]
+    public async Task<IReadOnlyList<MentionOption>> SuggestMentionsAsync(string query)
+    {
+        if (WorkItemKey is null && SpaceKey is null)
+        {
+            return [];
+        }
+
+        var found = WorkItemKey is { } item
+            ? await Mentions.SuggestAsync(item, query ?? "", CancellationToken.None)
+            : await Mentions.SuggestInSpaceAsync(SpaceKey!, query ?? "", CancellationToken.None);
+        return found.IsSuccess
+            ? found.Value!.Select(p => new MentionOption(p.UserId.ToString(), p.DisplayName, p.UserName)).ToList()
+            : [];
+    }
+
+    /// <summary>A pasted or dropped image (Phase 4 FR-023): attached to the item, then shown in the text by its id. The
+    /// answer is the attachment's id, or null when it was refused (the reason is shown under the editor).</summary>
+    [JSInvokable]
+    public async Task<long?> UploadImageAsync(string fileName, long size, IJSStreamReference content)
+    {
+        await using (content)
+        {
+            if (WorkItemKey is null)
+            {
+                return null;
+            }
+
+            if (AttachmentRules.CheckSize(size) is { Code: AttachmentRules.FileTooLargeCode } tooLarge)
+            {
+                _error = $"{fileName}: {tooLarge.Message}";
+                StateHasChanged();
+                return null;
+            }
+
+            _status = $"Attaching {fileName}…";
+            StateHasChanged();
+            await using var stream = await content.OpenReadStreamAsync(AttachmentRules.MaxSize + 1);
+            var added = await Attachments.AddAsync(WorkItemKey, fileName, size, stream, CancellationToken.None);
+            if (!added.IsSuccess || !added.Value!.IsImage)
+            {
+                _error = $"{fileName}: {(added.IsSuccess ? "Only images can go in the text; it was attached to the task." : added.Error!.Message)}";
+                _status = null;
+                await OnAttached.InvokeAsync();
+                StateHasChanged();
+                return null;
+            }
+
+            _error = null;
+            _status = $"{added.Value.FileName} attached. It shows in the text once it has been checked for malware.";
+            await OnAttached.InvokeAsync();
+            StateHasChanged();
+            return added.Value.Id;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy || _handle is not { } handle)
+        {
+            return;
+        }
+
+        _busy = true;
+        _status = null;
+        try
+        {
+            var document = await JS.InvokeAsync<string?>("upms.editor.getJson", handle);
+            if (document is null)
+            {
+                return;
+            }
+
+            var save = new EditorSave(document);
+            await OnSave.InvokeAsync(save);
+            _error = save.Error;
+            if (_error is null && ClearAfterSave)
+            {
+                await JS.InvokeVoidAsync("upms.editor.setContent", handle, (string?)null);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>The text as the editor's JSON document, or null when nothing is written (an embedded editor's form reads
+    /// it when it saves).</summary>
+    public async Task<string?> GetDocumentAsync()
+    {
+        if (_handle is not { } handle)
+        {
+            return null;
+        }
+
+        var document = await JS.InvokeAsync<string?>("upms.editor.getJson", handle);
+        return document is not null && FormattedText.Parse(document, "Description") is { IsSuccess: true } parsed
+            && string.IsNullOrWhiteSpace(parsed.Value!.PlainText) && parsed.Value.MentionIds.Count == 0
+            ? null
+            : document;
+    }
+
+    /// <summary>Empties the editor, as "Create another" does.</summary>
+    public async Task ClearAsync()
+    {
+        _error = null;
+        if (_handle is { } handle)
+        {
+            await JS.InvokeVoidAsync("upms.editor.setContent", handle, (string?)null);
+        }
+    }
+
+    /// <summary>Shows a refusal under an embedded editor.</summary>
+    public void ShowError(string? error)
+    {
+        _error = error;
+        StateHasChanged();
+    }
+
+    private async Task CancelAsync()
+    {
+        _error = null;
+        if (ClearAfterSave && _handle is { } handle)
+        {
+            await JS.InvokeVoidAsync("upms.editor.setContent", handle, (string?)null);
+        }
+
+        await OnCancel.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_handle is { } handle)
+            {
+                await JS.InvokeVoidAsync("upms.editor.destroy", handle);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is gone, and the page with it.
+        }
+
+        _self?.Dispose();
+    }
+
+    /// <summary>A save of the editor's document; the handler sets <see cref="Error"/> to refuse it.</summary>
+    public sealed class EditorSave(string document)
+    {
+        public string Document { get; } = document;
+
+        public string? Error { get; set; }
+    }
+
+    /// <summary>A person as the suggestion list shows them; the id and label go into the mention.</summary>
+    public sealed record MentionOption(string Id, string Label, string UserName);
+}

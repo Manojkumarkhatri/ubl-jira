@@ -1,0 +1,184 @@
+@page "/spaces/{Key}/forms/{FormId:long}"
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@using Upms.Domain.Projects
+@using Upms.Domain.Work
+@inject ISpaceViewService SpaceViews
+@inject ISpaceFormService Forms
+@inject LiveAnnouncer Announcer
+
+<PageTitle>@(_form?.Name ?? "Form") · U-PMS</PageTitle>
+
+@* Filling in a form: the summary and the fields the form asks for. The response becomes a work item of the form's type. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_space is null || _form is null)
+{
+    <p aria-busy="true">Loading the form…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@Key" Title="@_space.SpaceName" Current="ProjectPage.Forms" Template="_space.Template"
+                   CanManage="_space.CanManage" CanRestoreDeleted="_space.IsAdministrator" />
+
+    <nav class="doc-crumbs" aria-label="Forms"><a href="spaces/@Key/forms">Forms</a> <span aria-hidden="true">/</span></nav>
+    <div class="form-fill">
+        @if (_createdKey is { } key)
+        {
+            <div class="form-sheet form-done" role="status">
+                <span class="form-done-icon" aria-hidden="true"><Icon Name="check-circle" Size="28" /></span>
+                <h1>Thanks, your response was sent</h1>
+                <p>It became <a href="spaces/@Key/board?task=@key">@key</a> in this space.</p>
+                <button type="button" class="btn btn-primary" @onclick="Again">Submit another response</button>
+            </div>
+        }
+        else if (!_form.IsOpen)
+        {
+            <div class="form-sheet">
+                <h1>@_form.Name</h1>
+                <p class="hint">This form is not taking responses.</p>
+            </div>
+        }
+        else if (!_form.CanSubmit)
+        {
+            <div class="form-sheet">
+                <h1>@_form.Name</h1>
+                <p class="hint">Only people who can add work to this space can fill in this form.</p>
+            </div>
+        }
+        else
+        {
+            <form class="form-sheet" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+                <h1>@_form.Name</h1>
+                @if (_form.Intro is { } intro)
+                {
+                    <p class="form-sheet-intro">@intro</p>
+                }
+                <p class="hint">Fields marked <span class="req">*</span> are required. This creates a @WorkItemTypes.DisplayName(_form.WorkType).ToLowerInvariant().</p>
+                <div class="field">
+                    <label for="ff-summary">Summary <span class="req" aria-hidden="true">*</span></label>
+                    <input id="ff-summary" class="input" maxlength="255" required aria-required="true" @bind="_summary" />
+                </div>
+                @if (_form.Fields.HasFlag(FormFields.Description))
+                {
+                    <div class="field">
+                        <label for="ff-description">Description</label>
+                        <textarea id="ff-description" class="textarea" rows="5" maxlength="32000" @bind="_description"></textarea>
+                    </div>
+                }
+                @if (_form.Fields.HasFlag(FormFields.Priority))
+                {
+                    <div class="field">
+                        <label for="ff-priority">Priority</label>
+                        <select id="ff-priority" class="select" @bind="_priority">
+                            @foreach (var priority in Enum.GetValues<Priority>())
+                            {
+                                <option value="@priority">@priority</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="form-sheet-row">
+                    @if (_form.Fields.HasFlag(FormFields.StartDate))
+                    {
+                        <div class="field">
+                            <label for="ff-start">Start date</label>
+                            <input id="ff-start" class="input" type="date" @bind="_start" />
+                        </div>
+                    }
+                    @if (_form.Fields.HasFlag(FormFields.DueDate))
+                    {
+                        <div class="field">
+                            <label for="ff-due">Due date</label>
+                            <input id="ff-due" class="input" type="date" @bind="_due" />
+                        </div>
+                    }
+                </div>
+                @if (_form.Fields.HasFlag(FormFields.Labels))
+                {
+                    <div class="field">
+                        <label for="ff-labels">Labels</label>
+                        <LabelPicker Id="ff-labels" SpaceKey="@Key" @bind-Labels="_labels" />
+                    </div>
+                }
+                @if (_error is not null)
+                {
+                    <p class="field-error" role="alert">@_error</p>
+                }
+                <button type="submit" class="btn btn-primary" disabled="@_busy">Submit</button>
+            </form>
+        }
+    </div>
+}
+
+@code {
+    private SpaceViews? _space;
+    private SpaceFormView? _form;
+    private bool _notFound;
+    private bool _busy;
+    private string _summary = "";
+    private string _description = "";
+    private Priority _priority = Priority.Medium;
+    private DateOnly? _start;
+    private DateOnly? _due;
+    private IReadOnlyList<string> _labels = [];
+    private string? _error;
+    private string? _createdKey;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    [Parameter]
+    public long FormId { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var space = await SpaceViews.GetAsync(Key, CancellationToken.None);
+        var form = await Forms.GetAsync(Key, FormId, CancellationToken.None);
+        _notFound = !space.IsSuccess || !form.IsSuccess;
+        _space = space.Value;
+        _form = form.Value;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var sent = await Forms.SubmitAsync(Key, FormId,
+                new FormResponse(_summary, _description, _priority, _start, _due, _labels), CancellationToken.None);
+            if (sent.IsSuccess)
+            {
+                _createdKey = sent.Value;
+                _error = null;
+                Announcer.Announce($"Response sent: {sent.Value} was created.");
+            }
+            else
+            {
+                _error = sent.Error!.Message;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Again()
+    {
+        _createdKey = null;
+        _summary = "";
+        _description = "";
+        _priority = Priority.Medium;
+        _start = null;
+        _due = null;
+        _labels = [];
+    }
+}

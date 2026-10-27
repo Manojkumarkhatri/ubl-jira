@@ -2,14 +2,20 @@
     <button type="button" class="btn btn-ghost user-btn" aria-expanded="@(_open ? "true" : "false")" aria-controls="user-menu"
             @onclick="Toggle" @ref="_button">
         <span class="avatar" aria-hidden="true">@Initials</span>
-        <span class="btn-label">@DisplayName</span>
+        <span class="btn-label" title="@DisplayName">@DisplayName</span>
         <span class="sr-only">(account menu)</span>
     </button>
     @if (_open)
     {
         <div class="menu-backdrop" @onclick="CloseAsync"></div>
         <div id="user-menu" class="user-menu" @onkeydown="OnKeyDownAsync">
-            <p class="menu-heading">Signed in as <strong>@DisplayName</strong></p>
+            <div class="menu-heading user-menu-who">
+                <span class="avatar" aria-hidden="true">@Initials</span>
+                <span>
+                    <strong>@DisplayName</strong>
+                    <UserTypeBadge Type="Type" />
+                </span>
+            </div>
             <a class="menu-item" href="account/profile" @onclick="CloseAsync">Profile and time zone</a>
             <a class="menu-item" href="Account/ChangePassword">Change password</a>
             <button type="submit" form="upms-logout-form" class="menu-item">Sign out</button>
@@ -23,6 +29,9 @@
 
     [Parameter, EditorRequired]
     public string DisplayName { get; set; } = "";
+
+    [Parameter]
+    public UserType Type { get; set; }
 
     private string Initials => string.Concat(DisplayName
         .Split(' ', StringSplitOptions.RemoveEmptyEntries)

@@ -2,7 +2,8 @@ using Upms.Domain.Common;
 
 namespace Upms.Domain.Work;
 
-/// <summary>A plain-text comment on a work item (FR-030). Only its author may edit or delete it; deleting
+/// <summary>A comment on a work item (FR-030): plain text from Phases 1–3, or formatted text since Phase 4 (FR-001,
+/// research R4). Only its author may edit or delete it; deleting
 /// leaves a "comment deleted" placeholder and keeps the row (constitution IV).</summary>
 public sealed class Comment
 {
@@ -19,7 +20,13 @@ public sealed class Comment
 
     public Guid AuthorId { get; private set; }
 
+    /// <summary>Plain text, or the document's JSON when <see cref="BodyFormat"/> is <see cref="TextFormat.Document"/>.</summary>
     public string Body { get; private set; } = "";
+
+    public TextFormat BodyFormat { get; private set; }
+
+    /// <summary>The plain text, for search and notifications.</summary>
+    public string BodyText { get; private set; } = "";
 
     public DateTimeOffset CreatedAt { get; private set; }
 
@@ -32,6 +39,7 @@ public sealed class Comment
 
     public byte[] RowVersion { get; private set; } = [];
 
+    /// <summary>A plain-text comment, as in Phases 1–3.</summary>
     public static DomainResult<Comment> Create(long workItemId, Guid authorId, string body, DateTimeOffset now)
     {
         if (Validate(body) is { } error)
@@ -39,27 +47,52 @@ public sealed class Comment
             return error;
         }
 
-        return new Comment { WorkItemId = workItemId, AuthorId = authorId, Body = body.Trim(), CreatedAt = now };
+        var trimmed = body.Trim();
+        return new Comment { WorkItemId = workItemId, AuthorId = authorId, Body = trimmed, BodyText = trimmed, CreatedAt = now };
+    }
+
+    /// <summary>A formatted comment (Phase 4 FR-001); its length was checked when it was parsed.</summary>
+    public static DomainResult<Comment> Create(long workItemId, Guid authorId, FormattedText body, DateTimeOffset now)
+    {
+        if (body.IsEmpty)
+        {
+            return Empty();
+        }
+
+        return new Comment
+        {
+            WorkItemId = workItemId,
+            AuthorId = authorId,
+            Body = body.Json,
+            BodyFormat = TextFormat.Document,
+            BodyText = body.PlainText,
+            CreatedAt = now,
+        };
     }
 
     public DomainError? Edit(Guid actorId, string body, DateTimeOffset now)
     {
-        if (actorId != AuthorId)
-        {
-            return DomainError.Rule(NotOwnedCode, "Only the author can edit a comment.");
-        }
-
-        if (IsDeleted)
-        {
-            return DomainError.Invalid("Body", "A deleted comment cannot be edited.");
-        }
-
-        if (Validate(body) is { } error)
+        if ((CheckEdit(actorId) ?? Validate(body)) is { } error)
         {
             return error;
         }
 
-        Body = body.Trim();
+        Body = BodyText = body.Trim();
+        BodyFormat = TextFormat.Plain;
+        EditedAt = now;
+        return null;
+    }
+
+    public DomainError? Edit(Guid actorId, FormattedText body, DateTimeOffset now)
+    {
+        if ((CheckEdit(actorId) ?? (body.IsEmpty ? Empty() : null)) is { } error)
+        {
+            return error;
+        }
+
+        Body = body.Json;
+        BodyFormat = TextFormat.Document;
+        BodyText = body.PlainText;
         EditedAt = now;
         return null;
     }
@@ -76,12 +109,19 @@ public sealed class Comment
         return null;
     }
 
+    private DomainError? CheckEdit(Guid actorId) =>
+        actorId != AuthorId ? DomainError.Rule(NotOwnedCode, "Only the author can edit a comment.")
+        : IsDeleted ? DomainError.Invalid("Body", "A deleted comment cannot be edited.")
+        : null;
+
+    private static DomainError Empty() => DomainError.Invalid("Body", "Write a comment first.");
+
     private static DomainError? Validate(string? body)
     {
         var trimmed = body?.Trim() ?? "";
         return trimmed.Length switch
         {
-            0 => DomainError.Invalid("Body", "Write a comment first."),
+            0 => Empty(),
             > BodyMaxLength => DomainError.Invalid("Body", $"A comment can have at most {BodyMaxLength:N0} characters."),
             _ => null,
         };

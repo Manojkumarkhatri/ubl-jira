@@ -29,6 +29,8 @@ public sealed class TestData(ServiceHarness harness)
             Email = $"{userName}@example.com",
             DisplayName = $"{char.ToUpperInvariant(userName[0])}{userName[1..]} Tester",
             OrganizationRole = role,
+            // Before the five user types anyone could create spaces, export and approve gates: a Portfolio lead's ticks.
+            UserType = role == OrganizationRole.Administrator ? Upms.Domain.Common.UserType.Admin : Upms.Domain.Common.UserType.PortfolioLead,
             IsActive = isActive,
             MustChangePassword = mustChangePassword,
             CreatedAt = harness.Time.GetUtcNow(),
@@ -59,6 +61,17 @@ public sealed class TestData(ServiceHarness harness)
         var project = await db.Projects.Include(p => p.Members).SingleAsync(p => p.Id == projectId);
         var added = project.AddMember(userId, role, project.OwnerId, harness.Time.GetUtcNow());
         Assert.True(added.IsSuccess, added.Error?.Message);
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Removes a person from a project's team, bypassing the member service (Phase 2).</summary>
+    public async Task RemoveMemberAsync(long projectId, Guid userId)
+    {
+        await using var scope = harness.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+        var project = await db.Projects.Include(p => p.Members).SingleAsync(p => p.Id == projectId);
+        var active = (await db.Users.Where(u => u.IsActive).Select(u => u.Id).ToListAsync()).ToHashSet();
+        Assert.Null(project.RemoveMember(project.Members.Single(m => m.UserId == userId), active, harness.Time.GetUtcNow()));
         await db.SaveChangesAsync();
     }
 

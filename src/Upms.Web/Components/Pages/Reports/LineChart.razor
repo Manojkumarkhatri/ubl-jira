@@ -1,0 +1,104 @@
+@using System.Globalization
+@* A line chart drawn as SVG, one line per series, for the space's Reports. Days with no value break the line; a lone value
+   shows as a dot. Decorative for screen readers: each report gives its numbers as text or a table. *@
+<div class="line-chart">
+    <svg viewBox="0 0 @Width @Height" aria-hidden="true" focusable="false">
+        @for (var t = 0; t <= 4; t++)
+        {
+            var y = Top + (PlotHeight * t / 4.0);
+            <g><line class="grid-line" x1="@Left" x2="@(Width - Right)" y1="@N(y)" y2="@N(y)" />
+            <text class="axis-text" x="@(Left - 8)" y="@N(y + 4)" text-anchor="end">@Tick(Max - (Max * t / 4.0))</text></g>
+        }
+        @for (var i = 0; i < Days.Count; i += LabelStep)
+        {
+            <g><text class="axis-text" x="@N(X(i))" y="@(Height - 6)" text-anchor="middle">@Days[i].ToString("d MMM", CultureInfo.CurrentCulture)</text></g>
+        }
+        @foreach (var series in Series)
+        {
+            @if (series.Filled)
+            {
+                <polygon class="area @series.Class" points="@N(X(0)) @N(Top + PlotHeight) @Points(series.Values, 0, series.Values.Count) @N(X(Days.Count - 1)) @N(Top + PlotHeight)" />
+            }
+            @foreach (var (start, end) in Runs(series.Values))
+            {
+                @if (end - start == 1)
+                {
+                    <circle class="dot @series.Class" cx="@N(X(start))" cy="@N(Y(series.Values[start] ?? 0))" r="4" />
+                }
+                else
+                {
+                    <polyline class="line @series.Class" points="@Points(series.Values, start, end)" />
+                }
+            }
+        }
+    </svg>
+    <ul class="chart-legend" aria-hidden="true">
+        @foreach (var series in Series)
+        {
+            <li><span class="swatch @series.Class"></span> @series.Name</li>
+        }
+    </ul>
+</div>
+
+@code {
+    private const int Width = 560;
+    private const int Height = 230;
+    private const int Left = 34;
+    private const int Right = 12;
+    private const int Top = 12;
+    private const int PlotHeight = Height - Top - 28;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<DateOnly> Days { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ChartSeries> Series { get; set; } = [];
+
+    /// <summary>The top of the scale: the highest value rounded up to a multiple of 4, so the grid lines are whole numbers.</summary>
+    private double Max
+    {
+        get
+        {
+            var highest = Series.SelectMany(s => s.Values).Where(v => v.HasValue).Select(v => v!.Value).DefaultIfEmpty(0).Max();
+            return Math.Max(4, Math.Ceiling(highest / 4.0) * 4);
+        }
+    }
+
+    private int LabelStep => Math.Max(1, (int)Math.Ceiling(Days.Count / 6.0));
+
+    private double X(int index) => Days.Count <= 1 ? Left : Left + ((Width - Left - Right) * index / (double)(Days.Count - 1));
+
+    private double Y(double value) => Top + PlotHeight - (PlotHeight * value / Max);
+
+    private string Points(IReadOnlyList<double?> values, int start, int end) =>
+        string.Join(' ', Enumerable.Range(start, end - start).Select(i => $"{N(X(i))},{N(Y(values[i] ?? 0))}"));
+
+    /// <summary>The stretches of days that have a value, as [start, end).</summary>
+    private static IEnumerable<(int Start, int End)> Runs(IReadOnlyList<double?> values)
+    {
+        var start = -1;
+        for (var i = 0; i <= values.Count; i++)
+        {
+            var has = i < values.Count && values[i].HasValue;
+            if (has && start < 0)
+            {
+                start = i;
+            }
+            else if (!has && start >= 0)
+            {
+                yield return (start, i);
+                start = -1;
+            }
+        }
+    }
+
+    private static string N(double value) => Math.Round(value, 1).ToString(CultureInfo.InvariantCulture);
+
+    private static string Tick(double value) => value.ToString("0.#", CultureInfo.CurrentCulture);
+
+    public sealed record ChartSeries(string Name, string Class, IReadOnlyList<double?> Values, bool Filled = false)
+    {
+        public static ChartSeries Of(string name, string cssClass, IEnumerable<int> values, bool filled = false) =>
+            new(name, cssClass, values.Select(v => (double?)v).ToList(), filled);
+    }
+}

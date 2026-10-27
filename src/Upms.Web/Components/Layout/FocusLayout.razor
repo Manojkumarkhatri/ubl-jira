@@ -1,0 +1,12 @@
+@inherits LayoutComponentBase
+
+@* A full-screen page without the header and sidebar, as Jira shows "Create space". *@
+<a class="skip" href="#main">Skip to main content</a>
+<main id="main" class="focus-shell" tabindex="-1" data-interactive="@(RendererInfo.IsInteractive ? "true" : "false")">
+    @Body
+</main>
+<LiveRegion />
+<div id="blazor-error-ui" data-nosnippet role="alert">
+    Something went wrong. <a href="." class="reload">Reload the page</a>
+    <button type="button" class="dismiss" aria-label="Dismiss">×</button>
+</div>

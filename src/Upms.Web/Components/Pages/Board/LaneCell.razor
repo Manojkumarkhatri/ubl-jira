@@ -1,0 +1,142 @@
+@using Upms.Application.Work
+@using Upms.Domain.Common
+@inject IJSRuntime JS
+@* The cards of one swimlane in one column. Every cell is a drop target, so a card dropped in another lane changes its epic,
+   stage or assignee with its column (Jira parity pass FR-027; research R17). *@
+<div class="col lane-cell col-@Column.Category.ToString().ToLowerInvariant()" role="group" aria-label="@Column.Name, @Lane.Title">
+    @* Jira's lanes repeat the column names, each with the lane's own count. *@
+    <header class="lane-cell-head" aria-hidden="true">
+        <span class="lane-cell-name">@Column.Name</span>
+        <span class="lane-cell-count">@Cards.Count</span>
+    </header>
+    @{ var window = BoardPaging.Window(Cards, _shown, RevealKey); }
+    <ol class="col-body">
+        @foreach (var card in Cards.Take(window.Shown))
+        {
+            <li @key="card.Key">@CardItem(card)</li>
+        }
+        @if (window.Hidden > 0)
+        {
+            <li class="col-more-item" @key="@("show-more")">
+                <button type="button" class="col-more" data-testid="column-more" @onclick="() => ShowMore(window.Shown)">
+                    @BoardPaging.MoreText(window.Hidden)
+                    @if (window.Hidden > BoardPaging.PageSize)
+                    {
+                        <span class="col-more-left">@BoardPaging.HiddenText(window.Hidden)</span>
+                    }
+                </button>
+            </li>
+        }
+        @if (window.Tail is { } tail)
+        {
+            <li @key="tail.Key">@CardItem(tail)</li>
+        }
+    </ol>
+    @if (CanContribute)
+    {
+        <div class="col-drop-end @(DraggingKey is null ? "" : "active")" data-testid="column-drop-end"
+             @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDropAtEnd.InvokeAsync()">
+            @(DraggingKey is not null ? "Drop here" : "")
+        </div>
+        <button type="button" class="col-add" aria-label="Create a work item in @Column.Name" title="Create" @onclick="() => OnRequestCreate.InvokeAsync()">
+            <Icon Name="plus" Size="14" />
+        </button>
+    }
+</div>
+
+@code {
+    private int _shown = BoardPaging.PageSize;
+    private string? _focusAfterRender;
+
+    /// <summary>The card just moved or created: shown even past the first cards.</summary>
+    [Parameter]
+    public string? RevealKey { get; set; }
+
+    private RenderFragment CardItem(CardView card) => __builder =>
+    {
+        <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" FilterQuery="@FilterQuery" MoveTargets="MoveTargets"
+                  Lanes="LanesFor(card)" IsDragging="@(DraggingKey == card.Key)" CanContribute="CanContribute"
+                  IsOpen="@(Column.Category != StatusCategory.Done)" Today="Today"
+                  OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" OnDelete="OnDelete" />
+    };
+
+    /// <summary>"Show more": the next cards appear and focus moves to the first of them.</summary>
+    private void ShowMore(int shown)
+    {
+        _shown = shown + BoardPaging.PageSize;
+        _focusAfterRender = $"card-{Cards[shown].Key}-title";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusAfterRender is { } id)
+        {
+            _focusAfterRender = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    [Parameter, EditorRequired]
+    public ColumnView Column { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public BoardLane Lane { get; set; } = default!;
+
+    /// <summary>The lane's cards in this column, after the filters.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<CardView> Cards { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ColumnOption> MoveTargets { get; set; } = [];
+
+    /// <summary>The other lanes "Move to" offers for a card.</summary>
+    [Parameter, EditorRequired]
+    public Func<CardView, IReadOnlyList<LaneOption>> LanesFor { get; set; } = _ => [];
+
+    [Parameter]
+    public bool ShowAllDone { get; set; }
+
+    [Parameter]
+    public string FilterQuery { get; set; } = "";
+
+    [Parameter]
+    public string? DraggingKey { get; set; }
+
+    [Parameter]
+    public bool CanContribute { get; set; }
+
+    [Parameter, EditorRequired]
+    public DateOnly Today { get; set; }
+
+    [Parameter]
+    public EventCallback<CardView> OnDragStart { get; set; }
+
+    [Parameter]
+    public EventCallback OnDragEnd { get; set; }
+
+    [Parameter]
+    public EventCallback<CardView> OnDropBefore { get; set; }
+
+    [Parameter]
+    public EventCallback OnDropAtEnd { get; set; }
+
+    [Parameter]
+    public EventCallback<(CardView Card, MoveRequest Request)> OnMove { get; set; }
+
+    /// <summary>The card menu's "Delete": the board asks first.</summary>
+    [Parameter]
+    public EventCallback<CardView> OnDelete { get; set; }
+
+    /// <summary>The "+" at the foot of the cell: Jira's create in this column.</summary>
+    [Parameter]
+    public EventCallback OnRequestCreate { get; set; }
+}

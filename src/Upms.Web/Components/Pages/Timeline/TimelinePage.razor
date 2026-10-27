@@ -1,13 +1,18 @@
-@page "/projects/{Key}/timeline"
+@page "/spaces/{Key}/timeline"
 @using System.Globalization
 @using Upms.Application.Work
+@using Upms.Domain.Common
+@using Upms.Domain.Work
 @using Upms.Web.Components.Pages.Drawer
 @implements IDisposable
 @inject ITimelineService Timelines
+@inject IWorkItemService Items
 @inject ViewerToday ViewerToday
 @inject LiveAnnouncer Announcer
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject CreateWorkLauncher Launcher
+@inject IOrganizationAdminService Organization
 
 <PageTitle>@(_view?.ProjectName ?? Key) · Timeline · U-PMS</PageTitle>
 
@@ -24,20 +29,128 @@ else if (_view is null)
 else
 {
     var scale = TimelineScale.For(_zoom, ScheduledDates(), _today);
-    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.Timeline"
+    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.Timeline" Template="_view.Template"
                    CanManage="_view.CanManage" CanRestoreDeleted="_view.CanRestoreDeleted" />
 
+    @* Jira's timeline toolbar: search, the people, "Filter"; view settings and refresh on the right. *@
     <div class="tl-toolbar">
-        <div class="tl-scales" role="group" aria-label="Scale">
-            @foreach (var zoom in Enum.GetValues<TimelineZoom>())
+        <div class="board-search">
+            <Icon Name="search" />
+            <input type="search" class="input" aria-label="Search the timeline" placeholder="Search timeline" @bind="_search" @bind:event="oninput" />
+        </div>
+        <div class="avatar-filter" role="group" aria-label="Filter by assignee">
+            <button type="button" class="avatar-toggle @(_people.Contains(NoOne) ? "is-on" : "")" aria-pressed="@(_people.Contains(NoOne) ? "true" : "false")"
+                    title="Unassigned" @onclick="() => TogglePerson(NoOne)">
+                <span class="avatar avatar-unassigned" aria-hidden="true"><Icon Name="person" Size="14" /></span>
+                <span class="sr-only">Unassigned</span>
+            </button>
+            @foreach (var person in People.Take(8))
             {
-                <button type="button" class="btn btn-sm" data-scale="@ZoomName(zoom)" aria-pressed="@(zoom == _zoom ? "true" : "false")"
-                        @onclick="() => SetZoom(zoom)">@zoom</button>
+                var id = person.UserId.ToString();
+                var on = _people.Contains(id);
+                <button type="button" class="avatar-toggle @(on ? "is-on" : "")" aria-pressed="@(on ? "true" : "false")" title="@person.DisplayName"
+                        @onclick="() => TogglePerson(id)">
+                    <Avatar UserId="person.UserId" Initials="@person.Initials" />
+                    <span class="sr-only">@person.DisplayName</span>
+                </button>
             }
         </div>
-        <button type="button" class="btn btn-sm" data-testid="go-today" @onclick="GoToTodayAsync">Today</button>
-        <button type="button" class="btn btn-sm" data-testid="hide-completed" aria-pressed="@(_view.HidingCompleted ? "true" : "false")"
-                @onclick="ToggleCompleted">Hide completed</button>
+        <div class="toolbar-pop">
+            <button type="button" class="btn btn-sm toolbar-btn @(FilterCount > 0 ? "is-on" : "")" aria-expanded="@(_filterOpen ? "true" : "false")"
+                    aria-controls="tl-filter-panel" @onclick="() => { _filterOpen = !_filterOpen; _settingsOpen = false; }">
+                <Icon Name="filter" /> Filter@(FilterCount > 0 ? $" ({FilterCount})" : "")
+            </button>
+            @if (_filterOpen)
+            {
+                <div class="menu-backdrop" @onclick="() => _filterOpen = false"></div>
+                <div id="tl-filter-panel" class="toolbar-panel" role="group" aria-label="Filter the timeline"
+                     @onkeydown="@(e => { if (e.Key == "Escape") { _filterOpen = false; } })">
+                    <p class="panel-heading">Status type</p>
+                    <div class="quick-filters">
+                        @foreach (var category in Enum.GetValues<StatusCategory>())
+                        {
+                            var pressed = _categories.Contains(category);
+                            <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    @onclick="() => Flip(_categories, category)">@TimelineBar.StatusLabel(category)</button>
+                        }
+                    </div>
+                    <p class="panel-heading">Work type</p>
+                    <div class="quick-filters">
+                        @foreach (var kind in KindsShown)
+                        {
+                            var pressed = _kinds.Contains(kind);
+                            <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    @onclick="() => Flip(_kinds, kind)"><TypeIcon Type="kind" /> @WorkItemTypes.DisplayName(kind)</button>
+                        }
+                    </div>
+                    @if (FilterCount > 0)
+                    {
+                        <button type="button" class="btn btn-sm btn-ghost panel-clear" @onclick="ClearFilters">Clear filters</button>
+                    }
+                </div>
+            }
+        </div>
+        @if (FilterCount > 0 || _people.Count > 0)
+        {
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="ClearFilters">Clear filters</button>
+        }
+        <span class="spacer"></span>
+        @* Jira's "Export": the chart as it is shown (scale, colours, filters) as an image or a PDF, or its rows as a spreadsheet. *@
+        @if (_canExport)
+        {
+        <div class="tab-menu">
+            <button type="button" id="tl-export-button" class="btn btn-sm toolbar-btn" data-testid="timeline-export" aria-haspopup="menu"
+                    aria-expanded="@(_exportOpen ? "true" : "false")" aria-controls="@(_exportOpen ? "tl-export" : null)"
+                    @onclick="() => { _exportOpen = !_exportOpen; _settingsOpen = false; _filterOpen = false; }"><Icon Name="download" /> Export</button>
+            @if (_exportOpen)
+            {
+                <div class="menu-backdrop" @onclick="() => _exportOpen = false"></div>
+                <ul id="tl-export" class="column-menu-list tl-export-menu" role="menu" aria-label="Export the timeline"
+                    @onkeydown="@(e => { if (e.Key == "Escape") { _exportOpen = false; _focusAfterRender = "tl-export-button"; } })">
+                    <li role="none"><button type="button" role="menuitem" class="column-menu-item" @onclick="DownloadPngAsync">Image (PNG)</button></li>
+                    <li role="none"><a role="menuitem" class="column-menu-item" href="@ExportUrl("svg")" download @onclick="() => _exportOpen = false">Image (SVG)</a></li>
+                    <li role="none"><a role="menuitem" class="column-menu-item" href="@ExportUrl("print")" target="_blank" rel="noopener" @onclick="() => _exportOpen = false">PDF (print)</a></li>
+                    <li role="none"><a role="menuitem" class="column-menu-item" href="@ExportUrl("csv")" download @onclick="() => _exportOpen = false">Excel (CSV)</a></li>
+                </ul>
+            }
+        </div>
+        }
+        <div class="tab-menu">
+            <button type="button" id="tl-settings-button" class="icon-btn tl-tool" aria-label="View settings" title="View settings"
+                    aria-expanded="@(_settingsOpen ? "true" : "false")" aria-controls="@(_settingsOpen ? "tl-settings" : null)"
+                    @onclick="() => { _settingsOpen = !_settingsOpen; _filterOpen = false; }"><Icon Name="sliders" /></button>
+            @if (_settingsOpen)
+            {
+                <div class="menu-backdrop" @onclick="() => _settingsOpen = false"></div>
+                <div id="tl-settings" class="tab-popover tl-settings" role="region" aria-label="View settings"
+                     @onkeydown="@(e => { if (e.Key == "Escape") { _settingsOpen = false; _focusAfterRender = "tl-settings-button"; } })">
+                    <h2 class="popover-title">View settings</h2>
+                    <label class="tl-setting">
+                        <input type="checkbox" data-testid="hide-completed" checked="@_view.HidingCompleted" @onchange="ToggleCompleted" />
+                        Hide completed work items
+                    </label>
+                    <p class="popover-title">Visual details</p>
+                    <label class="tl-setting">
+                        <input type="checkbox" checked="@_showDependencies" @onchange="() => SetOptionAsync(DependenciesKey, _showDependencies = !_showDependencies)" />
+                        Dependencies
+                    </label>
+                    <label class="tl-setting">
+                        <input type="checkbox" checked="@_showProgress" @onchange="() => SetOptionAsync(ProgressKey, _showProgress = !_showProgress)" />
+                        Progress
+                    </label>
+                    <p class="popover-title">Bar colours</p>
+                    <label class="tl-setting">
+                        <input type="radio" name="tl-colors" checked="@(!_colorByEpic)" @onchange="() => SetOptionAsync(ColorsKey, _colorByEpic = false)" />
+                        Status type
+                    </label>
+                    <label class="tl-setting">
+                        <input type="radio" name="tl-colors" checked="@_colorByEpic" @onchange="() => SetOptionAsync(ColorsKey, _colorByEpic = true)" />
+                        @(_view.Template == ProjectTemplate.StageGate ? "Stage" : "Epic") colour
+                    </label>
+                </div>
+            }
+        </div>
+        <button type="button" class="icon-btn tl-tool" aria-label="Refresh" title="Refresh" @onclick="LoadAsync"><Icon Name="refresh" /></button>
     </div>
 
     @if (_conflict is not null)
@@ -49,7 +162,10 @@ else
     }
     @if (_error is not null)
     {
-        <div class="alert alert-error" role="alert">@_error</div>
+        <div class="alert alert-error" role="alert">
+            @_error
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _error = null">Dismiss</button>
+        </div>
     }
     @if (_view.ScheduledCount > _view.Rows.Count)
     {
@@ -64,115 +180,183 @@ else
 
     <div class="tl-layout">
         <div class="tl-scroll" @ref="_scroller" data-ppd="@scale.PixelsPerDay.ToString(CultureInfo.InvariantCulture)" role="region" aria-label="Timeline">
-            @if (_view.Rows.Count == 0)
+            @if (_view.Rows.Count == 0 && _view.Groups.Count == 0 && _unscheduled.Count == 0)
             {
-                <EmptyState Title="No task has dates yet." Text="Schedule a task from the unscheduled list, or give a task dates in its details." />
+                <EmptyState Title="No work items yet." Text="Create a work item, then give it dates to see it on the timeline." />
             }
             else
             {
-                <div class="tl-table" style="--tl-track-width:@Px(scale.Width)">
+                <div class="tl-table @(scale.HasDayRow ? "has-days" : "")" style="--tl-track-width:@Px(scale.Width)">
+                    @* The chart's background: a line between periods, the current one shaded, and today's line. *@
+                    <div class="tl-grid" aria-hidden="true">
+                        @foreach (var period in scale.Periods)
+                        {
+                            <span class="tl-period @(period.IsCurrent ? "is-current" : "")" style="left:@Px(period.Left);width:@Px(period.Width)"></span>
+                        }
+                        <span class="tl-today" style="left:@Px(scale.TodayLeft)"></span>
+                    </div>
                     <div class="tl-head">
-                        <div class="tl-label tl-corner">Task</div>
+                        <div class="tl-label tl-corner"><span class="tl-work">Work</span><span class="tl-col-status">Status</span><span class="tl-col-assignee">Assignee</span></div>
                         <div class="tl-track tl-headings" aria-hidden="true">
-                            @foreach (var heading in scale.Headings)
+                            <div class="tl-head-row">
+                                @foreach (var period in scale.Periods)
+                                {
+                                    <span class="tl-heading @(period.IsCurrent ? "is-current" : "")" style="left:@Px(period.Left);width:@Px(period.Width)">@period.Label</span>
+                                }
+                            </div>
+                            @if (scale.HasDayRow)
                             {
-                                <span class="tl-heading" style="left:@Px(heading.Left);width:@Px(heading.Width)">@heading.Label</span>
+                                <div class="tl-day-row">
+                                    @foreach (var day in scale.Days)
+                                    {
+                                        <span class="tl-day @(day.IsToday ? "is-today" : "") @(day.IsWeekend ? "is-weekend" : "")"
+                                              style="left:@Px(day.Left);width:@Px(scale.PixelsPerDay)"><span>@day.Number</span></span>
+                                    }
+                                </div>
                             }
                         </div>
                     </div>
-                    <div class="tl-today" style="left:calc(var(--tl-label-width) + @Px(scale.TodayLeft))" aria-hidden="true"></div>
-                    @foreach (var row in _view.Rows)
+                    @if (_view.Sprints.Count > 0)
                     {
-                        var expanded = _expanded.Contains(row.Task.Key);
-                        var task = Shown(row.Task);
-                        <div class="tl-row" data-testid="tl-row" data-key="@row.Task.Key" @key="row.Task.Key">
-                            <div class="tl-label">
-                                @if (row.ScheduledSubtasks.Count + row.UnscheduledSubtasks.Count > 0)
-                                {
-                                    <button type="button" class="tl-expand icon-btn" aria-expanded="@(expanded ? "true" : "false")"
-                                            aria-label="@($"{(expanded ? "Hide" : "Show")} sub-tasks of {row.Task.Key}")"
-                                            @onclick="() => ToggleExpanded(row.Task.Key)">@(expanded ? "▾" : "▸")</button>
-                                }
-                                <a id="@LinkId(row.Task.Key)" class="task-link" href="@TaskHref(row.Task.Key)"><span class="key">@row.Task.Key</span> @row.Task.Title</a>
-                            </div>
+                        <div class="tl-row tl-sprint-lane" data-testid="sprint-lane">
+                            <div class="tl-label tl-label-full">Sprints</div>
                             <div class="tl-track">
-                                @if (task.IsScheduled)
+                                @foreach (var sprint in _view.Sprints)
                                 {
-                                    <TimelineBar Item="task" Scale="scale" CanContribute="_view.CanContribute" IsPending="@(_pending?.Key == task.Key)"
-                                                 OnKeyDown="e => BarKeyDownAsync(row.Task, e)" OnActivate="() => ActivateAsync(row.Task)" />
-                                }
-                                else
-                                {
-                                    <span class="tl-nodates hint">No dates</span>
+                                    <span class="tl-sprint tl-sprint-@sprint.State.ToString().ToLowerInvariant()" data-testid="sprint-bar"
+                                          style="left:@Px(scale.Left(sprint.StartDate));width:@Px(scale.WidthOf(sprint.StartDate, sprint.EndDate))">@sprint.Name · @SprintStateText(sprint.State)<span class="sr-only">, @TimelineBar.DatesText(sprint.StartDate, sprint.EndDate)</span></span>
                                 }
                             </div>
                         </div>
-                        @if (expanded)
-                        {
-                            @foreach (var subtask in row.ScheduledSubtasks)
-                            {
-                                <div class="tl-row tl-subrow" data-testid="tl-subrow" data-key="@subtask.Key" @key="subtask.Key">
-                                    <div class="tl-label">
-                                        <a id="@LinkId(subtask.Key)" class="task-link" href="@TaskHref(subtask.Key)"><span class="key">@subtask.Key</span> @subtask.Title</a>
-                                    </div>
-                                    <div class="tl-track">
-                                        <TimelineBar Item="Shown(subtask)" Scale="scale" CanContribute="_view.CanContribute" IsPending="@(_pending?.Key == subtask.Key)"
-                                                     OnKeyDown="e => BarKeyDownAsync(subtask, e)" OnActivate="() => ActivateAsync(subtask)" />
-                                    </div>
-                                </div>
-                            }
-                            @if (row.UnscheduledSubtasks.Count > 0)
-                            {
-                                <div class="tl-row tl-subrow" data-testid="tl-unscheduled-subtasks" @key="@($"{row.Task.Key}-unscheduled")">
-                                    <div class="tl-label">
-                                        <span class="hint">Not scheduled:</span>
-                                        @foreach (var subtask in row.UnscheduledSubtasks)
-                                        {
-                                            <a class="task-link" href="@TaskHref(subtask.Key)"><span class="key">@subtask.Key</span> @subtask.Title</a>
-                                        }
-                                    </div>
-                                    <div class="tl-track"></div>
-                                </div>
-                            }
-                        }
                     }
+                    @foreach (var group in ShownGroups)
+                    {
+                        var open = !_collapsedGroups.Contains(group.Container.Key) || Filtering;
+                        var container = Shown(group.Container);
+                        var hasChildren = group.Rows.Count + group.Unscheduled.Count > 0;
+                        <div class="tl-group" data-testid="tl-group" data-key="@group.Container.Key" @key="group.Container.Key">
+                            <div class="tl-row tl-group-row @(TaskKey == group.Container.Key ? "is-open" : "")">
+                                <div class="tl-label">
+                                    @Cells(group.Container, hasChildren
+                                        ? @<button type="button" class="tl-expand icon-btn" aria-expanded="@(open ? "true" : "false")"
+                                                   aria-label="@($"{(open ? "Hide" : "Show")} the items of {group.Container.Key}")"
+                                                   @onclick="() => ToggleGroup(group.Container.Key)"><Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" /></button>
+                                        : @<span class="tl-expand-space" aria-hidden="true"></span>,
+                                        progress: hasChildren ? group.Progress : null)
+                                    <span class="sr-only" data-testid="tl-progress">@group.Progress.Percent% done</span>
+                                </div>
+                                <div class="tl-track">
+                                    @if (container.IsScheduled)
+                                    {
+                                        <TimelineBar Item="container" Scale="scale" CanContribute="_view.CanContribute" IsPending="@(_pending?.Key == container.Key)" Progress="group.Progress"
+                                                     ColorByEpic="_colorByEpic" OnKeyDown="e => BarKeyDownAsync(group.Container, e)" OnActivate="() => ActivateAsync(group.Container)" />
+                                    }
+                                    else if (_view.CanContribute)
+                                    {
+                                        <button type="button" class="tl-schedule" aria-label="Schedule @group.Container.Key" @onclick="() => ScheduleAsync(group.Container)">Schedule</button>
+                                    }
+                                    @if (group.Gate is { } gate)
+                                    {
+                                        <span class="tl-gate" data-testid="gate-marker" style="left:@Px(scale.Left(gate.Date))"><span aria-hidden="true">◇</span> @GateText(gate.State)</span>
+                                    }
+                                </div>
+                            </div>
+                            @if (open)
+                            {
+                                @foreach (var row in group.Rows.Where(Matches))
+                                {
+                                    @RowView(row, scale, group.Container.Color, inGroup: true)
+                                }
+                                @foreach (var item in group.Unscheduled.Where(Matches))
+                                {
+                                    @UnscheduledRow(item, "tl-subrow", "tl-group-unscheduled")
+                                }
+                            }
+                        </div>
+                    }
+                    @foreach (var row in _view.Rows.Where(Matches))
+                    {
+                        @RowView(row, scale, null)
+                    }
+                    @foreach (var item in _unscheduled.Where(Matches))
+                    {
+                        @UnscheduledRow(item, "", "unscheduled-item")
+                    }
+                    @if (_unscheduled.Count < _view.Unscheduled.TotalCount)
+                    {
+                        <div class="tl-row">
+                            <div class="tl-label tl-label-full">
+                                <button type="button" class="btn btn-sm btn-ghost show-more" @onclick="ShowMoreUnscheduledAsync">
+                                    Show more (@(_view.Unscheduled.TotalCount - _unscheduled.Count) more without dates)
+                                </button>
+                            </div>
+                            <div class="tl-track"></div>
+                        </div>
+                    }
+                    <div class="tl-row tl-create-row">
+                        <div class="tl-label tl-label-full">
+                            @if (_view.CanContribute)
+                            {
+                                <button type="button" class="tl-create" @onclick="() => Launcher.Open(_view.ProjectKey)"><Icon Name="plus" Size="14" /> Create</button>
+                            }
+                            <span class="tl-count" role="status">@ShownCount of @TotalCount</span>
+                        </div>
+                        <div class="tl-track"></div>
+                    </div>
+                    <div class="tl-fill" aria-hidden="true"><div class="tl-label"></div><div class="tl-track"></div></div>
+                    <svg class="tl-arrows" aria-hidden="true" focusable="false"></svg>
                 </div>
             }
         </div>
 
-        <aside class="tl-unscheduled" aria-labelledby="unscheduled-heading">
-            <h2 id="unscheduled-heading">Unscheduled (@_view.Unscheduled.TotalCount)</h2>
-            @if (_unscheduled.Count == 0)
+        <div class="tl-zoom" role="group" aria-label="Scale">
+            <button type="button" class="tl-zoom-btn" data-testid="go-today" @onclick="GoToTodayAsync">Today</button>
+            <span class="tl-zoom-sep" aria-hidden="true"></span>
+            @foreach (var zoom in Enum.GetValues<TimelineZoom>())
             {
-                <p class="hint">Every task has dates.</p>
+                <button type="button" class="tl-zoom-btn" data-scale="@ZoomName(zoom)" aria-pressed="@(zoom == _zoom ? "true" : "false")"
+                        @onclick="() => SetZoom(zoom)">@zoom</button>
             }
-            else
+            <span class="tl-zoom-sep" aria-hidden="true"></span>
+            <button type="button" class="icon-btn tl-zoom-icon" aria-label="Legend" title="Legend" aria-expanded="@(_legendOpen ? "true" : "false")"
+                    @onclick="() => _legendOpen = !_legendOpen"><Icon Name="info" /></button>
+            <button type="button" class="icon-btn tl-zoom-icon" aria-label="Full screen" title="Full screen" @onclick="ToggleFullScreenAsync"><Icon Name="fullscreen" /></button>
+            @if (_legendOpen)
             {
-                <ul class="tl-unscheduled-list">
-                    @foreach (var item in _unscheduled)
-                    {
-                        <li data-testid="unscheduled-item" data-key="@item.Key" @key="item.Key">
-                            <a class="task-link" href="@TaskHref(item.Key)"><span class="key">@item.Key</span> @item.Title</a>
-                            @if (_view.CanContribute)
-                            {
-                                <button type="button" class="btn btn-sm schedule-btn" aria-label="Schedule @item.Key" @onclick="() => ScheduleAsync(item)">Schedule</button>
-                            }
-                        </li>
-                    }
-                </ul>
-                @if (_unscheduled.Count < _view.Unscheduled.TotalCount)
-                {
-                    <button type="button" class="btn btn-sm btn-ghost show-more" @onclick="ShowMoreUnscheduledAsync">
-                        Show more (@(_view.Unscheduled.TotalCount - _unscheduled.Count) more)
-                    </button>
-                }
+                <div class="menu-backdrop" @onclick="() => _legendOpen = false"></div>
+                <div class="tl-legend" role="region" aria-label="Legend" @onkeydown="@(e => { if (e.Key == "Escape") { _legendOpen = false; } })">
+                    <p class="popover-title">Legend</p>
+                    <ul>
+                        @if (_colorByEpic)
+                        {
+                            <li><span class="tl-key-bar tl-c-epic tl-epic-purple"></span> A bar in its @(_view.Template == ProjectTemplate.StageGate ? "stage's" : "epic's") colour</li>
+                        }
+                        else
+                        {
+                            <li><span class="tl-key-bar tl-c-todo"></span> To do</li>
+                            <li><span class="tl-key-bar tl-c-progress"></span> In progress</li>
+                            <li><span class="tl-key-bar tl-c-done"></span> Done</li>
+                        }
+                        <li><span class="tl-key-line"></span> Today</li>
+                        <li><span class="tl-key-shade"></span> This @(_zoom switch { TimelineZoom.Weeks => "week", TimelineZoom.Months => "month", _ => "quarter" })</li>
+                        <li><svg width="28" height="10" aria-hidden="true"><path d="M1 5H24" class="tl-arrow" /><path d="M22 2L27 5L22 8z" class="tl-arrow-head" /></svg> Waits for</li>
+                        <li><span class="tl-key-warning"><Icon Name="warning" Size="14" /></span> Starts before what it waits for is due</li>
+                        <li><span class="tl-key-diamond">◆</span> Milestone</li>
+                    </ul>
+                    <p class="hint">Drag a bar to move it, or its ends to change its dates. Select a bar and use the arrow keys to move it by a day.</p>
+                </div>
             }
-        </aside>
+        </div>
     </div>
 
     @if (!string.IsNullOrEmpty(TaskKey))
     {
         <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+    }
+    @if (_dependencyFor is { } dependencyFor)
+    {
+        <AddDependencyDialog @key="dependencyFor" ProjectKey="@_view.ProjectKey" ItemKey="@dependencyFor" OpenOnRender="true"
+                             OnAdded="DependencyAddedAsync" OnClosed="() => _dependencyFor = null" />
     }
 }
 
@@ -182,6 +366,10 @@ else
     private sealed record Pending(string Key, DateOnly? Start, DateOnly? Due);
 
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _collapsedGroups = new(StringComparer.Ordinal);
+    private string? _menuFor;
+    private string? _dependencyFor;
+    private bool _arrowsDrawn;
     private TimelineView? _view;
     private List<TimelineItem> _unscheduled = [];
     private int _unscheduledPage = 1;
@@ -200,6 +388,51 @@ else
     private DotNetObjectReference<TimelinePage>? _self;
     private bool _scriptReady;
     private string? _focusAfterRender;
+    private string _search = "";
+    private bool _settingsOpen;
+    private bool _filterOpen;
+    private bool _legendOpen;
+    private bool _busy;
+    private bool _scrollToToday;
+    private const string NoOne = "none";
+    private const string ColorsKey = "upms.timeline.epic-colours";
+    private const string DependenciesKey = "upms.timeline.dependencies";
+    private const string ProgressKey = "upms.timeline.progress";
+    private readonly HashSet<string> _people = new(StringComparer.Ordinal);
+    private readonly HashSet<StatusCategory> _categories = [];
+    private readonly HashSet<WorkItemType> _kinds = [];
+    private bool _colorByEpic;
+    private bool _exportOpen;
+    private bool _canExport;
+
+    /// <summary>The export address with what the page shows: its scale, colours, filters and the viewer's today.</summary>
+    private string ExportUrl(string format)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["zoom"] = _zoom.ToString().ToLowerInvariant(),
+            ["hide"] = _view?.HidingCompleted == true ? "true" : null,
+            ["colors"] = _colorByEpic ? "epic" : null,
+            ["q"] = Searching ? _search.Trim() : null,
+            ["people"] = _people.Count > 0 ? string.Join(',', _people) : null,
+            ["status"] = _categories.Count > 0 ? string.Join(',', _categories.Select(c => c.ToString().ToLowerInvariant())) : null,
+            ["types"] = _kinds.Count > 0 ? string.Join(',', _kinds) : null,
+            ["today"] = _today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        };
+        return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString($"spaces/{Uri.EscapeDataString(Key)}/timeline/export/{format}",
+            query.Where(p => p.Value is not null));
+    }
+
+    /// <summary>Jira's "Image (PNG)": the browser draws the exported SVG on a canvas and saves it.</summary>
+    private async Task DownloadPngAsync()
+    {
+        _exportOpen = false;
+        var saved = await JS.InvokeAsync<bool>("upms.downloadSvgAsPng", ExportUrl("svg"),
+            $"{Key}-timeline-{_today:yyyy-MM-dd}.png");
+        Announcer.Announce(saved ? "Timeline image downloaded." : "The image could not be made. Try the SVG or PDF instead.");
+    }
+    private bool _showDependencies = true;
+    private bool _showProgress = true;
 
     [Parameter]
     public string Key { get; set; } = "";
@@ -220,7 +453,10 @@ else
     // made with the keyboard stays pending.
     protected override async Task OnParametersSetAsync()
     {
-        _zoom = Enum.GetValues<TimelineZoom>().FirstOrDefault(z => ZoomName(z) == ScaleValue?.Trim().ToLowerInvariant(), TimelineZoom.Months);
+        _canExport = (await Organization.MyAccessAsync(CancellationToken.None)).Can(Rights.Export);
+        var zoom = Enum.GetValues<TimelineZoom>().FirstOrDefault(z => ZoomName(z) == ScaleValue?.Trim().ToLowerInvariant(), TimelineZoom.Months);
+        _scrollToToday |= _scriptReady && zoom != _zoom; // a new scale starts at today again
+        _zoom = zoom;
         var hide = CompletedValue == "hide";
         if (_requestedView == (_zoom, hide))
         {
@@ -242,7 +478,24 @@ else
                 _scriptReady = true;
                 _self = DotNetObjectReference.Create(this);
                 await JS.InvokeVoidAsync("upms.timeline.init", _scroller, _self);
-                await JS.InvokeVoidAsync("upms.timeline.scrollToToday", _scroller);
+                await JS.InvokeVoidAsync("upms.timeline.scrollToToday", _scroller, false);
+                await LoadOptionsAsync();
+                StateHasChanged(); // the viewer's saved view settings
+            }
+            else if (_scrollToToday && _view is not null)
+            {
+                // A new scale starts at today again, as Jira's does.
+                _scrollToToday = false;
+                await JS.InvokeVoidAsync("upms.timeline.scrollToToday", _scroller, false);
+            }
+
+            // The arrows are drawn between the bars where the browser placed them (Phase 3 FR-050), unless turned off.
+            var shown = _showDependencies && _view is not null ? _view.Dependencies : [];
+            if (_view is not null && (shown.Count > 0 || _arrowsDrawn))
+            {
+                _arrowsDrawn = shown.Count > 0;
+                await JS.InvokeVoidAsync("upms.timeline.drawArrows", _scroller,
+                    shown.Select(d => new { from = d.WaitedForKey, to = d.WaitingKey, late = d.IsLate }).ToArray());
             }
 
             if (_focusAfterRender is { } id && string.IsNullOrEmpty(TaskKey))
@@ -263,13 +516,14 @@ else
     public async Task OnBarDragged(string key, string mode, int days)
     {
         const int MaxDragDays = 36_524;
-        if (_view is not { CanContribute: true } || days is 0 or < -MaxDragDays or > MaxDragDays || Find(key) is not { } item)
+        if (_view is not { CanContribute: true } || days is 0 or < -MaxDragDays or > MaxDragDays || Find(key) is not { IsScheduled: true } item)
         {
             return;
         }
 
         var (first, last) = DatesOf(item);
-        (DateOnly? Start, DateOnly? Due) next = mode switch
+        // A milestone has one date and no handles: whatever the browser says, it only moves (Phase 3 security review F1).
+        (DateOnly? Start, DateOnly? Due) next = (item.Type == WorkItemType.Milestone ? "move" : mode) switch
         {
             // An end never passes the other end (FR-037).
             "start" => ((first ?? last)!.Value.AddDays(days) is var start && last is { } due && start > due ? due : start, last),
@@ -281,7 +535,26 @@ else
         StateHasChanged();
     }
 
-    public void Dispose() => _self?.Dispose();
+    // An item made with the Create form in this space shows at once.
+    protected override void OnInitialized() => Launcher.Created += OnCreated;
+
+    private void OnCreated(string spaceKey, string itemKey)
+    {
+        if (string.Equals(spaceKey, Key, StringComparison.OrdinalIgnoreCase))
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                StateHasChanged();
+            });
+        }
+    }
+
+    public void Dispose()
+    {
+        Launcher.Created -= OnCreated;
+        _self?.Dispose();
+    }
 
     private static string ZoomName(TimelineZoom zoom) => zoom.ToString().ToLowerInvariant();
 
@@ -312,16 +585,352 @@ else
 
     private IEnumerable<DateOnly> ScheduledDates()
     {
-        var items = _view!.Rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)).Select(Shown);
-        return items.SelectMany(i => new[] { i.StartDate, i.DueDate }).OfType<DateOnly>();
+        var items = AllItems().Select(Shown).SelectMany(i => new[] { i.StartDate, i.DueDate }).OfType<DateOnly>();
+        var sprints = _view!.Sprints.SelectMany(s => new[] { s.StartDate, s.EndDate });
+        return items.Concat(sprints);
+    }
+
+    /// <summary>Every item shown, in groups or not: containers, their items and sub-tasks, and the unscheduled ones.</summary>
+    private IEnumerable<TimelineItem> AllItems()
+    {
+        if (_view is null)
+        {
+            return [];
+        }
+
+        var rows = _view.Groups.SelectMany(g => g.Rows).Concat(_view.Rows);
+        return _view.Groups.SelectMany(g => g.Unscheduled.Prepend(g.Container))
+            .Concat(rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)));
     }
 
     /// <summary>The item at the dates of a change still being made with the keyboard.</summary>
     private TimelineItem Shown(TimelineItem item) =>
         _pending is { } pending && pending.Key == item.Key ? item with { StartDate = pending.Start, DueDate = pending.Due } : item;
 
-    private TimelineItem? Find(string key) =>
-        _view?.Rows.SelectMany(r => r.ScheduledSubtasks.Prepend(r.Task)).FirstOrDefault(i => i.Key == key);
+    private TimelineItem? Find(string key) => AllItems().FirstOrDefault(i => i.Key == key);
+
+    /// <summary>Whether the item waits for another or is waited for.</summary>
+    private bool IsLinked(string key) =>
+        _view is not null && (_view.Dependencies.Any(d => d.WaitedForKey == key || d.WaitingKey == key)
+            || AllItems().Any(i => (i.Key == key && i.WaitsFor.Count > 0) || i.WaitsFor.Any(w => w.Key == key)));
+
+    private static string GateText(GateState state) => state switch
+    {
+        GateState.Approved => "Gate approved",
+        GateState.AwaitingDecision => "Gate awaiting a decision",
+        GateState.SentBack => "Gate sent back",
+        _ => "Gate not requested",
+    };
+
+    private static string SprintStateText(SprintState state) => state switch
+    {
+        SprintState.Active => "active",
+        SprintState.Completed => "completed",
+        _ => "planned",
+    };
+
+    private void ToggleGroup(string key)
+    {
+        if (!_collapsedGroups.Remove(key))
+        {
+            _collapsedGroups.Add(key);
+        }
+    }
+
+    /// <summary>A top-level row with its sub-tasks, in a group or not.</summary>
+    private RenderFragment RowView(TimelineRow row, TimelineScale scale, EpicColor? epicColor, bool inGroup = false) => __builder =>
+    {
+        var expanded = _expanded.Contains(row.Task.Key);
+        var task = Shown(row.Task);
+        <div class="tl-row @(inGroup ? "tl-child" : "") @(TaskKey == row.Task.Key ? "is-open" : "")" data-testid="tl-row" data-key="@row.Task.Key" @key="row.Task.Key">
+            <div class="tl-label">
+                @Cells(row.Task, row.ScheduledSubtasks.Count + row.UnscheduledSubtasks.Count > 0
+                    ? @<button type="button" class="tl-expand icon-btn" aria-expanded="@(expanded ? "true" : "false")"
+                               aria-label="@($"{(expanded ? "Hide" : "Show")} sub-tasks of {row.Task.Key}")"
+                               @onclick="() => ToggleExpanded(row.Task.Key)"><Icon Name="@(expanded ? "chevron-down" : "chevron-right")" Size="14" /></button>
+                    : @<span class="tl-expand-space" aria-hidden="true"></span>)
+            </div>
+            <div class="tl-track">
+                @if (task.IsScheduled)
+                {
+                    <TimelineBar Item="task" Scale="scale" CanContribute="_view!.CanContribute" IsPending="@(_pending?.Key == task.Key)"
+                                 ColorByEpic="_colorByEpic" EpicColor="epicColor" OnKeyDown="e => BarKeyDownAsync(row.Task, e)" OnActivate="() => ActivateAsync(row.Task)" />
+                }
+                else if (_view!.CanContribute)
+                {
+                    <button type="button" class="tl-schedule" aria-label="Schedule @row.Task.Key" @onclick="() => ScheduleAsync(row.Task)">Schedule</button>
+                }
+            </div>
+        </div>
+        @if (expanded)
+        {
+            @foreach (var subtask in row.ScheduledSubtasks)
+            {
+                <div class="tl-row tl-subrow @(inGroup ? "tl-child" : "")" data-testid="tl-subrow" data-key="@subtask.Key" @key="subtask.Key">
+                    <div class="tl-label">
+                        @Cells(subtask, null, null, actions: false)
+                    </div>
+                    <div class="tl-track">
+                        <TimelineBar Item="Shown(subtask)" Scale="scale" CanContribute="_view!.CanContribute" IsPending="@(_pending?.Key == subtask.Key)"
+                                     ColorByEpic="_colorByEpic" EpicColor="epicColor" OnKeyDown="e => BarKeyDownAsync(subtask, e)" OnActivate="() => ActivateAsync(subtask)" />
+                    </div>
+                </div>
+            }
+            @if (row.UnscheduledSubtasks.Count > 0)
+            {
+                <div class="tl-row tl-subrow" data-testid="tl-unscheduled-subtasks" @key="@($"{row.Task.Key}-unscheduled")">
+                    <div class="tl-label tl-label-full">
+                        <span class="hint">Not scheduled:</span>
+                        @foreach (var subtask in row.UnscheduledSubtasks)
+                        {
+                            <a class="task-link" href="@TaskHref(subtask.Key)"><span class="key">@subtask.Key</span> @subtask.Title</a>
+                        }
+                    </div>
+                    <div class="tl-track"></div>
+                </div>
+            }
+        }
+    };
+
+    /// <summary>A row's Actions (Phase 3 FR-047): open it, schedule it when it has no dates, or add a dependency. Viewers
+    /// only open it. A button that shows a group of buttons, like the backlog's Move, so Tab reaches each one and Escape
+    /// closes it.</summary>
+    private RenderFragment Actions(TimelineItem item) => __builder =>
+    {
+        var open = _menuFor == item.Key;
+        <span class="tl-actions">
+            <button type="button" id="tl-actions-@item.Key" class="icon-btn tl-actions-btn" aria-expanded="@(open ? "true" : "false")"
+                    aria-controls="@(open ? $"tl-actions-{item.Key}-menu" : null)" aria-label="Actions for @item.Key"
+                    @onclick="() => _menuFor = open ? null : item.Key" @onkeydown="e => ActionsKeyDown(item, e)">⋯</button>
+            @if (open)
+            {
+                <div class="menu-backdrop" @onclick="() => _menuFor = null"></div>
+                <div id="tl-actions-@item.Key-menu" class="user-menu tl-menu" role="group" aria-label="Actions for @item.Key"
+                     @onkeydown="e => ActionsKeyDown(item, e)">
+                    <button type="button" class="menu-item" @onclick="() => MenuOpen(item)">Open</button>
+                    @if (_view!.CanContribute && !item.IsScheduled)
+                    {
+                        <button type="button" class="menu-item" @onclick="() => MenuScheduleAsync(item)">Schedule</button>
+                    }
+                    @if (_view.CanContribute)
+                    {
+                        <button type="button" class="menu-item" @onclick="() => MenuAddDependency(item)">Add dependency</button>
+                    }
+                </div>
+            }
+        </span>
+    };
+
+    /// <summary>A row's Work, Status and Assignee cells, as Jira's timeline list.</summary>
+    private RenderFragment Cells(TimelineItem item, RenderFragment? lead, Progress? progress = null, bool actions = true) => __builder =>
+    {
+        <div class="tl-work">
+            @lead
+            <TypeIcon Type="item.Type" />
+            <a id="@LinkId(item.Key)" class="task-link work-link" href="@TaskHref(item.Key)"><span class="work-key">@item.Key</span> <span class="work-title">@item.Title</span></a>
+            @if (actions)
+            {
+                @Actions(item)
+            }
+        </div>
+        <div class="tl-col-status">
+            @* As Jira: a parent shows its children's progress until it is done; everything else its status, changeable here. *@
+            @if (_showProgress && progress is { } p && item.Status.Category != StatusCategory.Done)
+            {
+                <span class="tl-progress" title="@p.Done of @p.Total done"><span style="width:@p.Percent%"></span></span>
+                <span class="tl-progress-text">@p.Percent%</span>
+            }
+            else if (_view!.CanContribute && _view.Statuses.Count > 0)
+            {
+                <select class="list-status st-@CategoryClass(item.Status.Category)" aria-label="Status of @item.Key" disabled="@_busy"
+                        @onchange="e => StatusChangedAsync(item, e)">
+                    @foreach (var status in _view.Statuses)
+                    {
+                        <option value="@status.Id" selected="@(status.Id == item.Status.Id)">@status.Name</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <span class="lozenge-status st-@CategoryClass(item.Status.Category)" title="@item.Status.Name">@item.Status.Name</span>
+            }
+        </div>
+        <div class="tl-col-assignee">
+            @if (item.Assignee is { } who)
+            {
+                <Avatar UserId="who.UserId" Initials="@who.Initials" /> <span class="tl-person">@who.DisplayName</span>
+            }
+            else
+            {
+                <span class="avatar avatar-none" aria-hidden="true"><Icon Name="person" Size="12" /></span> <span class="tl-person hint">Unassigned</span>
+            }
+        </div>
+    };
+
+    /// <summary>An item without dates: its row has no bar, and people who can contribute can schedule it from the track.</summary>
+    private RenderFragment UnscheduledRow(TimelineItem item, string rowClass, string testId) => __builder =>
+    {
+        <div class="tl-row tl-unscheduled-row @rowClass" data-testid="@testId" data-key="@item.Key" @key="@($"u-{item.Key}")">
+            <div class="tl-label">@Cells(item, @<span class="tl-expand-space" aria-hidden="true"></span>)</div>
+            <div class="tl-track">
+                @if (_view!.CanContribute)
+                {
+                    <button type="button" class="tl-schedule schedule-btn" aria-label="Schedule @item.Key" @onclick="() => ScheduleAsync(item)">Schedule</button>
+                }
+            </div>
+        </div>
+    };
+
+    private bool Searching => !string.IsNullOrWhiteSpace(_search);
+
+    /// <summary>Any search or filter on: groups stay open so what matches shows.</summary>
+    private bool Filtering => Searching || FilterCount > 0 || _people.Count > 0;
+
+    private int FilterCount => _categories.Count + _kinds.Count;
+
+    private bool Matches(TimelineItem item) =>
+        (!Searching || item.Title.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase)
+            || item.Key.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase))
+        && (_people.Count == 0 || _people.Contains(item.Assignee?.UserId.ToString() ?? NoOne))
+        && (_categories.Count == 0 || _categories.Contains(item.Status.Category))
+        && (_kinds.Count == 0 || _kinds.Contains(item.Type));
+
+    private IEnumerable<TimelineGroup> ShownGroups =>
+        _view!.Groups.Where(g => Matches(g.Container) || g.Rows.Any(Matches) || g.Unscheduled.Any(Matches));
+
+    /// <summary>Top-level rows shown and in all, as Jira's "4 of 4" under the list.</summary>
+    private int ShownCount => ShownGroups.Count() + _view!.Rows.Count(Matches) + _unscheduled.Count(Matches);
+
+    private int TotalCount => _view!.Groups.Count + _view.ScheduledCount + _view.Unscheduled.TotalCount;
+
+    /// <summary>Everyone the shown items are assigned to, for the avatars.</summary>
+    private IEnumerable<AssigneeRef> People => AllItems().Concat(_unscheduled)
+        .Select(i => i.Assignee).OfType<AssigneeRef>().DistinctBy(a => a.UserId)
+        .OrderBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase);
+
+    private IReadOnlyList<WorkItemType> KindsShown => AllItems().Concat(_unscheduled).Select(i => i.Type).Distinct().Order().ToList();
+
+    private void TogglePerson(string id) => Flip(_people, id);
+
+    private static void Flip<T>(HashSet<T> set, T value)
+    {
+        if (!set.Remove(value))
+        {
+            set.Add(value);
+        }
+    }
+
+    private void ClearFilters()
+    {
+        _people.Clear();
+        _categories.Clear();
+        _kinds.Clear();
+        _search = "";
+        _filterOpen = false;
+    }
+
+    /// <summary>Saves a view setting in this browser, as Jira keeps them per person.</summary>
+    private async Task SetOptionAsync(string key, bool on)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("upms.store.set", key, on ? "on" : "off");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task LoadOptionsAsync()
+    {
+        _colorByEpic = await JS.InvokeAsync<string?>("upms.store.get", ColorsKey) == "on";
+        _showDependencies = await JS.InvokeAsync<string?>("upms.store.get", DependenciesKey) != "off";
+        _showProgress = await JS.InvokeAsync<string?>("upms.store.get", ProgressKey) != "off";
+    }
+
+    private async Task ToggleFullScreenAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("upms.fullScreen.toggle");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    /// <summary>Changes an item's status from its Status cell, with the same rules as the board and the drawer.</summary>
+    private async Task StatusChangedAsync(TimelineItem item, ChangeEventArgs e)
+    {
+        if (_busy || !long.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id == item.Status.Id)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Items.UpdateAsync(item.Key, new WorkItemEdit.Status(id), item.Version, CancellationToken.None);
+            if (saved.IsSuccess)
+            {
+                Announcer.Announce($"{item.Key} moved to {_view!.Statuses.First(s => s.Id == id).Name}.");
+            }
+            else
+            {
+                _error = saved.Error!.Kind == ErrorKind.Conflict
+                    ? $"{item.Key} was changed by someone else. The timeline now shows the latest."
+                    : $"{item.Key}: {saved.Error.Message}";
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private bool Matches(TimelineRow row) => Matches(row.Task) || row.ScheduledSubtasks.Any(Matches) || row.UnscheduledSubtasks.Any(Matches);
+
+    private static string CategoryClass(StatusCategory category) => category switch
+    {
+        StatusCategory.Done => "done",
+        StatusCategory.InProgress => "inprogress",
+        _ => "todo",
+    };
+
+    private void ActionsKeyDown(TimelineItem item, KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _menuFor == item.Key)
+        {
+            _menuFor = null;
+            _focusAfterRender = $"tl-actions-{item.Key}";
+        }
+    }
+
+    private void MenuOpen(TimelineItem item)
+    {
+        _menuFor = null;
+        OpenDrawer(item.Key);
+    }
+
+    private async Task MenuScheduleAsync(TimelineItem item)
+    {
+        _menuFor = null;
+        await ScheduleAsync(item);
+    }
+
+    private void MenuAddDependency(TimelineItem item)
+    {
+        _menuFor = null;
+        _dependencyFor = item.Key;
+    }
+
+    private async Task DependencyAddedAsync(string message)
+    {
+        Announcer.Announce(message);
+        await LoadAsync();
+    }
 
     private void SetZoom(TimelineZoom zoom) => GoToView(zoom, _requestedView?.Hide ?? CompletedValue == "hide");
 
@@ -343,7 +952,7 @@ else
     {
         try
         {
-            await JS.InvokeVoidAsync("upms.timeline.scrollToToday", _scroller);
+            await JS.InvokeVoidAsync("upms.timeline.scrollToToday", _scroller, true);
         }
         catch (JSDisconnectedException)
         {
@@ -380,7 +989,9 @@ else
         switch (e.Key)
         {
             case "ArrowLeft" or "ArrowRight" when _view!.CanContribute:
-                Adjust(item, e.Key == "ArrowRight" ? 1 : -1, e.ShiftKey ? DateEnd.Due : e.CtrlKey ? DateEnd.Start : DateEnd.Both);
+                // A milestone has one date: Shift and Ctrl move it like a plain arrow (Phase 3 FR-043).
+                Adjust(item, e.Key == "ArrowRight" ? 1 : -1,
+                    item.Type == WorkItemType.Milestone ? DateEnd.Both : e.ShiftKey ? DateEnd.Due : e.CtrlKey ? DateEnd.Start : DateEnd.Both);
                 break;
             case "Enter":
                 await ActivateAsync(item);
@@ -486,6 +1097,11 @@ else
             _conflict = null;
             _error = null;
             Replace(result.Value!);
+            if (IsLinked(item.Key))
+            {
+                await LoadAsync(); // the server works out again which of its links are late (Phase 3 FR-051)
+            }
+
             Announcer.Announce(savedMessage ?? (start, due) switch
             {
                 ({ } s, { } d) => $"{item.Key} now runs from {Long(s)} to {Long(d)}.",
@@ -525,19 +1141,34 @@ else
             return;
         }
 
-        TimelineItem Swap(TimelineItem existing) => existing.Key == item.Key ? item : existing;
+        // A saved item keeps its type and what it waits for, which a reschedule does not read again.
+        TimelineItem Swap(TimelineItem existing) => existing.Key == item.Key ? item with { Type = existing.Type, WaitsFor = existing.WaitsFor } : existing;
+        TimelineRow SwapRow(TimelineRow r) => r with { Task = Swap(r.Task), ScheduledSubtasks = r.ScheduledSubtasks.Select(Swap).ToList() };
         _view = _view with
         {
-            Rows = _view.Rows.Select(r => r with { Task = Swap(r.Task), ScheduledSubtasks = r.ScheduledSubtasks.Select(Swap).ToList() }).ToList(),
+            Rows = _view.Rows.Select(SwapRow).ToList(),
+            Groups = _view.Groups.Select(g => g with
+            {
+                Container = Swap(g.Container),
+                Rows = g.Rows.Select(SwapRow).ToList(),
+                Unscheduled = g.Unscheduled.Select(Swap).ToList(),
+            }).ToList(),
         };
     }
 
     // ----- Unscheduled tasks (FR-036) -----
 
+    /// <summary>A task gets a week from today, an epic or stage four weeks, and a milestone today (Phase 3 FR-043).</summary>
     private async Task ScheduleAsync(TimelineItem item)
     {
-        var (start, due) = (_today, _today.AddDays(6));
-        if (await SaveAsync(item, start, due, $"{item.Key} scheduled from {Long(start)} to {Long(due)}."))
+        var (start, due) = item.Type switch
+        {
+            WorkItemType.Milestone => ((DateOnly?)null, (DateOnly?)_today),
+            WorkItemType.Epic or WorkItemType.Stage => (_today, _today.AddDays(27)),
+            _ => (_today, _today.AddDays(6)),
+        };
+        var message = start is null ? $"{item.Key} scheduled on {Long(due!.Value)}." : $"{item.Key} scheduled from {Long(start.Value)} to {Long(due!.Value)}.";
+        if (await SaveAsync(item, start, due, message))
         {
             await LoadAsync();
             _focusAfterRender = TimelineBar.IdFor(item.Key); // its "Schedule" button is gone; the new bar takes focus

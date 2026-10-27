@@ -1,0 +1,478 @@
+@using Upms.Domain.Identity
+@inject IUserAdminService Admin
+@inject ICurrentUser Me
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@* One person's type, department, rights and account (owner, 2026-10-26). A double-click on the User management list opens
+   it. Every right shows; those the person's type can never have, or the viewer cannot give, show locked with the reason. *@
+<ModalDialog @ref="_dialog" Title="@(_user?.DisplayName ?? "User")" Class="user-panel" TestId="user-panel">
+    <ChildContent>
+        @if (_user is { } user && _draft is { } draft)
+        {
+            <div class="up-head">
+                <span class="up-avatar"><Avatar UserId="user.Id" Initials="@Initials(user.DisplayName)" /></span>
+                <div class="up-who">
+                    <div class="up-sub">@user.UserName · @user.Email</div>
+                    <div class="up-tags">
+                        <UserTypeBadge Type="user.Type" />
+                        @if (!user.IsActive)
+                        {
+                            <span class="lozenge lozenge-off">Deactivated</span>
+                        }
+                        else if (user.IsLockedOut)
+                        {
+                            <span class="lozenge lozenge-warn">Locked</span>
+                        }
+                        else
+                        {
+                            <span class="lozenge lozenge-ok">Active</span>
+                        }
+                        @if (IsMe)
+                        {
+                            <span class="muted">This is you</span>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (!CanEdit)
+            {
+                <div class="alert alert-info up-readonly" data-testid="user-panel-readonly"><Icon Name="lock" Size="14" /> @ReadOnlyReason</div>
+            }
+            @if (_error is not null)
+            {
+                <div class="alert alert-error" role="alert">@_error</div>
+            }
+            @if (_secret is not null)
+            {
+                <div class="alert alert-success" role="status" data-testid="temporary-password">
+                    <p><strong>@_secret.Heading</strong></p>
+                    <p>
+                        Temporary password (shown only once): <code class="temp-password">@_secret.Password</code>
+                        <button type="button" class="btn btn-sm" @onclick="CopySecretAsync">@(_copied ? "Copied" : "Copy")</button>
+                    </p>
+                    <p class="hint">Give it to the person through a secure channel. They choose their own password when they next sign in.</p>
+                </div>
+            }
+
+            <section class="up-section" aria-labelledby="up-profile">
+                <h3 id="up-profile" class="up-title">Type and department</h3>
+                <div class="row">
+                    <div class="field">
+                        <label for="up-type">Type</label>
+                        <select id="up-type" class="select" value="@draft.Type" disabled="@(!CanEdit)" @onchange="ChangeType">
+                            @foreach (var type in UserTypes.Ordered)
+                            {
+                                <option value="@type" disabled="@(!CanGive(type))">@type.DisplayName()@(CanGive(type) ? "" : " (locked)")</option>
+                            }
+                        </select>
+                        <span class="hint">@draft.Type.Description()</span>
+                    </div>
+                    <div class="field">
+                        <label for="up-department">Department</label>
+                        @if (Caller.IsAdministrator && CanEdit)
+                        {
+                            <select id="up-department" class="select" @bind="draft.DepartmentId">
+                                <option value="">No department</option>
+                                @foreach (var department in Departments)
+                                {
+                                    <option value="@department.Id">@department.Name</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <input id="up-department" class="input" value="@(user.Department ?? "No department")" readonly />
+                        }
+                    </div>
+                </div>
+                <dl class="up-facts">
+                    <div><dt>Added</dt><dd><LocalTime Value="user.CreatedAt" Format="d MMM yyyy" /></dd></div>
+                    <div>
+                        <dt>Last sign-in</dt>
+                        <dd>
+                            @if (user.LastSignInAt is { } lastSignIn)
+                            {
+                                <LocalTime Value="lastSignIn" />
+                            }
+                            else
+                            {
+                                <span class="muted">Never</span>
+                            }
+                        </dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="up-section" aria-labelledby="up-rights">
+                <div class="up-section-head">
+                    <h3 id="up-rights" class="up-title">Rights</h3>
+                    <span class="up-count">@TickedCount of @RightsCatalog.All.Count</span>
+                    <span class="spacer"></span>
+                    @if (CanEdit && draft.Type != UserType.Admin)
+                    {
+                        <button type="button" class="btn btn-sm btn-ghost" data-testid="use-type-rights" @onclick="UseTypeRights">
+                            <Icon Name="refresh" Size="14" /> Use @draft.Type.DisplayName() defaults
+                        </button>
+                    }
+                </div>
+                <p class="hint">
+                    Ticked boxes are what @user.DisplayName may do. A box marked <Icon Name="lock" Size="12" /> can't be changed here,
+                    and says why.
+                </p>
+                @foreach (var group in RightsCatalog.All.GroupBy(r => r.Group))
+                {
+                    <fieldset class="up-group">
+                        <legend>@group.Key</legend>
+                        @foreach (var right in group)
+                        {
+                            var reason = LockReason(right.Right);
+                            var ticked = Ticked(right.Right);
+                            var change = ChangeFrom(right.Right, ticked);
+                            var id = $"up-right-{(long)right.Right}";
+                            <label class="up-right @(reason is null ? "" : "is-locked")" data-right="@right.Right">
+                                <input type="checkbox" checked="@ticked" disabled="@(reason is not null)" aria-describedby="@id"
+                                       @onchange="e => Toggle(right.Right, e.Value is true)" />
+                                <span class="up-right-text">
+                                    <span class="up-right-name">
+                                        @right.Name
+                                        @if (change is { } changed)
+                                        {
+                                            <span class="up-change up-change-@changed.ToLowerInvariant()">@changed</span>
+                                        }
+                                    </span>
+                                    <span id="@id" class="up-right-desc">
+                                        @right.Description
+                                        @if (reason is not null)
+                                        {
+                                            <span class="up-lock"><Icon Name="lock" Size="12" /> @reason</span>
+                                        }
+                                    </span>
+                                </span>
+                            </label>
+                        }
+                    </fieldset>
+                }
+            </section>
+
+            @if (CanAccounts)
+            {
+                <section class="up-section" aria-labelledby="up-account">
+                    <h3 id="up-account" class="up-title">Account</h3>
+                    @if (_confirming is { } pending)
+                    {
+                        <div class="up-confirm" role="group" aria-label="Confirm">
+                            <span>@pending.Question</span>
+                            <button type="button" id="up-confirm-yes" class="btn btn-sm @(pending.Action == AccountAction.Deactivate ? "btn-danger-solid" : "btn-primary")"
+                                    disabled="@_busy" @onclick="ConfirmAsync">Yes, @pending.Verb</button>
+                            <button type="button" class="btn btn-sm" @onclick="() => _confirming = null">Cancel</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="up-account-actions">
+                            <button type="button" class="btn btn-sm" data-testid="reset-password" @onclick="() => Ask(AccountAction.ResetPassword)">
+                                <Icon Name="refresh" Size="14" /> Reset password
+                            </button>
+                            @if (user.IsActive)
+                            {
+                                <button type="button" class="btn btn-sm btn-danger" data-testid="deactivate" @onclick="() => Ask(AccountAction.Deactivate)">Deactivate</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm" data-testid="reactivate" @onclick="() => Ask(AccountAction.Reactivate)">Reactivate</button>
+                            }
+                        </div>
+                        <p class="hint">A deactivated person can't sign in. Their work and history stay.</p>
+                    }
+                </section>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        @if (CanEdit)
+        {
+            <span class="up-dirty hint">@(Changed ? "You have unsaved changes." : "")</span>
+            <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-primary" data-testid="save-user" disabled="@(!Changed || _busy)" @onclick="SaveAsync">Save changes</button>
+        }
+        else
+        {
+            <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Close</button>
+        }
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _dialog;
+    private UserSummary? _user;
+    private Draft? _draft;
+    private string? _error;
+    private Secret? _secret;
+    private bool _copied;
+    private bool _busy;
+    private PendingAction? _confirming;
+
+    /// <summary>What the viewer may do on the page.</summary>
+    [Parameter, EditorRequired]
+    public PeopleRights Caller { get; set; } = default!;
+
+    /// <summary>Each type's default rights, which a person starts from.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyDictionary<UserType, Rights> TypeRights { get; set; } = new Dictionary<UserType, Rights>();
+
+    [Parameter]
+    public IReadOnlyList<DepartmentInfo> Departments { get; set; } = [];
+
+    /// <summary>After a save or an account change: the list reloads.</summary>
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    private bool IsMe => _user?.Id == Me.UserId;
+
+    /// <summary>Type and rights: an Admin anyone, others the people below their own type in their department.</summary>
+    private bool CanEdit => _user is { } user && Caller.CanSetAccess && Caller.Manages(user.Type, user.DepartmentId);
+
+    private bool CanAccounts => _user is { } user && !IsMe && Caller.CanManageAccounts && Caller.Manages(user.Type, user.DepartmentId);
+
+    private string ReadOnlyReason => _user is { } user && !Caller.Manages(user.Type, user.DepartmentId)
+        ? IsMe ? "You can't change your own type or rights. Another Admin can." : $"Only someone above {user.Type.DisplayName()} can change this person."
+        : "You don't have the \"Change users' type and rights\" right, so you can only look.";
+
+    private bool Changed => _user is { } user && _draft is { } draft
+        && (draft.Type != user.Type || draft.DepartmentId != user.DepartmentId || Normalized(draft) != Normalized(user.Type, user.Rights));
+
+    private int TickedCount => RightsCatalog.All.Count(r => Ticked(r.Right));
+
+    /// <summary>Opens the panel for a person, starting from what they have now.</summary>
+    public void Open(UserSummary user)
+    {
+        _user = user;
+        _draft = new Draft(user.Type, user.DepartmentId, user.Rights);
+        _error = null;
+        _secret = null;
+        _confirming = null;
+        StateHasChanged();
+        _dialog!.Open();
+    }
+
+    private Rights DefaultsOf(UserType type) => TypeRights.TryGetValue(type, out var rights) ? rights : RightsCatalog.Defaults(type);
+
+    private static Rights Normalized(Draft draft) => Normalized(draft.Type, draft.Ticks);
+
+    private static Rights Normalized(UserType type, Rights ticks) => type == UserType.Admin ? Rights.All : ticks & RightsCatalog.Allowed(type);
+
+    private bool Ticked(Rights right) => _draft is { } draft && Normalized(draft).Has(right);
+
+    private bool CanGive(UserType type) => CanEdit && (type == _user?.Type || Caller.Types.Contains(type));
+
+    /// <summary>Why a box can't be changed, or null when it can.</summary>
+    private string? LockReason(Rights right)
+    {
+        if (_draft is not { } draft)
+        {
+            return null;
+        }
+
+        if (draft.Type == UserType.Admin)
+        {
+            return "Admins always have every right.";
+        }
+
+        if (!RightsCatalog.Allowed(draft.Type).Has(right))
+        {
+            return $"A {draft.Type.DisplayName()} can never have this.";
+        }
+
+        if (!CanEdit)
+        {
+            return "View only.";
+        }
+
+        return !Caller.IsAdministrator && !Caller.Rights.Has(right) ? "You don't have this right yourself, so you can't give or take it." : null;
+    }
+
+    /// <summary>"Added" or "Removed" when the box differs from the type's default.</summary>
+    private string? ChangeFrom(Rights right, bool ticked)
+    {
+        if (_draft is not { } draft || draft.Type == UserType.Admin || !RightsCatalog.Allowed(draft.Type).Has(right))
+        {
+            return null;
+        }
+
+        var byDefault = DefaultsOf(draft.Type).Has(right);
+        return ticked == byDefault ? null : ticked ? "Added" : "Removed";
+    }
+
+    private void ChangeType(ChangeEventArgs e)
+    {
+        if (_draft is { } draft && Enum.TryParse<UserType>(e.Value?.ToString(), out var type) && CanGive(type))
+        {
+            // A new type starts from its own defaults, as Jira's roles do.
+            draft.Type = type;
+            draft.Ticks = DefaultsOf(type);
+        }
+    }
+
+    private void Toggle(Rights right, bool ticked)
+    {
+        if (_draft is { } draft && LockReason(right) is null)
+        {
+            draft.Ticks = ticked ? draft.Ticks | right : draft.Ticks & ~right;
+        }
+    }
+
+    private void UseTypeRights()
+    {
+        if (_draft is { } draft)
+        {
+            draft.Ticks = DefaultsOf(draft.Type);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_user is not { } user || _draft is not { } draft || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var defaults = DefaultsOf(draft.Type);
+            var ticks = Normalized(draft);
+            var result = await Admin.UpdateAccessAsync(user.Id,
+                new AccessChange(draft.Type, draft.DepartmentId, ticks & ~defaults, defaults & ~ticks), CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            Announcer.Announce($"Saved {user.DisplayName}'s type and rights.");
+            if (IsMe && draft.Type != UserType.Admin && Caller.IsAdministrator)
+            {
+                // No longer an Admin: this page may no longer be theirs.
+                Navigation.NavigateTo("", forceLoad: true);
+                return;
+            }
+
+            await _dialog!.CloseAsync();
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Ask(AccountAction action)
+    {
+        if (_user is not { } user)
+        {
+            return;
+        }
+
+        _error = null;
+        _confirming = action switch
+        {
+            AccountAction.ResetPassword => new PendingAction(action, $"Reset the password of {user.UserName}?", "reset"),
+            AccountAction.Deactivate => new PendingAction(action, $"Deactivate {user.UserName}? They are signed out at once.", "deactivate"),
+            _ => new PendingAction(action, $"Reactivate {user.UserName}?", "reactivate"),
+        };
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_confirming is not { } pending || _user is not { } user || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            switch (pending.Action)
+            {
+                case AccountAction.ResetPassword:
+                    var reset = await Admin.ResetPasswordAsync(user.Id, CancellationToken.None);
+                    if (reset.IsSuccess)
+                    {
+                        _copied = false;
+                        _secret = new Secret($"The password of {user.UserName} was reset.", reset.Value!);
+                        Announcer.Announce($"Password of {user.UserName} reset.");
+                    }
+                    else
+                    {
+                        _error = reset.Error!.Message;
+                    }
+
+                    break;
+                case AccountAction.Deactivate:
+                    var deactivated = await Admin.DeactivateAsync(user.Id, CancellationToken.None);
+                    _error = deactivated.Error?.Message;
+                    if (deactivated.IsSuccess)
+                    {
+                        _user = user with { IsActive = false };
+                        Announcer.Announce($"{user.UserName} deactivated.");
+                    }
+
+                    break;
+                default:
+                    var reactivated = await Admin.ReactivateAsync(user.Id, CancellationToken.None);
+                    _error = reactivated.Error?.Message;
+                    if (reactivated.IsSuccess)
+                    {
+                        _user = user with { IsActive = true };
+                        Announcer.Announce($"{user.UserName} reactivated.");
+                    }
+
+                    break;
+            }
+
+            _confirming = null;
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CopySecretAsync()
+    {
+        if (_secret is not null)
+        {
+            _copied = await JS.InvokeAsync<bool>("upms.clipboard.copy", _secret.Password);
+        }
+    }
+
+    private static string Initials(string name) => string.Concat(name
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .Take(2)
+        .Select(part => char.ToUpperInvariant(part[0])));
+
+    private enum AccountAction
+    {
+        ResetPassword,
+        Deactivate,
+        Reactivate,
+    }
+
+    private sealed record PendingAction(AccountAction Action, string Question, string Verb);
+
+    private sealed record Secret(string Heading, string Password);
+
+    private sealed class Draft(UserType type, long? departmentId, Rights ticks)
+    {
+        public UserType Type { get; set; } = type;
+
+        public long? DepartmentId { get; set; } = departmentId;
+
+        public Rights Ticks { get; set; } = ticks;
+    }
+}

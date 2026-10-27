@@ -13,7 +13,7 @@ namespace Upms.Web.Tests.List;
 public sealed class ListAddressTimingTests : BunitTestBase
 {
     private readonly FakeWorkItemListService _list;
-    private readonly SlowNavigationManager _navigation = new("projects/WEB/list");
+    private readonly SlowNavigationManager _navigation = new("spaces/WEB/list");
 
     public ListAddressTimingTests()
     {
@@ -26,10 +26,21 @@ public sealed class ListAddressTimingTests : BunitTestBase
         Services.AddSingleton<NavigationManager>(_navigation);
     }
 
-    private IRenderedComponent<ProjectListView> RenderList() => Render<ProjectListView>(p => p.Add(x => x.Key, "WEB"));
+    private IRenderedComponent<ProjectListView> RenderList()
+    {
+        var cut = Render<ProjectListView>(p => p.Add(x => x.Key, "WEB"));
+        cut.Find("button[aria-controls=list-filter-panel]").Click();
+        return cut;
+    }
 
-    private static List<string> Chips(IRenderedComponent<ProjectListView> cut) =>
-        cut.FindAll("[data-testid=filter-chip] .chip-label").Select(c => c.TextContent.Trim()).ToList();
+    /// <summary>A Status button of the Filter panel.</summary>
+    private static AngleSharp.Dom.IElement Status(IRenderedComponent<ProjectListView> cut, string name) =>
+        cut.FindAll("#list-filter-panel button").Single(b => b.TextContent.Trim() == name);
+
+    private static AngleSharp.Dom.IElement Me(IRenderedComponent<ProjectListView> cut) => cut.Find(".avatar-filter button[title='Amina Khan (you)']");
+
+    private static List<string> Pressed(IRenderedComponent<ProjectListView> cut) =>
+        cut.FindAll("[aria-pressed=true]").Select(b => (b.QuerySelector(".sr-only")?.TextContent ?? b.TextContent).Trim()).ToList();
 
     [Fact]
     public void A_second_filter_chosen_before_the_first_address_arrives_keeps_the_first()
@@ -37,43 +48,43 @@ public sealed class ListAddressTimingTests : BunitTestBase
         var cut = RenderList();
         _navigation.Holding = true;
 
-        cut.Find("#filter-type").Change("inprogress");
-        cut.Find("#filter-assignee").Change("me");
+        Status(cut, "In Progress").Click();
+        Me(cut).Click();
         cut.InvokeAsync(_navigation.Arrive);
 
-        Assert.EndsWith("/projects/WEB/list?type=inprogress&assignee=me", _navigation.Uri, StringComparison.Ordinal);
-        cut.WaitForAssertion(() => Assert.Equal(["Status type: In progress", "Assignee: Me"], Chips(cut)));
+        Assert.EndsWith("/spaces/WEB/list?column=2&assignee=me", _navigation.Uri, StringComparison.Ordinal);
+        cut.WaitForAssertion(() => Assert.Equal(["Assigned to me", "In Progress"], Pressed(cut)));
     }
 
     [Fact]
-    public void Removing_a_chip_before_the_last_choice_arrives_keeps_that_choice()
+    public void Removing_a_filter_before_the_last_choice_arrives_keeps_that_choice()
     {
-        _navigation.NavigateTo("projects/WEB/list?type=inprogress");
+        _navigation.NavigateTo("spaces/WEB/list?column=2");
         var cut = RenderList();
         _navigation.Holding = true;
 
-        cut.Find("#filter-assignee").Change("me");
-        cut.FindAll("[data-testid=filter-chip] button").Single(b => b.GetAttribute("aria-label") == "Remove filter Status type: In progress").Click();
+        Me(cut).Click();
+        Status(cut, "In Progress").Click();
         cut.InvokeAsync(_navigation.Arrive);
 
-        Assert.EndsWith("/projects/WEB/list?assignee=me", _navigation.Uri, StringComparison.Ordinal);
-        cut.WaitForAssertion(() => Assert.Equal(["Assignee: Me"], Chips(cut)));
+        Assert.EndsWith("/spaces/WEB/list?assignee=me", _navigation.Uri, StringComparison.Ordinal);
+        cut.WaitForAssertion(() => Assert.Equal(["Assigned to me"], Pressed(cut)));
     }
 
     [Fact]
     public void An_answer_for_an_older_address_never_replaces_the_newer_one()
     {
-        _list.FilterByType = true;
+        _list.FilterByStatus = true;
         var cut = RenderList();
         var older = _list.Hold();
-        cut.Find("#filter-type").Change("done");       // its answer is slow
+        Status(cut, "Done").Click();          // its answer is slow
         var newer = _list.Hold();
-        cut.Find("#filter-type").Change("inprogress");
+        Status(cut, "In Progress").Click();   // Done and In Progress
 
         cut.InvokeAsync(() => newer.SetResult());
         cut.InvokeAsync(() => older.SetResult());
 
-        cut.WaitForAssertion(() => Assert.Equal(["Status type: In progress"], Chips(cut)));
-        Assert.Equal(["WEB-1"], cut.FindAll("[data-testid=list-row]").Select(r => r.GetAttribute("data-key")));
+        cut.WaitForAssertion(() => Assert.Equal(["In Progress", "Done"], Pressed(cut)));
+        Assert.Equal(["WEB-2", "WEB-1"], cut.FindAll("[data-testid=list-row]").Select(r => r.GetAttribute("data-key")));
     }
 }

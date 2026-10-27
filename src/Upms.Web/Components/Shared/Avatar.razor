@@ -1,0 +1,27 @@
+@* A person's initials in a circle whose color comes from who they are, so it stays the same everywhere (Jira parity pass
+   FR-024; research R15). Decorative: the name is given in words beside it. *@
+<span class="avatar avatar-@ColorIndex(UserId)" aria-hidden="true">@Initials</span>
+
+@code {
+    private const int Colors = 8;
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    [Parameter, EditorRequired]
+    public string Initials { get; set; } = "";
+
+    /// <summary>One of the eight avatar colors, from the person's id (stable across visits and servers).</summary>
+    public static int ColorIndex(Guid userId)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        userId.TryWriteBytes(bytes);
+        var sum = 0;
+        foreach (var b in bytes)
+        {
+            sum += b;
+        }
+
+        return sum % Colors;
+    }
+}

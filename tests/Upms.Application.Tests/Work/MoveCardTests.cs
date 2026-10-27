@@ -85,7 +85,7 @@ public sealed class MoveCardTests(SqlServerFixture fixture) : BoardTestBase(fixt
     public async Task Moving_an_unknown_card_is_not_found()
     {
         var result = await CallAsync<IBoardService, Result<CardView>>(s =>
-            s.MoveCardAsync("WEB-999", ToDo, CardPlacement.AtEnd, [1, 2, 3], Ct));
+            s.MoveCardAsync("WEB-999", ToDo, CardPlacement.AtEnd, [1, 2, 3], null, Ct));
 
         Assert.Equal(ErrorKind.NotFound, result.Error!.Kind);
     }
@@ -94,7 +94,7 @@ public sealed class MoveCardTests(SqlServerFixture fixture) : BoardTestBase(fixt
     public async Task Moving_to_a_column_of_another_project_is_not_found()
     {
         var card = await AddAsync(ToDo, "One");
-        await CallAsync<Upms.Application.Projects.IProjectService, Result<string>>(s => s.CreateAsync("Mobile App", "MOB", null, Ct));
+        await CallAsync<Upms.Application.Projects.IProjectService, Result<string>>(s => s.CreateAsync("Mobile App", "MOB", null, Upms.Domain.Common.ProjectTemplate.Kanban, Ct));
         var mobileToDo = (await CallAsync<IBoardService, Result<BoardView>>(s => s.GetAsync("MOB", false, Ct))).Value!.Columns[0].Id;
 
         Assert.Equal(ErrorKind.NotFound, (await MoveAsync(card, mobileToDo, CardPlacement.AtEnd)).Error!.Kind);

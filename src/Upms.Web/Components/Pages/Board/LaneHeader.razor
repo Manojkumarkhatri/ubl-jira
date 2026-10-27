@@ -1,0 +1,40 @@
+@using Upms.Domain.Work
+@* A swimlane's header: a button that shows or hides the lane, with its card count (Jira parity pass FR-026; research R16). *@
+<h3 class="lane-head">
+    <button type="button" aria-expanded="@(Expanded ? "true" : "false")" aria-controls="@BodyId" @onclick="OnToggle">
+        <span class="lane-caret" aria-hidden="true">@(Expanded ? "▾" : "▸")</span>
+        @if (Lane.Color is { } color)
+        {
+            <span class="lane-swatch epic-@color.ToString().ToLowerInvariant()" aria-hidden="true"></span>
+        }
+        @if (Lane.IsLabel)
+        {
+            <span class="lane-title label-chip">@Lane.Title</span>
+        }
+        else if (Lane.Change is Upms.Application.Work.LaneChange.Priority priority)
+        {
+            <PriorityIcon Priority="priority.Value" />
+            <span class="lane-title">@Lane.Title</span>
+        }
+        else
+        {
+            <span class="lane-title">@Lane.Title</span>
+        }
+        <span class="count">@Lane.Cards.Count<span class="sr-only"> @(Lane.Cards.Count == 1 ? "card" : "cards")</span></span>
+    </button>
+</h3>
+
+@code {
+    [Parameter, EditorRequired]
+    public BoardLane Lane { get; set; } = default!;
+
+    [Parameter]
+    public bool Expanded { get; set; }
+
+    /// <summary>The id of the lane's cards, which the button shows and hides.</summary>
+    [Parameter, EditorRequired]
+    public string BodyId { get; set; } = "";
+
+    [Parameter]
+    public EventCallback OnToggle { get; set; }
+}

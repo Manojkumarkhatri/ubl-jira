@@ -1,0 +1,136 @@
+@inject IOrganizationAdminService Organization
+@inject LiveAnnouncer Announcer
+
+@* Each user type's default rights (owner's decisions of 2026-10-20 and 2026-10-26), a tab of User management for Admins.
+   A box a type can never have shows locked: a Member never adds Portfolio leads, a Head never sees other departments. *@
+<p class="hint">
+    What each type of user may do. People start with their type's rights; open a person on the Users tab to add or remove
+    rights for them alone. A box marked <Icon Name="lock" Size="12" /> is locked for that type.
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">@_error</div>
+}
+
+@if (_draft is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="tbl rights-matrix" data-testid="rights-matrix">
+            <caption class="sr-only">Default rights of each user type</caption>
+            <thead>
+                <tr>
+                    <th scope="col">What they may do</th>
+                    @foreach (var type in UserTypes.Ordered)
+                    {
+                        <th scope="col" class="matrix-type"><UserTypeBadge Type="type" /></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var group in RightsCatalog.All.GroupBy(r => r.Group))
+                {
+                    <tr class="matrix-group"><th scope="rowgroup" colspan="@(UserTypes.Ordered.Length + 1)">@group.Key</th></tr>
+                    @foreach (var right in group)
+                    {
+                        <tr>
+                            <th scope="row" class="matrix-right">
+                                @right.Name
+                                <span class="matrix-desc">@right.Description</span>
+                            </th>
+                            @foreach (var type in UserTypes.Ordered)
+                            {
+                                var allowed = RightsCatalog.Allowed(type).Has(right.Right);
+                                <td class="matrix-cell @(allowed ? "" : "is-locked")">
+                                    <input type="checkbox" checked="@(type == UserType.Admin || (allowed && _draft[type].Has(right.Right)))"
+                                           disabled="@(type == UserType.Admin || !allowed)"
+                                           aria-label="@($"{right.Name} for {type.DisplayName()}{(allowed ? "" : ", locked")}")"
+                                           title="@(type == UserType.Admin ? "Admins always have every right." : allowed ? null : $"A {type.DisplayName()} can never have this.")"
+                                           @onchange="e => Toggle(type, right.Right, e.Value is true)" />
+                                    @if (!allowed)
+                                    {
+                                        <span class="matrix-lock" aria-hidden="true"><Icon Name="lock" Size="11" /></span>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="form-actions matrix-actions">
+        <button type="button" class="btn btn-primary" disabled="@(!Changed || _saving)" @onclick="SaveAsync">Save default rights</button>
+        <button type="button" class="btn" disabled="@(!Changed || _saving)" @onclick="Reset">Undo changes</button>
+        <span class="hint">Admins always have every right. A change applies to everyone of that type, except rights added or removed for one person.</span>
+    </div>
+}
+
+@code {
+    private IReadOnlyDictionary<UserType, Rights> _saved = new Dictionary<UserType, Rights>();
+    private Dictionary<UserType, Rights>? _draft;
+    private string? _error;
+    private bool _saving;
+
+    /// <summary>After saving: the Users tab's "Added" and "Removed" marks follow the new defaults.</summary>
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private bool Changed => _draft is not null && _draft.Any(d => _saved.GetValueOrDefault(d.Key) != d.Value);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _saved = await Organization.TypeRightsAsync(CancellationToken.None);
+        Reset();
+    }
+
+    private void Reset() => _draft = _saved.ToDictionary(r => r.Key, r => r.Value);
+
+    private void Toggle(UserType type, Rights right, bool ticked)
+    {
+        if (_draft is not null && type != UserType.Admin && RightsCatalog.Allowed(type).Has(right))
+        {
+            _draft[type] = ticked ? _draft[type] | right : _draft[type] & ~right;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_draft is null || _saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            foreach (var (type, rights) in _draft.Where(d => _saved.GetValueOrDefault(d.Key) != d.Value).ToList())
+            {
+                var result = await Organization.SetTypeRightsAsync(type, rights, CancellationToken.None);
+                if (!result.IsSuccess)
+                {
+                    _error = result.Error!.Message;
+                    break;
+                }
+            }
+
+            _saved = await Organization.TypeRightsAsync(CancellationToken.None);
+            if (_error is null)
+            {
+                Reset();
+                Announcer.Announce("Default rights saved.");
+            }
+
+            await OnSaved.InvokeAsync();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

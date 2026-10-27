@@ -86,4 +86,66 @@ public sealed class ListStateTests
         Assert.False(cleared.HasFilters);
         Assert.Equal((ListSort.Title, false), (cleared.Sort, cleared.Descending));
     }
+
+    [Fact]
+    public void P3_US1_AS8_Types_and_epics_or_stages_round_trip_through_the_address()
+    {
+        var state = ListState.Parse(sort: "type", dir: null, column: null, type: "todo", priority: null, assignee: null, due: null,
+            q: null, page: null, kind: "bug,Story,nonsense", container: "mob-1,none");
+
+        Assert.Equal((ListSort.Type, false), (state.Sort, state.Descending));
+        Assert.Equal([StatusCategory.ToDo], state.Types);
+        Assert.Equal([WorkItemType.Bug, WorkItemType.Story], state.ItemTypes);
+        Assert.Equal(["MOB-1"], state.Containers);
+        Assert.True(state.NoContainer);
+        Assert.True(state.HasFilters);
+
+        var query = state.ToQuery();
+        Assert.Equal([WorkItemType.Bug, WorkItemType.Story], query.Types);
+        Assert.Equal(["MOB-1"], query.ContainerKeys);
+        Assert.True(query.NoContainer);
+
+        var parameters = state.ToParameters();
+        Assert.Equal("type", parameters["sort"]);
+        Assert.Equal("todo", parameters["type"]);
+        Assert.Equal("bug,story", parameters["kind"]);
+        Assert.Equal("MOB-1,none", parameters["container"]);
+    }
+
+    [Fact]
+    public void Choosing_a_type_or_an_epic_filters_and_goes_back_to_the_first_page()
+    {
+        var state = ListState.Default with { Page = 3 };
+
+        var bugs = state.WithItemType(WorkItemType.Bug);
+        var inEpic = bugs.WithContainer("MOB-1");
+        var none = bugs.WithContainer(ListState.NoContainerValue);
+
+        Assert.Equal([WorkItemType.Bug], bugs.ItemTypes);
+        Assert.Equal(1, bugs.Page);
+        Assert.Equal(["MOB-1"], inEpic.Containers);
+        Assert.False(inEpic.NoContainer);
+        Assert.Empty(none.Containers);
+        Assert.True(none.NoContainer);
+        Assert.False(bugs.WithItemType(null).WithContainer("").HasFilters);
+        Assert.Null(ListState.Default.ToParameters()["kind"]);
+        Assert.Null(ListState.Default.ToParameters()["container"]);
+    }
+
+    [Fact]
+    public void P4_US4_AS6_Labels_round_trip_as_typed_and_toggle_on_and_off()
+    {
+        var state = ListState.Parse(null, null, null, null, null, null, null, null, page: 2, labels: "Launch, design,launch");
+
+        Assert.Equal(["Launch", "design"], state.Labels);
+        Assert.True(state.HasFilters);
+        Assert.Equal(["Launch", "design"], state.ToQuery().Labels);
+        Assert.Equal("Launch,design", state.ToParameters()["labels"]);
+
+        var fewer = state.ToggleLabel("LAUNCH");
+        Assert.Equal(["design"], fewer.Labels);
+        Assert.Equal(1, fewer.Page);
+        Assert.Equal(["design", "pricing"], fewer.ToggleLabel("pricing").Labels);
+        Assert.Null(ListState.Default.ToParameters()["labels"]);
+    }
 }

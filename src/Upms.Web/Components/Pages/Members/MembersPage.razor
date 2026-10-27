@@ -1,4 +1,4 @@
-@page "/projects/{Key}/members"
+@page "/spaces/{Key}/members"
 @using Upms.Application.Projects
 @using Upms.Domain.Projects
 @inject IProjectMemberService Team
@@ -19,7 +19,7 @@ else if (_team is null)
 else
 {
     <ProjectHeader ProjectKey="@_team.ProjectKey" Title="Members" Current="ProjectPage.Members" CanManage="_team.CanManage"
-                   CanRestoreDeleted="_team.CanRestoreDeleted" />
+                   CanRestoreDeleted="_team.CanRestoreDeleted" Template="_team.Template" />
 
     @if (_conflict is not null)
     {
@@ -67,15 +67,7 @@ else
             }
             <span class="sr-only" role="status">@_resultsText</span>
             <div class="row">
-                <div class="field">
-                    <label for="member-role">Role</label>
-                    <select id="member-role" class="select" @bind="_newRole">
-                        @foreach (var role in Enum.GetValues<ProjectRole>())
-                        {
-                            <option value="@role">@role.DisplayName()</option>
-                        }
-                    </select>
-                </div>
+                <p class="hint">They get the access their type and rights give: a Portfolio lead manages the space, a Member works on it, Read-only looks.</p>
                 <div class="field field-action">
                     <button type="button" id="add-member" class="btn btn-primary" disabled="@(_chosen is null || _busy)" @onclick="AddAsync">Add member</button>
                 </div>
@@ -85,12 +77,12 @@ else
 
     <div class="table-wrap">
         <table class="tbl">
-            <caption class="sr-only">Members of @_team.ProjectName, Project Admins first</caption>
+            <caption class="sr-only">Members of @_team.ProjectName, those who manage it first</caption>
             <thead>
                 <tr>
                     <th scope="col">Name</th>
                     <th scope="col" class="hide-sm">User name</th>
-                    <th scope="col">Role</th>
+                    <th scope="col">Type and access</th>
                     <th scope="col" class="hide-sm">Added</th>
                     @if (_team.CanManage)
                     {
@@ -116,20 +108,11 @@ else
                         </td>
                         <td class="hide-sm">@member.UserName</td>
                         <td>
-                            @if (_team.CanManage)
+                            <UserTypeBadge Type="member.Type" />
+                            <span class="muted member-access">@AccessText(member.Role)</span>
+                            @if (member.FromPortfolio)
                             {
-                                <select id="@RoleId(member)" class="select select-sm" aria-label="Role of @member.DisplayName" disabled="@_busy"
-                                        value="@(_pendingRole.TryGetValue(member.UserId, out var pending) ? pending : member.Role)"
-                                        @onchange="e => ChangeRoleAsync(member, e)">
-                                    @foreach (var role in Enum.GetValues<ProjectRole>())
-                                    {
-                                        <option value="@role">@role.DisplayName()</option>
-                                    }
-                                </select>
-                            }
-                            else
-                            {
-                                @member.Role.DisplayName()
+                                <span class="lozenge" title="Given by the space's portfolio or department">From portfolio</span>
                             }
                         </td>
                         <td class="hide-sm"><LocalTime Value="member.AddedAt" Format="d MMM yyyy" /></td>
@@ -138,9 +121,13 @@ else
                             <td class="actions">
                                 @if (_confirmingRemove == member.UserId)
                                 {
-                                    <span class="confirm-text">Remove @member.DisplayName from the project? @(member.IsMe ? "You" : "They") will lose access at once.</span>
+                                    <span class="confirm-text">Remove @member.DisplayName from the space? @(member.IsMe ? "You" : "They") will lose access at once.</span>
                                     <button type="button" id="confirm-remove" class="btn btn-sm btn-danger" disabled="@_busy" @onclick="() => RemoveAsync(member)">Yes, remove</button>
                                     <button type="button" class="btn btn-sm" @onclick="() => CancelRemove(member)">Cancel</button>
+                                }
+                                else if (member.FromPortfolio)
+                                {
+                                    <span class="hint">Change it on the Portfolios page</span>
                                 }
                                 else
                                 {
@@ -158,7 +145,6 @@ else
 
 @code {
     private const int MinSearchLength = 2;
-    private readonly Dictionary<Guid, ProjectRole> _pendingRole = [];
     private TeamView? _team;
     private string? _loadedKey;
     private bool _notFound;
@@ -172,7 +158,6 @@ else
     private string _resultsText = "";
     private IReadOnlyList<PersonOption> _people = [];
     private Guid? _chosen;
-    private ProjectRole _newRole = ProjectRole.Member;
     private Guid? _confirmingRemove;
     private string? _focusAfterRender;
 
@@ -197,7 +182,12 @@ else
         }
     }
 
-    private static string RoleId(MemberView member) => $"role-{member.UserId:N}";
+    private static string AccessText(ProjectRole role) => role switch
+    {
+        ProjectRole.ProjectAdmin => "Manages the space",
+        ProjectRole.Member => "Works on items",
+        _ => "Looks only",
+    };
 
     private static string RemoveId(MemberView member) => $"remove-{member.UserId:N}";
 
@@ -247,13 +237,12 @@ else
             return;
         }
 
-        var role = _newRole;
         _busy = true;
-        var result = await Team.AddAsync(Key, userId, role, _team.MembersVersion, CancellationToken.None);
+        var result = await Team.AddPersonAsync(Key, userId, _team.MembersVersion, CancellationToken.None);
         _busy = false;
         if (Handle(result))
         {
-            Saved($"{person.DisplayName} added as {role.DisplayName()}.");
+            Saved($"{person.DisplayName} added.");
             _term = "";
             _people = [];
             _chosen = null;
@@ -261,33 +250,6 @@ else
             _resultsText = "";
             _focusAfterRender = "member-search";
         }
-    }
-
-    private async Task ChangeRoleAsync(MemberView member, ChangeEventArgs e)
-    {
-        if (_team is null || !Enum.TryParse<ProjectRole>(e.Value?.ToString(), out var role) || role == member.Role)
-        {
-            return;
-        }
-
-        // Shown while saving; if the change is refused, removing it puts the saved role back in the list.
-        _pendingRole[member.UserId] = role;
-        StateHasChanged();
-        _busy = true;
-        var result = await Team.ChangeRoleAsync(Key, member.UserId, role, _team.MembersVersion, CancellationToken.None);
-        _busy = false;
-        _pendingRole.Remove(member.UserId);
-        if (Handle(result))
-        {
-            Saved($"{member.DisplayName} is now a {role.DisplayName()}.");
-            if (member.IsMe)
-            {
-                // Stepping down may take away the right to manage the team.
-                await LoadAsync();
-            }
-        }
-
-        _focusAfterRender = RoleId(member);
     }
 
     private void AskRemove(MemberView member)
@@ -316,10 +278,10 @@ else
         _busy = false;
         if (Handle(result))
         {
-            Saved($"{member.DisplayName} removed from the project.");
+            Saved($"{member.DisplayName} removed from the space.");
             if (member.IsMe)
             {
-                Navigation.NavigateTo("projects");
+                Navigation.NavigateTo("spaces");
                 return;
             }
 

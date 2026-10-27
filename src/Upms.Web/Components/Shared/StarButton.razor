@@ -1,0 +1,42 @@
+@implements IDisposable
+@inject Upms.Web.Components.Layout.SidebarState State
+@* Stars a space for the person's sidebar (Jira parity pass FR-021b): a toggle button, pressed while the space is starred. *@
+<button type="button" class="icon-btn star-button @(Starred ? "is-starred" : "")" data-testid="star-@SpaceKey" aria-label="Star @SpaceKey"
+        aria-pressed="@(Starred ? "true" : "false")" disabled="@_busy" @onclick="ToggleAsync"><span aria-hidden="true">@(Starred ? "★" : "☆")</span></button>
+
+@code {
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string SpaceKey { get; set; } = "";
+
+    private bool Starred => State.IsStarred(SpaceKey);
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnChanged;
+        await State.EnsureLoadedAsync();
+    }
+
+    private async Task ToggleAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await State.ToggleStarAsync(SpaceKey);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => State.Changed -= OnChanged;
+}

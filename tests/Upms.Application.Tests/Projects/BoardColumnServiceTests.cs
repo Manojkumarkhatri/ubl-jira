@@ -82,7 +82,7 @@ public sealed class BoardColumnServiceTests(SqlServerFixture fixture) : DrawerTe
 
         Assert.Equal(["To Do", "In Progress", "Done"], view.Columns.Select(c => c.Name));
         Assert.Equal(before.BoardVersion + 1, view.BoardVersion);
-        Assert.Equal([existing.Key, first.Key, second.Key], await KeysInAsync(Done)); // appended in their order
+        Assert.Equal([existing.Key, first.Key, subtask.Key, second.Key], await KeysInAsync(Done)); // appended in their order, the sub-task card under its parent
         foreach (var key in new[] { first.Key, second.Key, subtask.Key, deleted.Key })
         {
             Assert.Equal(Done, await StatusOfAsync(key));

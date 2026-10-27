@@ -1,0 +1,83 @@
+@* The picture on a template card, in the style of Jira's template gallery. Decorative: the card's name says what it is. *@
+<svg class="template-art" viewBox="0 0 216 160" role="presentation" aria-hidden="true" focusable="false">
+    @switch (Kind)
+    {
+        case "kanban":
+            <rect x="0" y="0" width="68" height="160" rx="3" class="art-col" />
+            <rect x="74" y="0" width="68" height="160" rx="3" class="art-col" />
+            <rect x="148" y="0" width="68" height="160" rx="3" class="art-col" />
+            <rect x="6" y="14" width="30" height="3" rx="1.5" class="art-line" />
+            <rect x="80" y="14" width="30" height="3" rx="1.5" class="art-line" />
+            <rect x="154" y="14" width="30" height="3" rx="1.5" class="art-line" />
+            <rect x="6" y="26" width="56" height="32" class="art-block" />
+            <rect x="6" y="64" width="56" height="32" class="art-block" />
+            <rect x="6" y="102" width="56" height="32" class="art-block" />
+            <rect x="80" y="26" width="56" height="32" class="art-block" />
+            <rect x="80" y="64" width="56" height="32" class="art-block" />
+            <rect x="154" y="26" width="56" height="32" class="art-block" />
+            <rect x="154" y="64" width="56" height="32" class="art-block" />
+            <rect x="100" y="76" width="86" height="50" class="art-card" />
+            <rect x="108" y="86" width="44" height="3" rx="1.5" class="art-line" />
+            <rect x="108" y="94" width="30" height="3" rx="1.5" class="art-line" />
+            <rect x="152" y="112" width="24" height="5" rx="2.5" class="art-blue" />
+            break;
+        case "scrum":
+            <rect x="0" y="4" width="180" height="30" rx="3" class="art-col" />
+            <rect x="0" y="42" width="180" height="30" rx="3" class="art-col" />
+            <rect x="0" y="80" width="180" height="36" rx="3" class="art-block" />
+            <rect x="0" y="126" width="180" height="30" rx="3" class="art-col" />
+            <circle cx="16" cy="19" r="5" class="art-block" />
+            <rect x="28" y="17" width="12" height="4" rx="2" class="art-block" />
+            <rect x="56" y="13" width="70" height="3" rx="1.5" class="art-block" />
+            <rect x="56" y="21" width="44" height="3" rx="1.5" class="art-block" />
+            <rect x="136" y="16" width="30" height="6" rx="3" class="art-block" />
+            <circle cx="16" cy="57" r="5" class="art-block" />
+            <circle cx="16" cy="141" r="5" class="art-block" />
+            <rect x="28" y="139" width="12" height="4" rx="2" class="art-block" />
+            <rect x="56" y="135" width="70" height="3" rx="1.5" class="art-block" />
+            <rect x="56" y="143" width="44" height="3" rx="1.5" class="art-block" />
+            <rect x="136" y="138" width="30" height="6" rx="3" class="art-block" />
+            <rect x="36" y="42" width="180" height="36" rx="2" class="art-blue" />
+            <rect x="48" y="56" width="8" height="8" rx="1.5" class="art-white" />
+            <rect x="64" y="58" width="14" height="4" rx="2" class="art-white" />
+            <rect x="92" y="54" width="68" height="3" rx="1.5" class="art-white" />
+            <rect x="92" y="62" width="44" height="3" rx="1.5" class="art-white" />
+            <rect x="172" y="57" width="32" height="6" rx="3" class="art-white" />
+            <path d="M126 112 C 146 108, 154 98, 158 84" class="art-stroke" />
+            <path d="M152 90 L 158 82 L 163 91" class="art-stroke" />
+            break;
+        case "stage-gate":
+            <rect x="0" y="0" width="68" height="160" rx="3" class="art-col" />
+            <rect x="74" y="0" width="68" height="160" rx="3" class="art-col" />
+            <rect x="148" y="0" width="68" height="160" rx="3" class="art-col" />
+            <rect x="6" y="14" width="30" height="3" rx="1.5" class="art-line" />
+            <rect x="80" y="14" width="30" height="3" rx="1.5" class="art-line" />
+            <rect x="154" y="14" width="30" height="3" rx="1.5" class="art-line" />
+            <rect x="6" y="28" width="56" height="18" rx="2" class="art-blue" />
+            <rect x="6" y="52" width="56" height="18" rx="2" class="art-blue" />
+            <rect x="80" y="28" width="56" height="18" rx="2" class="art-block" />
+            <rect x="80" y="52" width="56" height="18" rx="2" class="art-block" />
+            <rect x="80" y="76" width="56" height="18" rx="2" class="art-block" />
+            <rect x="154" y="28" width="56" height="18" rx="2" class="art-block" />
+            <path d="M71 100 l9 9 l-9 9 l-9 -9 z" class="art-gate" />
+            <path d="M145 120 l9 9 l-9 9 l-9 -9 z" class="art-gate-open" />
+            <path d="M67 109 l3 3 l5 -6" class="art-tick" />
+            break;
+        default:
+            <rect x="0" y="0" width="216" height="160" rx="3" class="art-col" />
+            <rect x="8" y="10" width="150" height="30" rx="2" class="art-frame" />
+            <rect x="164" y="10" width="44" height="30" rx="2" class="art-frame" />
+            <rect x="8" y="48" width="60" height="104" rx="2" class="art-frame" />
+            <rect x="76" y="48" width="64" height="104" rx="2" class="art-frame" />
+            <rect x="148" y="48" width="60" height="104" rx="2" class="art-frame" />
+            <circle cx="108" cy="80" r="23" class="art-blue" />
+            <path d="M108 70 v20 M98 80 h20" class="art-plus" />
+            break;
+    }
+</svg>
+
+@code {
+    /// <summary>kanban, scrum, stage-gate or blank.</summary>
+    [Parameter, EditorRequired]
+    public string Kind { get; set; } = "blank";
+}

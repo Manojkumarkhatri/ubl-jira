@@ -1,0 +1,200 @@
+@page "/spaces/{Key}/forms/{FormId:long}/edit"
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@using Upms.Domain.Projects
+@using Upms.Domain.Work
+@inject ISpaceViewService SpaceViews
+@inject ISpaceFormService Forms
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+
+<PageTitle>Edit form · @Key · U-PMS</PageTitle>
+
+@* A form's builder (Space admins): its name and description, the type of work it creates, the fields it asks for, and
+   whether it takes responses, with a preview of the form beside it. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_space is null || _form is null)
+{
+    <p aria-busy="true">Loading the form…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@Key" Title="@_space.SpaceName" Current="ProjectPage.Forms" Template="_space.Template"
+                   CanManage="_space.CanManage" CanRestoreDeleted="_space.IsAdministrator" />
+
+    <nav class="doc-crumbs" aria-label="Forms"><a href="spaces/@Key/forms">Forms</a> <span aria-hidden="true">/</span> @_form.Name</nav>
+    <div class="form-builder">
+        <form class="card form-settings" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <h2>Form settings</h2>
+            <div class="field">
+                <label for="fb-name">Name</label>
+                <input id="fb-name" class="input" maxlength="100" @bind="_name" @bind:event="oninput" required />
+            </div>
+            <div class="field">
+                <label for="fb-intro">Description</label>
+                <textarea id="fb-intro" class="textarea" rows="3" maxlength="1000" placeholder="Tell people what this form is for." @bind="_intro" @bind:event="oninput"></textarea>
+            </div>
+            <div class="field">
+                <label for="fb-type">Creates</label>
+                <select id="fb-type" class="select" @bind="_type">
+                    @foreach (var type in _form.Types)
+                    {
+                        <option value="@type">@WorkItemTypes.DisplayName(type)</option>
+                    }
+                </select>
+            </div>
+            <fieldset class="field fb-fields">
+                <legend>Fields</legend>
+                <label class="filter-option is-fixed"><input type="checkbox" checked disabled /> Summary (always asked)</label>
+                @foreach (var field in Choices)
+                {
+                    <label class="filter-option"><input type="checkbox" checked="@_fields.HasFlag(field)" @onchange="() => _fields ^= field" /> @FieldName(field)</label>
+                }
+            </fieldset>
+            <label class="filter-option fb-open"><input type="checkbox" @bind="_open" /> Taking responses</label>
+            @if (_error is not null)
+            {
+                <p class="field-error" role="alert">@_error</p>
+            }
+            <div class="fb-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">Save</button>
+                <a class="btn btn-ghost" href="spaces/@Key/forms">Back to forms</a>
+                <span class="spacer"></span>
+                @if (_confirmDelete)
+                {
+                    <button type="button" class="btn btn-danger" @onclick="DeleteAsync">Delete form</button>
+                    <button type="button" class="btn btn-ghost" @onclick="() => _confirmDelete = false">Keep</button>
+                }
+                else
+                {
+                    <button type="button" class="icon-btn" aria-label="Delete this form" title="Delete" @onclick="() => _confirmDelete = true"><Icon Name="trash" /></button>
+                }
+            </div>
+        </form>
+
+        <section class="form-preview" aria-label="Preview">
+            <p class="fb-preview-label">Preview</p>
+            <div class="form-sheet" inert aria-hidden="true">
+                <h1>@(string.IsNullOrWhiteSpace(_name) ? "Untitled form" : _name)</h1>
+                @if (!string.IsNullOrWhiteSpace(_intro))
+                {
+                    <p class="form-sheet-intro">@_intro</p>
+                }
+                <div class="field"><label>Summary <span class="req" aria-hidden="true">*</span></label><input class="input" /></div>
+                @if (_fields.HasFlag(FormFields.Description))
+                {
+                    <div class="field"><label>Description</label><textarea class="textarea" rows="3"></textarea></div>
+                }
+                @if (_fields.HasFlag(FormFields.Priority))
+                {
+                    <div class="field"><label>Priority</label><select class="select"><option>Medium</option></select></div>
+                }
+                <div class="form-sheet-row">
+                    @if (_fields.HasFlag(FormFields.StartDate))
+                    {
+                        <div class="field"><label>Start date</label><input class="input" type="date" /></div>
+                    }
+                    @if (_fields.HasFlag(FormFields.DueDate))
+                    {
+                        <div class="field"><label>Due date</label><input class="input" type="date" /></div>
+                    }
+                </div>
+                @if (_fields.HasFlag(FormFields.Labels))
+                {
+                    <div class="field"><label>Labels</label><input class="input" /></div>
+                }
+                <button type="button" class="btn btn-primary">Submit</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly FormFields[] Choices = [FormFields.Description, FormFields.Priority, FormFields.StartDate, FormFields.DueDate, FormFields.Labels];
+    private SpaceViews? _space;
+    private SpaceFormView? _form;
+    private bool _notFound;
+    private bool _busy;
+    private bool _confirmDelete;
+    private string _name = "";
+    private string _intro = "";
+    private WorkItemType _type;
+    private FormFields _fields;
+    private bool _open;
+    private string? _error;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    [Parameter]
+    public long FormId { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var space = await SpaceViews.GetAsync(Key, CancellationToken.None);
+        var form = await Forms.GetAsync(Key, FormId, CancellationToken.None);
+        _notFound = !space.IsSuccess || !form.IsSuccess || !form.Value!.CanManage;
+        _space = space.Value;
+        _form = form.Value;
+        if (_form is not null)
+        {
+            _name = _form.Name;
+            _intro = _form.Intro ?? "";
+            _type = _form.WorkType;
+            _fields = _form.Fields;
+            _open = _form.IsOpen;
+        }
+    }
+
+    public static string FieldName(FormFields field) => field switch
+    {
+        FormFields.StartDate => "Start date",
+        FormFields.DueDate => "Due date",
+        _ => field.ToString(),
+    };
+
+    private async Task SaveAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Forms.SaveAsync(Key, FormId, new FormSettings(_name, _intro, _type, _fields, _open), CancellationToken.None);
+            if (saved.IsSuccess)
+            {
+                _form = saved.Value!;
+                _error = null;
+                Announcer.Announce("Form saved.");
+            }
+            else
+            {
+                _error = saved.Error!.Message;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var deleted = await Forms.DeleteAsync(Key, FormId, CancellationToken.None);
+        if (deleted.IsSuccess)
+        {
+            Announcer.Announce("Form deleted.");
+            Navigation.NavigateTo($"spaces/{Key}/forms");
+        }
+        else
+        {
+            _error = deleted.Error!.Message;
+        }
+    }
+}

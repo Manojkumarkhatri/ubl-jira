@@ -17,6 +17,9 @@ public sealed class RateLimitOptions
 
     /// <summary>Keep-alive calls per user.</summary>
     public int KeepAlivePerMinute { get; set; } = 6;
+
+    /// <summary>Attachment downloads and previews per user (Phase 4): long comment threads load many images.</summary>
+    public int AttachmentsPerMinute { get; set; } = 120;
 }
 
 /// <summary>Rate limits (contracts/http-endpoints.md): sign-in 10 per minute per client IP, setup 5 per
@@ -27,7 +30,7 @@ internal static class RateLimitingSetup
     {
         services.AddOptions<RateLimitOptions>()
             .BindConfiguration(RateLimitOptions.SectionName)
-            .Validate(o => o.SignInPerMinute > 0 && o.SetupPerMinute > 0 && o.KeepAlivePerMinute > 0,
+            .Validate(o => o.SignInPerMinute > 0 && o.SetupPerMinute > 0 && o.KeepAlivePerMinute > 0 && o.AttachmentsPerMinute > 0,
                 "Rate limits must be positive numbers of requests per minute.")
             .ValidateOnStart();
         return services.AddRateLimiter(options =>
@@ -39,14 +42,19 @@ internal static class RateLimitingSetup
 
     private static RateLimitPartition<string> Partition(HttpContext context)
     {
+        var limits = context.RequestServices.GetRequiredService<IOptions<RateLimitOptions>>().Value;
+        var path = context.Request.Path;
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        if (HttpMethods.IsGet(context.Request.Method) && path.StartsWithSegments(Endpoints.AttachmentEndpoints.PathPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return PerMinute($"attachments:{CurrentUser.ParseUserId(context.User)?.ToString() ?? ip}", limits.AttachmentsPerMinute);
+        }
+
         if (!HttpMethods.IsPost(context.Request.Method))
         {
             return RateLimitPartition.GetNoLimiter("none");
         }
 
-        var limits = context.RequestServices.GetRequiredService<IOptions<RateLimitOptions>>().Value;
-        var path = context.Request.Path;
-        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         if (path.Equals("/Account/Login", StringComparison.OrdinalIgnoreCase))
         {
             return PerMinute($"login:{ip}", limits.SignInPerMinute);

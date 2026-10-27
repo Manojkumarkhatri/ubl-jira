@@ -1,10 +1,25 @@
-# Backups and restore (Phase 1)
+# Backups and restore (Phases 1–4 and the Jira parity pass)
 
 Targets: lose no more than **1 hour** of saved work (RPO) and restore service within **4 hours** (RTO) after
 any failure (SC-010), shown by a restore drill before go-live. All U-PMS data, including data protection keys
 and the append-only history, is in one SQL Server database, so backing up that database backs up everything.
 The data protection certificate (see [deployment.md](deployment.md)) is backed up separately, with the
 company's certificate process.
+
+**Since Phase 4** the database also holds:
+
+- **attachments** (`AttachmentContents`, up to 25 MB each), so a restore never finds items without their files;
+  blocked files stay there in quarantine until an administrator deletes them permanently. Expect the full backup to
+  grow by the size of what people attach; compression helps little with images and PDF files;
+- the **search words** (`SearchTerms`), one row for each distinct word of each item. They can be rebuilt: deleting
+  their rows and setting `SearchIndexProgress.LastWorkItemId` to 0 makes the search worker index every item again in
+  the background;
+- the **email outbox** (`EmailMessages`). Emails still waiting when a backup is restored are sent once the app
+  runs, if they are less than 24 hours old; older ones are given up and audited.
+
+**Since the Jira parity pass** the database also holds each person's starred spaces (`StarredProjects`), their
+recently opened spaces (`ProjectVisits`, the last 20 each) and their sidebar choice (`AspNetUsers.SidebarCollapsed`).
+They are small and are backed up with everything else; losing the last hour of them only changes what a sidebar lists.
 
 ## Backup schedule
 

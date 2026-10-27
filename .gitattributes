@@ -1,0 +1,2 @@
+# The editor bundle is built from src/Upms.Web/Editor (Phase 4 research R2): keep diffs and language statistics quiet.
+src/Upms.Web/wwwroot/js/editor.js linguist-generated=true -diff

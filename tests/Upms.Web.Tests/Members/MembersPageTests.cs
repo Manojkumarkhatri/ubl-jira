@@ -36,16 +36,18 @@ public sealed class MembersPageTests : BunitTestBase
         cut.FindAll("[data-testid=member-row]").Single(r => r.QuerySelector("td")!.TextContent.Contains(displayName, StringComparison.Ordinal));
 
     [Fact]
-    public void The_team_is_listed_with_roles_and_marks_for_the_viewer_and_deactivated_accounts()
+    public void The_team_is_listed_with_types_access_and_marks_for_the_viewer_and_deactivated_accounts()
     {
         var cut = RenderPage();
 
         Assert.Equal(4, cut.FindAll("[data-testid=member-row]").Count);
         Assert.Contains("(you)", Row(cut, "Owen Tester").TextContent, StringComparison.Ordinal);
         Assert.Contains("Deactivated", Row(cut, "Gone Away").TextContent, StringComparison.Ordinal);
-        Assert.Equal("Viewer", Row(cut, "Bilal Ahmed").QuerySelector("select")!.GetAttribute("value"));
+        Assert.Equal("Looks only", Row(cut, "Bilal Ahmed").QuerySelector(".member-access")!.TextContent);
+        Assert.Equal("Manages the space", Row(cut, "Owen Tester").QuerySelector(".member-access")!.TextContent);
+        Assert.NotNull(Row(cut, "Amina Khan").QuerySelector(".type-badge"));
+        Assert.Empty(cut.FindAll("[data-testid=member-row] select"));
         Assert.Equal("Members", cut.Find("h1").TextContent);
-        Assert.Equal("page", cut.Find("nav.project-nav a[href='projects/WEB/members']").GetAttribute("aria-current"));
     }
 
     [Fact]
@@ -56,43 +58,46 @@ public sealed class MembersPageTests : BunitTestBase
         var cut = RenderPage();
 
         Assert.Empty(cut.FindAll("#member-search"));
-        Assert.Empty(cut.FindAll("[data-testid=member-row] select"));
         Assert.Empty(cut.FindAll("[data-testid=member-row] button"));
-        Assert.Contains("Viewer", Row(cut, "Bilal Ahmed").TextContent, StringComparison.Ordinal);
+        Assert.Contains("Looks only", Row(cut, "Bilal Ahmed").TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void P2_US1_AS2_A_Project_Admin_finds_a_person_by_typing_and_adds_them_with_a_role()
+    public void P2_US1_AS2_A_person_is_found_by_typing_and_added_with_the_access_their_type_gives()
     {
         var cut = RenderPage();
         Assert.NotNull(cut.Find("#add-member").GetAttribute("disabled"));
+        Assert.Empty(cut.FindAll("#member-role"));
 
         cut.Find("#member-search").Input("carl");
         Assert.Equal(["carl"], _team.Searches);
         Assert.Equal(2, cut.FindAll("input[name=person]").Count);
         cut.FindAll("input[name=person]")[0].Change(FakeProjectMemberService.Carla.ToString());
-        cut.Find("#member-role").Change(nameof(ProjectRole.Viewer));
         cut.Find("#add-member").Click();
 
-        Assert.Equal(["add carla Viewer v4"], _team.Calls);
+        Assert.Equal(["add carla Member v4"], _team.Calls);
         Assert.Contains("Carla Diaz", Row(cut, "Carla Diaz").TextContent, StringComparison.Ordinal);
-        Assert.Contains("Carla Diaz added as Viewer.", _announced);
+        Assert.Contains("Carla Diaz added.", _announced);
         Assert.Equal("", cut.Find("#member-search").GetAttribute("value"));
         Assert.Empty(cut.FindAll("input[name=person]"));
     }
 
     [Fact]
-    public void Changing_a_role_saves_it_with_the_team_version()
+    public void Access_from_a_portfolio_is_marked_and_not_removed_by_hand()
     {
+        _team.Members.Add(new MemberView(Guid.NewGuid(), "Lena Lead", "lena", ProjectRole.ProjectAdmin, true, false, DateTimeOffset.UtcNow)
+        {
+            Type = Upms.Domain.Common.UserType.PortfolioLead,
+            FromPortfolio = true,
+        });
+
         var cut = RenderPage();
 
-        Row(cut, "Amina Khan").QuerySelector("select")!.Change(nameof(ProjectRole.Viewer));
-
-        Assert.Equal(["role amina Viewer v4"], _team.Calls);
-        Assert.Equal("Viewer", Row(cut, "Amina Khan").QuerySelector("select")!.GetAttribute("value"));
-        Assert.Contains("Amina Khan is now a Viewer.", _announced);
-        Assert.Equal("Role of Amina Khan", Row(cut, "Amina Khan").QuerySelector("select")!.GetAttribute("aria-label"));
-        Assert.Equal($"role-{FakeProjectMemberService.Amina:N}", LastFocused());
+        var row = Row(cut, "Lena Lead");
+        Assert.Contains("From portfolio", row.TextContent, StringComparison.Ordinal);
+        Assert.Equal("Portfolio lead", row.QuerySelector(".type-badge")!.TextContent);
+        Assert.Empty(row.QuerySelectorAll("button"));
+        Assert.Contains("Change it on the Portfolios page", row.TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -102,28 +107,29 @@ public sealed class MembersPageTests : BunitTestBase
 
         Row(cut, "Amina Khan").QuerySelectorAll("button").Single(b => b.TextContent.Trim() == "Remove").Click();
         Assert.Empty(_team.Calls);
-        Assert.Contains("Remove Amina Khan from the project?", Row(cut, "Amina Khan").TextContent, StringComparison.Ordinal);
+        Assert.Contains("Remove Amina Khan from the space?", Row(cut, "Amina Khan").TextContent, StringComparison.Ordinal);
         Assert.Equal("confirm-remove", LastFocused());
         cut.Find("#confirm-remove").Click();
 
         Assert.Equal(["remove amina v4"], _team.Calls);
         Assert.DoesNotContain(cut.FindAll("[data-testid=member-row]"), r => r.TextContent.Contains("Amina Khan", StringComparison.Ordinal));
-        Assert.Contains("Amina Khan removed from the project.", _announced);
+        Assert.Contains("Amina Khan removed from the space.", _announced);
         Assert.Equal("member-search", LastFocused());
     }
 
     [Fact]
-    public void P2_US1_AS7_A_refused_change_explains_why_and_keeps_the_saved_role()
+    public void P2_US1_AS7_A_refused_change_explains_why_and_keeps_the_member()
     {
         _team.NextResult = () => AppError.Rule(ErrorCodes.LastProjectAdmin,
-            "This is the project's last active Project Admin. Make someone else a Project Admin first.");
+            "This is the last active person who manages the space. Give someone else that access first.");
         var cut = RenderPage();
 
-        Row(cut, "Owen Tester").QuerySelector("select")!.Change(nameof(ProjectRole.Member));
+        Row(cut, "Owen Tester").QuerySelectorAll("button").Single(b => b.TextContent.Trim() == "Remove").Click();
+        cut.Find("#confirm-remove").Click();
 
-        Assert.Equal("This is the project's last active Project Admin. Make someone else a Project Admin first.",
+        Assert.Equal("This is the last active person who manages the space. Give someone else that access first.",
             cut.Find("[role=alert]").TextContent.Trim());
-        Assert.Equal("ProjectAdmin", Row(cut, "Owen Tester").QuerySelector("select")!.GetAttribute("value"));
+        Assert.Contains("Owen Tester", Row(cut, "Owen Tester").TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -137,12 +143,14 @@ public sealed class MembersPageTests : BunitTestBase
         _team.NextResult = () => AppError.Conflict("The team was changed by someone else.", latest);
         var cut = RenderPage();
 
-        Row(cut, "Bilal Ahmed").QuerySelector("select")!.Change(nameof(ProjectRole.Member));
+        Row(cut, "Bilal Ahmed").QuerySelectorAll("button").Single(b => b.TextContent.Trim() == "Remove").Click();
+        cut.Find("#confirm-remove").Click();
 
         Assert.Contains("The team was changed by someone else.", cut.Find("[data-testid=conflict]").TextContent, StringComparison.Ordinal);
         Assert.Contains("Dana Noor", Row(cut, "Dana Noor").TextContent, StringComparison.Ordinal);
 
-        Row(cut, "Amina Khan").QuerySelector("select")!.Change(nameof(ProjectRole.Viewer));
-        Assert.Equal("role amina Viewer v9", _team.Calls[^1]);
+        Row(cut, "Amina Khan").QuerySelectorAll("button").Single(b => b.TextContent.Trim() == "Remove").Click();
+        cut.Find("#confirm-remove").Click();
+        Assert.Equal("remove amina v9", _team.Calls[^1]);
     }
 }

@@ -1,0 +1,236 @@
+@using Upms.Application.Projects
+@using Upms.Domain.Common
+@inject IBoardColumnService ColumnService
+@inject LiveAnnouncer Announcer
+@* The board's column changes (Jira parity pass FR-010–FR-012; research R12): the same service, rules and refusals as the
+   space settings. A refusal stays in its dialog with the typed text; a change made meanwhile closes the dialog, and the
+   board shows the current columns with the message. *@
+<ModalDialog @ref="_addDialog" Title="Add column" TestId="board-add-column">
+    <ChildContent>
+        <div class="field">
+            <label for="board-new-column-name">Name</label>
+            <input id="board-new-column-name" class="input" maxlength="30" autocomplete="off" @bind="_name" @bind:event="oninput"
+                   aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="board-new-column-error" />
+        </div>
+        <div class="field">
+            <label for="board-new-column-type">Status type</label>
+            <select id="board-new-column-type" class="select" @bind="_category">
+                @foreach (var category in Enum.GetValues<StatusCategory>())
+                {
+                    <option value="@category">@DeleteColumnDialog.CategoryName(category)</option>
+                }
+            </select>
+        </div>
+        <span id="board-new-column-error" class="error-text" role="alert">@_error</span>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _addDialog.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="AddAsync">Add</button>
+    </Footer>
+</ModalDialog>
+
+<ModalDialog @ref="_renameDialog" Title="@($"Rename {_column?.Name}")" TestId="board-rename-column">
+    <ChildContent>
+        <div class="field">
+            <label for="board-rename-input">Name</label>
+            <input id="board-rename-input" class="input" maxlength="30" autocomplete="off" @bind="_name" @bind:event="oninput"
+                   aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="board-rename-error" />
+            <span id="board-rename-error" class="error-text" role="alert">@_error</span>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _renameDialog.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="RenameAsync">Save</button>
+    </Footer>
+</ModalDialog>
+
+<ModalDialog @ref="_limitDialog" Title="@($"Limit of {_column?.Name}")" TestId="board-column-limit">
+    <ChildContent>
+        <div class="field">
+            <label for="board-limit-input">Most cards in the column (1 to 99)</label>
+            <input id="board-limit-input" class="input" type="number" min="1" max="99" inputmode="numeric" @bind="_limit"
+                   aria-invalid="@(_error is null ? "false" : "true")" aria-describedby="board-limit-error" />
+            <span id="board-limit-error" class="error-text" role="alert">@_error</span>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _limitDialog.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SetLimitAsync">Save</button>
+    </Footer>
+</ModalDialog>
+
+<ModalDialog @ref="_typeDialog" Title="@($"Status type of {_column?.Name}")" TestId="board-column-type">
+    <ChildContent>
+        <div class="field">
+            <label for="board-column-type-select">Status type</label>
+            <select id="board-column-type-select" class="select" @bind="_category" aria-describedby="board-column-type-error">
+                @foreach (var category in Enum.GetValues<StatusCategory>())
+                {
+                    <option value="@category">@DeleteColumnDialog.CategoryName(category)</option>
+                }
+            </select>
+            <span id="board-column-type-error" class="error-text" role="alert">@_error</span>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _typeDialog.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="ChangeTypeAsync">Save</button>
+    </Footer>
+</ModalDialog>
+
+@if (Columns is not null)
+{
+    <DeleteColumnDialog @ref="_deleteDialog" Columns="Columns.Columns" OnDelete="DeleteAsync" />
+}
+
+@code {
+    private ModalDialog _addDialog = default!;
+    private ModalDialog _renameDialog = default!;
+    private ModalDialog _limitDialog = default!;
+    private ModalDialog _typeDialog = default!;
+    private DeleteColumnDialog? _deleteDialog;
+    private BoardColumnView? _column;
+    private string _name = "";
+    private int? _limit;
+    private StatusCategory _category = StatusCategory.InProgress;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string SpaceKey { get; set; } = "";
+
+    /// <summary>The columns as the column service last gave them, with the version a change must carry.</summary>
+    [Parameter, EditorRequired]
+    public BoardColumnsView? Columns { get; set; }
+
+    /// <summary>A change was saved: the new columns.</summary>
+    [Parameter]
+    public EventCallback<BoardColumnsView> OnChanged { get; set; }
+
+    /// <summary>The columns changed meanwhile, or a direct change was refused: the message, and the current columns if known.</summary>
+    [Parameter]
+    public EventCallback<(string Message, BoardColumnsView? Current, bool IsConflict)> OnProblem { get; set; }
+
+    /// <summary>"+" after the last column.</summary>
+    public void OpenAdd()
+    {
+        _name = "";
+        _category = StatusCategory.InProgress;
+        _error = null;
+        _addDialog.Open();
+    }
+
+    public async Task RunAsync(ColumnAction action, BoardColumnView column)
+    {
+        _column = column;
+        _error = null;
+        switch (action)
+        {
+            case ColumnAction.Rename:
+                _name = column.Name;
+                _renameDialog.Open();
+                break;
+            case ColumnAction.SetLimit:
+                _limit = column.WipLimit;
+                _limitDialog.Open();
+                break;
+            case ColumnAction.ChangeType:
+                _category = column.Category;
+                _typeDialog.Open();
+                break;
+            case ColumnAction.Delete:
+                _deleteDialog?.Open(column);
+                break;
+            case ColumnAction.ClearLimit:
+                await DirectAsync(v => ColumnService.SetWipLimitAsync(SpaceKey, column.Id, null, v, CancellationToken.None),
+                    $"Removed the limit of {column.Name}.");
+                break;
+            case ColumnAction.MoveLeft:
+                await DirectAsync(v => ColumnService.MoveAsync(SpaceKey, column.Id, column.Position - 1, v, CancellationToken.None),
+                    $"Moved {column.Name} left.");
+                break;
+            case ColumnAction.MoveRight:
+                await DirectAsync(v => ColumnService.MoveAsync(SpaceKey, column.Id, column.Position + 1, v, CancellationToken.None),
+                    $"Moved {column.Name} right.");
+                break;
+        }
+    }
+
+    private Task AddAsync() =>
+        InDialogAsync(_addDialog, v => ColumnService.AddAsync(SpaceKey, _name, _category, Columns!.Columns.Count, v, CancellationToken.None),
+            $"Added the column {_name.Trim()}.", "Name");
+
+    private Task RenameAsync() =>
+        InDialogAsync(_renameDialog, v => ColumnService.RenameAsync(SpaceKey, _column!.Id, _name, v, CancellationToken.None),
+            $"Renamed {_column!.Name} to {_name.Trim()}.", "Name");
+
+    private Task SetLimitAsync() =>
+        InDialogAsync(_limitDialog, v => ColumnService.SetWipLimitAsync(SpaceKey, _column!.Id, _limit, v, CancellationToken.None),
+            _limit is null ? $"Removed the limit of {_column!.Name}." : $"{_column!.Name} now has a limit of {_limit}.", "WipLimit");
+
+    private Task ChangeTypeAsync() =>
+        InDialogAsync(_typeDialog, v => ColumnService.ChangeCategoryAsync(SpaceKey, _column!.Id, _category, v, CancellationToken.None),
+            $"{_column!.Name} is now a \"{DeleteColumnDialog.CategoryName(_category).ToLowerInvariant()}\" column.", "Category");
+
+    private async Task<AppError?> DeleteAsync(BoardColumnView column, long? destination)
+    {
+        var error = await SaveAsync(v => ColumnService.DeleteAsync(SpaceKey, column.Id, destination, v, CancellationToken.None),
+            $"Deleted the column {column.Name}.");
+        return error is { Kind: not ErrorKind.Conflict } ? error : null;
+    }
+
+    /// <summary>A change made in a dialog: a refusal stays in it, with the typed values.</summary>
+    private async Task InDialogAsync(ModalDialog dialog, Func<int, Task<Result<BoardColumnsView>>> change, string saved, string field)
+    {
+        var error = await SaveAsync(change, saved);
+        if (error is null || error.Kind == ErrorKind.Conflict)
+        {
+            await dialog.CloseAsync();
+        }
+        else
+        {
+            _error = error.MessageFor(field);
+        }
+    }
+
+    /// <summary>A change straight from the menu: a refusal is shown on the board.</summary>
+    private async Task DirectAsync(Func<int, Task<Result<BoardColumnsView>>> change, string saved)
+    {
+        if (await SaveAsync(change, saved) is { Kind: not ErrorKind.Conflict } error)
+        {
+            await OnProblem.InvokeAsync((error.FieldErrors?.Values.SelectMany(m => m).FirstOrDefault() ?? error.Message, null, false));
+        }
+    }
+
+    private async Task<AppError?> SaveAsync(Func<int, Task<Result<BoardColumnsView>>> change, string saved)
+    {
+        if (_busy || Columns is null)
+        {
+            return null;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await change(Columns.BoardVersion);
+            if (result.IsSuccess)
+            {
+                Announcer.Announce(saved);
+                await OnChanged.InvokeAsync(result.Value!);
+                return null;
+            }
+
+            var error = result.Error!;
+            if (error.Kind == ErrorKind.Conflict)
+            {
+                await OnProblem.InvokeAsync((error.Message, error.Current as BoardColumnsView, true));
+            }
+
+            return error;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

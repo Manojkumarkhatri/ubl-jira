@@ -1,214 +1,257 @@
 @page "/admin/users"
-@attribute [Authorize(Policy = AuthorizationPolicies.Administrator)]
-@using Upms.Domain.Identity
+@page "/admin/rights"
 @inject IUserAdminService Admin
+@inject IOrganizationAdminService Organization
 @inject ICurrentUser Me
-@inject LiveAnnouncer Announcer
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
 
-<PageTitle>Accounts · U-PMS</PageTitle>
+<PageTitle>User management · U-PMS</PageTitle>
 
+@* One page for people and their rights (owner, 2026-10-26), as Jira's user management: the Users tab lists people, a
+   double-click opens one person's type and rights; Admins also set each type's default rights. Admins manage everyone;
+   others, with the rights for it, the people below their own type in their department. *@
 <div class="page-head">
     <div>
         <div class="crumbs">Administration</div>
-        <h1>Accounts</h1>
+        <h1>User management</h1>
     </div>
     <span class="spacer"></span>
-    @if (!_adding)
+    @if (_rights?.CanAdd == true && !ShowingTypes)
     {
-        <button type="button" class="btn btn-primary" @onclick="StartAdding">Add user</button>
+        <button type="button" class="btn btn-primary" data-testid="add-user" @onclick="() => _addDialog!.Open()"><Icon Name="plus" Size="16" /> Add user</button>
     }
 </div>
 
-@if (_secret is not null)
-{
-    <div class="alert alert-success" role="status" data-testid="temporary-password">
-        <p><strong>@_secret.Heading</strong></p>
-        <p>
-            Temporary password (shown only once): <code class="temp-password">@_secret.Password</code>
-            <button type="button" class="btn btn-sm" @onclick="CopySecretAsync">@(_copied ? "Copied" : "Copy")</button>
-        </p>
-        <p class="hint">Give it to the person through a secure channel. They must choose their own password when they first sign in.</p>
-        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _secret = null">Done</button>
-    </div>
-}
-
-@if (_adding)
-{
-    <section class="card form-card" aria-labelledby="add-user-heading">
-        <h2 id="add-user-heading">Add a user</h2>
-        <EditForm Model="_newUser" OnSubmit="AddAsync" FormName="add-user" class="form">
-            @if (_addError is { Kind: not ErrorKind.Validation })
-            {
-                <div class="alert alert-error" role="alert">@_addError.Message</div>
-            }
-            <div class="row">
-                <div class="field">
-                    <label for="new-username">User name</label>
-                    <InputText id="new-username" class="input" @bind-Value="_newUser.UserName" autocomplete="off"
-                               aria-describedby="new-username-hint new-username-error" />
-                    <span id="new-username-hint" class="hint">3–64 letters, digits, ".", "-" or "_".</span>
-                    <span id="new-username-error" class="error-text">@FieldError("UserName")</span>
-                </div>
-                <div class="field">
-                    <label for="new-displayname">Display name</label>
-                    <InputText id="new-displayname" class="input" @bind-Value="_newUser.DisplayName" autocomplete="off"
-                               aria-describedby="new-displayname-error" />
-                    <span id="new-displayname-error" class="error-text">@FieldError("DisplayName")</span>
-                </div>
-                <div class="field">
-                    <label for="new-email">Email address</label>
-                    <InputText id="new-email" type="email" class="input" @bind-Value="_newUser.Email" autocomplete="off"
-                               aria-describedby="new-email-error" />
-                    <span id="new-email-error" class="error-text">@FieldError("Email")</span>
-                </div>
-            </div>
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Create account</button>
-                <button type="button" class="btn" @onclick="() => _adding = false">Cancel</button>
-            </div>
-        </EditForm>
-    </section>
-}
-
-<div class="toolbar">
-    <label for="user-search" class="sr-only">Search accounts</label>
-    <input id="user-search" type="search" class="input search" placeholder="Search by name, user name or email"
-           @bind="_search" @bind:event="oninput" @bind:after="SearchAsync" />
-</div>
-
-@if (_page is null)
+@if (_rights is null)
 {
     <p aria-busy="true">Loading…</p>
 }
-else if (_page.Items.Count == 0)
+else if (!_rights.CanList)
 {
-    <EmptyState Title="No accounts found" Text="Try a different search." />
+    <EmptyState Title="Not available" Text="Only Admins, and people given the rights to manage users, open User management." />
 }
 else
 {
-    <div class="table-wrap">
-        <table class="tbl">
-            <caption class="sr-only">Accounts, page @_page.PageNumber of @Math.Max(1, _page.PageCount)</caption>
-            <thead>
-                <tr>
-                    <th scope="col">User</th>
-                    <th scope="col" class="hide-sm">Email</th>
-                    <th scope="col">Role</th>
-                    <th scope="col">Status</th>
-                    <th scope="col" class="hide-sm">Last sign-in</th>
-                    <th scope="col"><span class="sr-only">Actions</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var user in _page.Items)
+    <nav class="settings-tabs" aria-label="User management">
+        <a href="admin/users" aria-current="@(ShowingTypes ? null : "page")"><Icon Name="people" Size="16" /> Users</a>
+        @if (_rights.IsAdministrator)
+        {
+            <a href="admin/rights" aria-current="@(ShowingTypes ? "page" : null)"><Icon Name="sliders" Size="16" /> Default rights by type</a>
+        }
+    </nav>
+
+    @if (ShowingTypes && _rights.IsAdministrator)
+    {
+        <TypeRightsTab OnSaved="TypeRightsSavedAsync" />
+    }
+    else
+    {
+        @if (!_rights.IsAdministrator)
+        {
+            <p class="hint">
+                You manage the people of @DepartmentName(_rights.DepartmentId) below @_rights.Type.DisplayName().
+                @if (_rights.Types.Count > 0)
                 {
-                    <tr>
-                        <td>
-                            <strong>@user.DisplayName</strong>
-                            @if (IsMe(user))
-                            {
-                                @* An expression, so the leading space survives Razor's whitespace trimming. *@
-                                <span class="muted">@(" (you)")</span>
-                            }
-                            <br /><span class="muted">@user.UserName</span>
-                        </td>
-                        <td class="hide-sm">@user.Email</td>
-                        <td>@(user.Role == OrganizationRole.Administrator ? "Administrator" : "User")</td>
-                        <td>
-                            @if (!user.IsActive)
-                            {
-                                <span class="lozenge lozenge-off">Deactivated</span>
-                            }
-                            else if (user.IsLockedOut)
-                            {
-                                <span class="lozenge lozenge-warn">Locked</span>
-                            }
-                            else
-                            {
-                                <span class="lozenge lozenge-ok">Active</span>
-                            }
-                        </td>
-                        <td class="hide-sm">
-                            @if (user.LastSignInAt is { } lastSignIn)
-                            {
-                                <LocalTime Value="lastSignIn" />
-                            }
-                            else
-                            {
-                                <span class="muted">Never</span>
-                            }
-                        </td>
-                        <td class="actions">
-                            @if (_confirming?.UserId == user.Id)
-                            {
-                                <span class="confirm-text">@_confirming.Question</span>
-                                <button type="button" id="confirm-action" class="btn btn-sm btn-primary" @onclick="ConfirmAsync">Yes, @_confirming.Verb</button>
-                                <button type="button" class="btn btn-sm" @onclick="CancelConfirmation">Cancel</button>
-                            }
-                            else
-                            {
-                                @* Names include the account, so NVDA's elements list tells the rows apart. *@
-                                <button type="button" id="@ActionId(user.Id, AdminAction.ResetPassword)" class="btn btn-sm"
-                                        aria-label="Reset password: @user.UserName" @onclick="() => Ask(user, AdminAction.ResetPassword)">Reset password</button>
-                                @if (user.Role == OrganizationRole.Administrator)
-                                {
-                                    <button type="button" id="@ActionId(user.Id, AdminAction.RemoveAdministrator)" class="btn btn-sm"
-                                            aria-label="Remove administrator: @user.UserName" @onclick="() => Ask(user, AdminAction.RemoveAdministrator)">Remove administrator</button>
-                                }
-                                else if (user.IsActive)
-                                {
-                                    <button type="button" id="@ActionId(user.Id, AdminAction.MakeAdministrator)" class="btn btn-sm"
-                                            aria-label="Make administrator: @user.UserName" @onclick="() => Ask(user, AdminAction.MakeAdministrator)">Make administrator</button>
-                                }
-                                @if (user.IsActive)
-                                {
-                                    <button type="button" id="@ActionId(user.Id, AdminAction.Deactivate)" class="btn btn-sm btn-danger"
-                                            aria-label="Deactivate: @user.UserName" @onclick="() => Ask(user, AdminAction.Deactivate)">Deactivate</button>
-                                }
-                                else
-                                {
-                                    <button type="button" id="@ActionId(user.Id, AdminAction.Reactivate)" class="btn btn-sm"
-                                            aria-label="Reactivate: @user.UserName" @onclick="() => Ask(user, AdminAction.Reactivate)">Reactivate</button>
-                                }
-                            }
-                        </td>
-                    </tr>
+                    @($" You can add: {string.Join(", ", _rights.Types.Select(t => t.DisplayName()))}.")
                 }
-            </tbody>
-        </table>
-    </div>
-    <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="Account pages" OnPageChanged="GoToPageAsync" />
-}
-@if (_actionError is not null)
-{
-    <div class="alert alert-error" role="alert">@_actionError</div>
+            </p>
+        }
+
+        <div class="um-filters" role="group" aria-label="Show users of a type">
+            <button type="button" class="um-chip @(_type is null ? "is-on" : "")" aria-pressed="@(_type is null ? "true" : "false")"
+                    @onclick="() => FilterTypeAsync(null)">All <span class="um-chip-count">@_counts.Values.Sum().ToString("N0", System.Globalization.CultureInfo.CurrentCulture)</span></button>
+            @foreach (var type in UserTypes.Ordered)
+            {
+                <button type="button" class="um-chip um-chip-@type.CssName() @(_type == type ? "is-on" : "")" aria-pressed="@(_type == type ? "true" : "false")"
+                        @onclick="() => FilterTypeAsync(type)">@type.DisplayName() <span class="um-chip-count">@_counts.GetValueOrDefault(type).ToString("N0", System.Globalization.CultureInfo.CurrentCulture)</span></button>
+            }
+        </div>
+
+        <div class="toolbar um-toolbar">
+            <div class="um-search">
+                <Icon Name="search" Size="16" />
+                <label for="user-search" class="sr-only">Search users</label>
+                <input id="user-search" type="search" class="input" placeholder="Search by name, user name or email"
+                       @bind="_search" @bind:event="oninput" @bind:after="SearchAsync" />
+            </div>
+            <label for="user-status" class="sr-only">Status</label>
+            <select id="user-status" class="select um-status" value="@StatusValue" @onchange="StatusChangedAsync">
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="deactivated">Deactivated</option>
+            </select>
+            <span class="spacer"></span>
+            <span class="hint um-tip"><Icon Name="info" Size="14" /> Double-click a user to open their rights.</span>
+        </div>
+
+        @if (_page is null)
+        {
+            <p aria-busy="true">Loading…</p>
+        }
+        else if (_page.Items.Count == 0)
+        {
+            <EmptyState Title="No users found" Text="Try another search or type." />
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="tbl people-table" data-testid="users-table">
+                    <caption class="sr-only">Users, page @_page.PageNumber of @Math.Max(1, _page.PageCount)</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">User</th>
+                            <th scope="col">Type</th>
+                            <th scope="col" class="hide-sm">Department</th>
+                            <th scope="col">Status</th>
+                            <th scope="col" class="hide-sm">Last sign-in</th>
+                            <th scope="col"><span class="sr-only">Open</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in _page.Items)
+                        {
+                            <tr @key="user.Id" class="um-row" data-user="@user.UserName" title="Double-click to open @user.DisplayName"
+                                @ondblclick="() => Open(user)">
+                                <td>
+                                    <div class="person-cell">
+                                        <Avatar UserId="user.Id" Initials="@Initials(user.DisplayName)" />
+                                        <span class="um-person">
+                                            <span class="um-name-line">
+                                                <button type="button" class="um-name" @onclick="() => Open(user)">@user.DisplayName</button>
+                                                @if (user.Id == Me.UserId)
+                                                {
+                                                    @* An expression, so the leading space survives Razor's whitespace trimming. *@
+                                                    <span class="muted">@(" (you)")</span>
+                                                }
+                                            </span>
+                                            <span class="um-meta" title="@user.UserName · @user.Email">@user.UserName · @user.Email</span>
+                                        </span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <UserTypeBadge Type="user.Type" />
+                                    @if (HasOwnRights(user))
+                                    {
+                                        <span class="um-custom" title="Rights added or removed for this person">Own rights</span>
+                                    }
+                                </td>
+                                <td class="hide-sm"><span class="um-dept" title="@user.Department">@(user.Department ?? "—")</span></td>
+                                <td>
+                                    @if (!user.IsActive)
+                                    {
+                                        <span class="lozenge lozenge-off">Deactivated</span>
+                                    }
+                                    else if (user.IsLockedOut)
+                                    {
+                                        <span class="lozenge lozenge-warn">Locked</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="lozenge lozenge-ok">Active</span>
+                                    }
+                                </td>
+                                <td class="hide-sm um-when">
+                                    @if (user.LastSignInAt is { } lastSignIn)
+                                    {
+                                        <LocalTime Value="lastSignIn" />
+                                    }
+                                    else
+                                    {
+                                        <span class="muted">Never</span>
+                                    }
+                                </td>
+                                <td class="um-open">
+                                    <button type="button" class="icon-btn" aria-label="Open @user.DisplayName" @onclick="() => Open(user)">
+                                        <Icon Name="chevron-right" Size="16" />
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <Pager PageNumber="_page.PageNumber" PageCount="_page.PageCount" Label="User pages" OnPageChanged="GoToPageAsync" />
+        }
+
+        <AddUserDialog @ref="_addDialog" Caller="_rights" Departments="_departments" OnCreated="CreatedAsync" OnOpenRights="OpenCreatedAsync" />
+        <UserPanel @ref="_panel" Caller="_rights" TypeRights="_typeRights" Departments="_departments" OnChanged="ReloadAsync" />
+    }
 }
 
 @code {
+    private PeopleRights? _rights;
+    private IReadOnlyList<DepartmentInfo> _departments = [];
+    private IReadOnlyDictionary<UserType, Rights> _typeRights = new Dictionary<UserType, Rights>();
+    private IReadOnlyDictionary<UserType, int> _counts = new Dictionary<UserType, int>();
     private Page<UserSummary>? _page;
     private string _search = "";
+    private UserType? _type;
+    private bool? _active;
     private int _pageNumber = 1;
-    private bool _adding;
-    private NewUserInput _newUser = new();
-    private AppError? _addError;
-    private Secret? _secret;
-    private bool _copied;
-    private PendingAction? _confirming;
-    private string? _actionError;
-    private string? _focusAfterRender;
+    private int _loads;
+    private AddUserDialog? _addDialog;
+    private UserPanel? _panel;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    private bool ShowingTypes => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/rights", StringComparison.OrdinalIgnoreCase);
+
+    private string StatusValue => _active switch
+    {
+        true => "active",
+        false => "deactivated",
+        _ => "",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rights = await Admin.RightsAsync(CancellationToken.None);
+        if (!_rights.CanList)
+        {
+            return;
+        }
+
+        _departments = await Organization.DepartmentsAsync(CancellationToken.None);
+        _typeRights = await Organization.TypeRightsAsync(CancellationToken.None);
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _counts = await Admin.TypeCountsAsync(CancellationToken.None);
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
-        var result = await Admin.ListUsersAsync(_search, new PageRequest(_pageNumber), CancellationToken.None);
-        _page = result.Value ?? Page<UserSummary>.Empty(PageRequest.First);
+        // Searches overlap while someone types: only the answer to the latest one is shown.
+        var load = ++_loads;
+        var result = await Admin.FindUsersAsync(new UserQuery(_search, _type, _active), new PageRequest(_pageNumber), CancellationToken.None);
+        if (load == _loads)
+        {
+            _page = result.Value ?? Page<UserSummary>.Empty(PageRequest.First);
+        }
     }
 
     private async Task SearchAsync()
     {
+        _pageNumber = 1;
+        await LoadAsync();
+    }
+
+    private async Task FilterTypeAsync(UserType? type)
+    {
+        _type = type;
+        _pageNumber = 1;
+        await LoadAsync();
+    }
+
+    private async Task StatusChangedAsync(ChangeEventArgs e)
+    {
+        _active = e.Value?.ToString() switch
+        {
+            "active" => true,
+            "deactivated" => false,
+            _ => null,
+        };
         _pageNumber = 1;
         await LoadAsync();
     }
@@ -219,176 +262,30 @@ else
         await LoadAsync();
     }
 
-    private void StartAdding()
+    private void Open(UserSummary user) => _panel?.Open(user);
+
+    private async Task CreatedAsync(CreatedUser created) => await ReloadAsync();
+
+    /// <summary>"Open their rights" after adding: finds the new person and opens them.</summary>
+    private async Task OpenCreatedAsync(CreatedUser created)
     {
-        _adding = true;
-        _addError = null;
-        _newUser = new();
-    }
-
-    private string? FieldError(string field) =>
-        _addError?.FieldErrors is { } errors && errors.TryGetValue(field, out var messages) ? string.Join(" ", messages) : null;
-
-    private async Task AddAsync()
-    {
-        var result = await Admin.AddUserAsync(_newUser.UserName, _newUser.DisplayName, _newUser.Email, CancellationToken.None);
-        if (!result.IsSuccess)
+        var found = await Admin.FindUsersAsync(new UserQuery(created.UserName), PageRequest.First, CancellationToken.None);
+        if (found.Value?.Items.FirstOrDefault(u => u.Id == created.Id) is { } user)
         {
-            _addError = result.Error;
-            return;
-        }
-
-        _adding = false;
-        _copied = false;
-        _secret = new Secret($"Account {result.Value!.UserName} created.", result.Value.TemporaryPassword);
-        Announcer.Announce($"Account {result.Value.UserName} created.");
-        await LoadAsync();
-    }
-
-    private bool IsMe(UserSummary user) => user.Id == Me.UserId;
-
-    private static string ActionId(Guid userId, AdminAction action) => $"{action}-{userId:N}";
-
-    private void Ask(UserSummary user, AdminAction action)
-    {
-        _actionError = null;
-        _confirming = action switch
-        {
-            AdminAction.ResetPassword => new PendingAction(user.Id, user.UserName, action, $"Reset the password of {user.UserName}?", "reset"),
-            AdminAction.Deactivate => new PendingAction(user.Id, user.UserName, action, $"Deactivate {user.UserName}? They will be signed out.", "deactivate"),
-            AdminAction.MakeAdministrator => new PendingAction(user.Id, user.UserName, action,
-                $"Make {user.UserName} an administrator? They will be able to manage accounts and every project.", "make administrator"),
-            AdminAction.RemoveAdministrator => new PendingAction(user.Id, user.UserName, action,
-                IsMe(user)
-                    ? "Remove your own administrator rights? You will no longer be able to manage accounts."
-                    : $"Remove the administrator rights of {user.UserName}?",
-                "remove"),
-            _ => new PendingAction(user.Id, user.UserName, action, $"Reactivate {user.UserName}?", "reactivate"),
-        };
-        _focusAfterRender = "confirm-action";
-    }
-
-    private void CancelConfirmation()
-    {
-        if (_confirming is { } pending)
-        {
-            _focusAfterRender = ActionId(pending.UserId, pending.Action);
-        }
-
-        _confirming = null;
-    }
-
-    private async Task ConfirmAsync()
-    {
-        if (_confirming is not { } pending)
-        {
-            return;
-        }
-
-        _confirming = null;
-        // Every row has "Reset password", so focus stays in the row whatever the action changed.
-        _focusAfterRender = ActionId(pending.UserId, AdminAction.ResetPassword);
-        switch (pending.Action)
-        {
-            case AdminAction.ResetPassword:
-                var reset = await Admin.ResetPasswordAsync(pending.UserId, CancellationToken.None);
-                if (reset.IsSuccess)
-                {
-                    _copied = false;
-                    _secret = new Secret($"The password of {pending.UserName} was reset.", reset.Value!);
-                    Announcer.Announce($"Password of {pending.UserName} reset.");
-                }
-                else
-                {
-                    _actionError = reset.Error!.Message;
-                }
-
-                break;
-            case AdminAction.Deactivate:
-                var deactivated = await Admin.DeactivateAsync(pending.UserId, CancellationToken.None);
-                _actionError = deactivated.Error?.Message;
-                if (deactivated.IsSuccess)
-                {
-                    Announcer.Announce($"{pending.UserName} deactivated.");
-                }
-
-                break;
-            case AdminAction.Reactivate:
-                var reactivated = await Admin.ReactivateAsync(pending.UserId, CancellationToken.None);
-                _actionError = reactivated.Error?.Message;
-                if (reactivated.IsSuccess)
-                {
-                    Announcer.Announce($"{pending.UserName} reactivated.");
-                }
-
-                break;
-            default:
-                var makeAdministrator = pending.Action == AdminAction.MakeAdministrator;
-                var changed = await Admin.ChangeRoleAsync(pending.UserId,
-                    makeAdministrator ? OrganizationRole.Administrator : OrganizationRole.User, CancellationToken.None);
-                _actionError = changed.Error?.Message;
-                if (changed.IsSuccess)
-                {
-                    Announcer.Announce(makeAdministrator
-                        ? $"{pending.UserName} is now an administrator."
-                        : $"{pending.UserName} is no longer an administrator.");
-                    if (!makeAdministrator && pending.UserId == Me.UserId)
-                    {
-                        // This page is for administrators only.
-                        Navigation.NavigateTo("projects");
-                        return;
-                    }
-                }
-
-                break;
-        }
-
-        await LoadAsync();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        // Keyboard users keep their place: the row's buttons are swapped for the confirmation and back.
-        if (_focusAfterRender is { } id)
-        {
-            _focusAfterRender = null;
-            try
-            {
-                await JS.InvokeVoidAsync("upms.focusById", id);
-            }
-            catch (JSDisconnectedException)
-            {
-            }
+            Open(user);
         }
     }
 
-    private async Task CopySecretAsync()
-    {
-        if (_secret is not null)
-        {
-            _copied = await JS.InvokeAsync<bool>("upms.clipboard.copy", _secret.Password);
-        }
-    }
+    private async Task TypeRightsSavedAsync() => _typeRights = await Organization.TypeRightsAsync(CancellationToken.None);
 
-    private enum AdminAction
-    {
-        ResetPassword,
-        Deactivate,
-        Reactivate,
-        MakeAdministrator,
-        RemoveAdministrator,
-    }
+    private string DepartmentName(long? id) => _departments.FirstOrDefault(d => d.Id == id)?.Name ?? "your department";
 
-    private sealed record PendingAction(Guid UserId, string UserName, AdminAction Action, string Question, string Verb);
+    /// <summary>Rights added or removed for this person alone, within what their type can have.</summary>
+    private static bool HasOwnRights(UserSummary user) =>
+        user.Type != UserType.Admin && ((user.Granted | user.Denied) & RightsCatalog.Allowed(user.Type)) != Rights.None;
 
-    private sealed record Secret(string Heading, string Password);
-
-    private sealed class NewUserInput
-    {
-        public string UserName { get; set; } = "";
-
-        public string DisplayName { get; set; } = "";
-
-        public string Email { get; set; } = "";
-    }
+    private static string Initials(string name) => string.Concat(name
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .Take(2)
+        .Select(part => char.ToUpperInvariant(part[0])));
 }

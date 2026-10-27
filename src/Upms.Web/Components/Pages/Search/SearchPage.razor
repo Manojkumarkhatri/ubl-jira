@@ -1,0 +1,425 @@
+@page "/search"
+@using System.Globalization
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Drawer
+@inject ISearchService Search
+@inject ISavedFilterService Filters
+@inject IProjectService Projects
+@inject ICurrentUser CurrentUser
+@inject LiveAnnouncer Announcer
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@* Search across projects (Phase 4 FR-034–FR-041; contracts/ui-routes.md): words and filters live in the address, results
+   come 50 at a time from projects the viewer can see, and a result opens in the drawer over them. *@
+<PageTitle>Search · U-PMS</PageTitle>
+
+<div class="page search-page">
+    <h1>Search</h1>
+    <form class="search-form" role="search" @onsubmit="SubmitWords" @onsubmit:preventDefault="true">
+        <label for="search-words" class="sr-only">Words to search for</label>
+        <input id="search-words" class="input" type="search" placeholder="Words in titles, descriptions and comments" @bind="_wordsDraft" @bind:event="oninput" />
+        <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+
+    <div class="search-layout">
+        <div class="search-main">
+            <fieldset class="search-filters">
+                <legend class="sr-only">Filters</legend>
+                <div class="field">
+                    <label for="filter-project">Space</label>
+                    <select id="filter-project" class="select" value="@(State.Projects.FirstOrDefault() ?? string.Empty)" @onchange="e => Go(Latest.WithProject(e.Value?.ToString()))">
+                        <option value="">Any space</option>
+                        @foreach (var project in _projects)
+                        {
+                            <option value="@project.Key">@project.Key – @project.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="filter-kind">Type</label>
+                    <select id="filter-kind" class="select" value="@(State.Kinds.Count == 1 ? SearchState.NameOf(State.Kinds[0]) : string.Empty)"
+                            @onchange="e => Go(Latest.WithKind(Kinds.Where(k => SearchState.NameOf(k) == e.Value?.ToString()).Select(k => (WorkItemType?)k).FirstOrDefault()))">
+                        <option value="">Any type</option>
+                        @foreach (var kind in Kinds)
+                        {
+                            <option value="@SearchState.NameOf(kind)">@WorkItemTypes.DisplayName(kind)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="filter-category">Status type</label>
+                    <select id="filter-category" class="select" value="@(State.Categories.Count == 1 ? SearchState.NameOf(State.Categories[0]) : string.Empty)"
+                            @onchange="e => Go(Latest.WithCategory(Enum.GetValues<StatusCategory>().Where(c => SearchState.NameOf(c) == e.Value?.ToString()).Select(c => (StatusCategory?)c).FirstOrDefault()))">
+                        <option value="">Any status type</option>
+                        @foreach (var category in Enum.GetValues<StatusCategory>())
+                        {
+                            <option value="@SearchState.NameOf(category)">@CategoryText(category)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="filter-priority">Priority</label>
+                    <select id="filter-priority" class="select" value="@(State.Priorities.Count == 1 ? State.Priorities[0].ToString().ToLowerInvariant() : string.Empty)"
+                            @onchange="e => Go(Latest.WithPriority(Enum.TryParse<Priority>(e.Value?.ToString(), true, out var p) ? p : null))">
+                        <option value="">Any priority</option>
+                        @foreach (var priority in Enum.GetValues<Priority>())
+                        {
+                            <option value="@priority.ToString().ToLowerInvariant()">@priority</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="filter-assignee">Assignee</label>
+                    <select id="filter-assignee" class="select" value="@AssigneeValue" @onchange="e => Go(Latest.WithAssignee(e.Value?.ToString() ?? string.Empty))">
+                        <option value="">Anyone</option>
+                        <option value="@SearchState.MeValue">Me</option>
+                        <option value="@SearchState.UnassignedValue">Unassigned</option>
+                    </select>
+                </div>
+                <form class="field label-filter" @onsubmit="AddLabel" @onsubmit:preventDefault="true">
+                    <label for="filter-label">Label</label>
+                    <input id="filter-label" class="input" type="search" maxlength="50" autocomplete="off" placeholder="Items with any of the labels"
+                           @bind="_labelDraft" @bind:event="oninput" />
+                </form>
+                <div class="field">
+                    <label class="checkbox"><input type="checkbox" checked="@State.CreatedByMe" @onchange="e => Go(Latest.WithCreatedByMe(e.Value is true))" /> Created by me</label>
+                </div>
+                @foreach (var (name, label, range) in new[] { ("created", "Created", State.Created), ("updated", "Updated", State.Updated), ("due", "Due", State.Due), ("resolved", "Completed", State.Resolved) })
+                {
+                    <fieldset class="field date-range">
+                        <legend>@label</legend>
+                        <label for="@($"filter-{name}-from")">From</label>
+                        <input id="@($"filter-{name}-from")" class="input" type="date" value="@Iso(range?.From)" @onchange="e => DateChanged(name, e, from: true)" />
+                        <label for="@($"filter-{name}-to")">To</label>
+                        <input id="@($"filter-{name}-to")" class="input" type="date" value="@Iso(range?.To)" @onchange="e => DateChanged(name, e, from: false)" />
+                    </fieldset>
+                }
+            </fieldset>
+
+            @if (Chips.Count > 0)
+            {
+                <ul class="chips" aria-label="Active filters" data-testid="search-chips">
+                    @foreach (var (text, without) in Chips)
+                    {
+                        <li class="chip">@text <button type="button" class="chip-remove" aria-label="Remove filter @text" @onclick="() => Go(without)">×</button></li>
+                    }
+                </ul>
+            }
+
+            <div class="results-head">
+                <p class="result-count" role="status" data-testid="result-count">@CountText</p>
+                <label for="search-sort">Sort by</label>
+                <select id="search-sort" class="select" value="@SearchState.NameOf(State.Sort)" @onchange="SortChanged">
+                    @foreach (var sort in Enum.GetValues<SearchSort>())
+                    {
+                        <option value="@SearchState.NameOf(sort)">@SortText(sort)</option>
+                    }
+                </select>
+                <button type="button" class="btn btn-ghost btn-sm" data-testid="sort-direction" @onclick="() => Go(Latest with { Descending = !Latest.Descending, Page = 1 })">
+                    @(State.Descending ? "Descending" : "Ascending")
+                </button>
+            </div>
+
+            @foreach (var value in _results?.UnavailableValues ?? [])
+            {
+                <p class="alert alert-warn" data-testid="unavailable">@value is no longer available to you, so it matches nothing.</p>
+            }
+
+            @if (_error is not null)
+            {
+                <p class="alert alert-error" role="alert">@_error</p>
+            }
+            else if (_results is { } results)
+            {
+                @if (results.Rows.Items.Count == 0)
+                {
+                    <p class="hint">@(State.HasCriteria ? "No work items match." : "Type words or choose filters to search.")</p>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="list-table search-results">
+                            <caption class="sr-only">Search results</caption>
+                            <thead>
+                                <tr><th scope="col">Key</th><th scope="col">Title</th><th scope="col">Space</th><th scope="col">Status</th><th scope="col">Assignee</th><th scope="col">Labels</th><th scope="col">Updated</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in results.Rows.Items)
+                                {
+                                    <tr @key="row.Key" data-testid="search-result">
+                                        <td><TypeIcon Type="row.Type" /> <span class="key">@row.Key</span></td>
+                                        <td><a id="@LinkId(row.Key)" href="@TaskHref(row.Key)">@row.Title</a> <EpicTag Container="row.Container" /></td>
+                                        <td>@row.ProjectKey</td>
+                                        <td><span class="status-pill">@row.Status.Name</span></td>
+                                        <td>@(row.Assignee?.DisplayName ?? "Unassigned")</td>
+                                        <td>@string.Join(", ", row.Labels)</td>
+                                        <td><LocalTime Value="row.UpdatedAt" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pager PageNumber="results.Rows.PageNumber" PageCount="results.Rows.PageCount" Label="Result pages" OnPageChanged="p => Go(Latest.WithPage(p))" />
+                }
+            }
+        </div>
+
+        <SavedFilters CurrentQuery="@State.ToQueryString()" FilterId="@State.FilterId" Projects="_projects" OnSaved="FilterSaved" OnDeleted="FilterDeleted" />
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(TaskKey))
+{
+    <TaskDrawer WorkItemKey="@TaskKey" OnClose="CloseDrawer" OnChanged="LoadAsync" />
+}
+
+@code {
+    private static readonly IReadOnlyList<WorkItemType> Kinds =
+        [WorkItemType.Epic, WorkItemType.Story, WorkItemType.Task, WorkItemType.Bug, WorkItemType.Subtask, WorkItemType.Stage, WorkItemType.Milestone];
+
+    private SearchResults? _results;
+    private IReadOnlyList<ProjectSummary> _projects = [];
+    private string? _error;
+    private string? _loadedAddress;
+    private string _wordsDraft = string.Empty;
+    private string _labelDraft = string.Empty;
+    private string? _focusKey;
+    private long? _loadedFilter;
+
+    // A new address reaches the page only after a round trip through the browser: a choice made meanwhile builds on the
+    // one asked for last, not on the address still shown.
+    private SearchState? _requested;
+
+    [SupplyParameterFromQuery(Name = "task")]
+    public string? TaskKey { get; set; }
+
+    private SearchState State { get; set; } = SearchState.Default;
+
+    private SearchState Latest => _requested ?? State;
+
+    private string CountText => _results is null ? string.Empty : _results.Rows.TotalCount == 1 ? "1 result" : $"{_results.Rows.TotalCount:N0} results";
+
+    private string AssigneeValue => (State.Me, State.Unassigned) switch
+    {
+        (true, false) => SearchState.MeValue,
+        (false, true) => SearchState.UnassignedValue,
+        _ => string.Empty,
+    };
+
+    /// <summary>Each active filter, with the search without it (FR-035).</summary>
+    private IReadOnlyList<(string Text, SearchState Without)> Chips
+    {
+        get
+        {
+            var chips = new List<(string, SearchState)>();
+            foreach (var project in State.Projects)
+            {
+                chips.Add(($"Space: {project}", Latest with { Projects = [.. Latest.Projects.Where(p => p != project)], Page = 1 }));
+            }
+
+            foreach (var kind in State.Kinds)
+            {
+                chips.Add(($"Type: {WorkItemTypes.DisplayName(kind)}", Latest with { Kinds = [.. Latest.Kinds.Where(k => k != kind)], Page = 1 }));
+            }
+
+            foreach (var category in State.Categories)
+            {
+                chips.Add(($"Status type: {CategoryText(category)}", Latest with { Categories = [.. Latest.Categories.Where(c => c != category)], Page = 1 }));
+            }
+
+            foreach (var priority in State.Priorities)
+            {
+                chips.Add(($"Priority: {priority}", Latest with { Priorities = [.. Latest.Priorities.Where(p => p != priority)], Page = 1 }));
+            }
+
+            if (State.Me)
+            {
+                chips.Add(("Assignee: me", Latest with { Me = false, Page = 1 }));
+            }
+
+            if (State.Unassigned)
+            {
+                chips.Add(("Unassigned", Latest with { Unassigned = false, Page = 1 }));
+            }
+
+            if (State.People.Count > 0)
+            {
+                chips.Add(($"Assignees: {State.People.Count}", Latest with { People = [], Page = 1 }));
+            }
+
+            if (State.CreatedByMe || State.Creators.Count > 0)
+            {
+                chips.Add(("Created by me", Latest with { CreatedByMe = false, Creators = [], Page = 1 }));
+            }
+
+            foreach (var label in State.Labels)
+            {
+                chips.Add(($"Label: {label}", Latest with { Labels = [.. Latest.Labels.Where(l => l != label)], Page = 1 }));
+            }
+
+            AddRange(chips, "Created", State.Created, Latest.WithCreated(null));
+            AddRange(chips, "Updated", State.Updated, Latest.WithUpdated(null));
+            AddRange(chips, "Due", State.Due, Latest.WithDue(null));
+            AddRange(chips, "Completed", State.Resolved, Latest.WithResolved(null));
+            return chips;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var projects = await Projects.ListAsync(new Application.Common.PageRequest(1, Application.Common.PageRequest.MaxPageSize), CancellationToken.None);
+        _projects = projects.IsSuccess ? projects.Value!.Items : [];
+    }
+
+    // Opening or closing the drawer changes only ?task: the search is not run again.
+    protected override async Task OnParametersSetAsync()
+    {
+        State = SearchState.Parse(new Uri(Navigation.Uri).Query);
+        if (State.FilterId is { } filterId && !State.HasCriteria && _loadedFilter != filterId)
+        {
+            // ?filter={id} alone runs the saved filter: its search goes into the address (FR-039).
+            _loadedFilter = filterId;
+            var filter = await Filters.GetAsync(filterId, CancellationToken.None);
+            if (filter.IsSuccess)
+            {
+                Go(SearchState.Parse(filter.Value!.Query) with { FilterId = filterId }, replace: true);
+                return;
+            }
+
+            _error = "This filter was deleted or is no longer shared with you.";
+            return;
+        }
+
+        var address = AddressOf(State);
+        if (_requested is { } requested && AddressOf(requested) == address)
+        {
+            _requested = null;
+        }
+
+        if (address == _loadedAddress)
+        {
+            return;
+        }
+
+        _loadedAddress = address;
+        _wordsDraft = State.Words;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusKey is { } key && string.IsNullOrEmpty(TaskKey))
+        {
+            // Focus returns to the result whose drawer was closed (FR-038).
+            _focusKey = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusByIdIfLost", LinkId(key));
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var address = _loadedAddress;
+        var found = await Search.SearchAsync(State.ToQuery(CurrentUser.UserId), new Application.Common.PageRequest(State.Page), CancellationToken.None);
+        if (address != _loadedAddress)
+        {
+            return; // the answer for an older address, which arrived after a newer one was asked for
+        }
+
+        _error = found.IsSuccess ? null : found.Error!.Message;
+        _results = found.IsSuccess ? found.Value : null;
+        if (_results is not null)
+        {
+            Announcer.Announce(CountText);
+        }
+    }
+
+    private string AddressOf(SearchState state) => string.Join('&', state.ToParameters().Select(p => $"{p.Key}={p.Value}"));
+
+    private void Go(SearchState state, bool replace = false)
+    {
+        _requested = state;
+        var parameters = new Dictionary<string, object?>(state.ToParameters()) { ["task"] = null };
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(parameters), replace: replace);
+    }
+
+    private void SubmitWords() => Go(Latest.WithWords(_wordsDraft));
+
+    /// <summary>Adds the typed label; results have any of the chosen labels (Phase 4 FR-046).</summary>
+    private void AddLabel()
+    {
+        var label = _labelDraft.Trim();
+        _labelDraft = string.Empty;
+        if (label.Length > 0 && !Latest.Labels.Contains(label, StringComparer.OrdinalIgnoreCase))
+        {
+            Go(Latest.WithLabels([.. Latest.Labels, label]));
+        }
+    }
+
+    private void SortChanged(ChangeEventArgs e)
+    {
+        var sort = Enum.GetValues<SearchSort>().FirstOrDefault(s => SearchState.NameOf(s) == e.Value?.ToString());
+        Go(Latest with { Sort = sort, Descending = sort is SearchSort.Updated or SearchSort.Created, Page = 1 });
+    }
+
+    private void DateChanged(string name, ChangeEventArgs e, bool from)
+    {
+        DateOnly? date = DateOnly.TryParse(e.Value?.ToString(), CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+        var latest = Latest;
+        DateRange Change(DateRange? range) => from ? new DateRange(date, range?.To) : new DateRange(range?.From, date);
+        Go(name switch
+        {
+            "created" => latest.WithCreated(Change(latest.Created)),
+            "updated" => latest.WithUpdated(Change(latest.Updated)),
+            "resolved" => latest.WithResolved(Change(latest.Resolved)),
+            _ => latest.WithDue(Change(latest.Due)),
+        });
+    }
+
+    private void FilterSaved(long filterId) => Go(Latest with { FilterId = filterId });
+
+    private void FilterDeleted() => Go(Latest with { FilterId = null });
+
+    private string TaskHref(string key) => Navigation.ToBaseRelativePath(Navigation.GetUriWithQueryParameter("task", key));
+
+    private static string LinkId(string key) => $"search-result-{key}";
+
+    private void CloseDrawer()
+    {
+        _focusKey = TaskKey;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
+    }
+
+    private static void AddRange(List<(string, SearchState)> chips, string name, DateRange? range, SearchState without)
+    {
+        if (range is not null)
+        {
+            chips.Add(($"{name}: {(range.From is { } f ? f.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : "any time")} to {(range.To is { } t ? t.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : "now")}", without));
+        }
+    }
+
+    private static string Iso(DateOnly? date) => date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static string CategoryText(StatusCategory category) => category switch
+    {
+        StatusCategory.ToDo => "To do",
+        StatusCategory.InProgress => "In progress",
+        _ => "Done",
+    };
+
+    private static string SortText(SearchSort sort) => sort switch
+    {
+        SearchSort.Updated => "Last update",
+        SearchSort.Created => "Created",
+        SearchSort.Key => "Key",
+        SearchSort.Priority => "Priority",
+        _ => "Due date",
+    };
+}

@@ -79,10 +79,72 @@
       scroller.addEventListener('pointercancel', (e) => finish(e, true));
     },
 
-    // Brings today's line into the middle of the visible track.
-    scrollToToday(scroller) {
+    // Draws finish-to-start arrows (Phase 3 FR-050): from the end of the item waited for to the start of the waiting
+    // item. The arrows are hidden from assistive technology; each bar's name says what it waits for.
+    drawArrows(scroller, deps) {
+      const svg = scroller && scroller.querySelector('svg.tl-arrows');
+      if (!svg) return;
+      const table = svg.parentElement;
+      const ns = 'http://www.w3.org/2000/svg';
+      svg.setAttribute('width', table.scrollWidth);
+      svg.setAttribute('height', table.scrollHeight);
+      svg.replaceChildren();
+      const defs = document.createElementNS(ns, 'defs');
+      for (const [id, cls] of [['tl-head', 'tl-arrow-head'], ['tl-head-late', 'tl-arrow-head tl-arrow-late']]) {
+        const marker = document.createElementNS(ns, 'marker');
+        marker.setAttribute('id', id);
+        marker.setAttribute('viewBox', '0 0 8 8');
+        marker.setAttribute('refX', '8');
+        marker.setAttribute('refY', '4');
+        marker.setAttribute('markerWidth', '8');
+        marker.setAttribute('markerHeight', '8');
+        marker.setAttribute('orient', 'auto');
+        const tip = document.createElementNS(ns, 'path');
+        tip.setAttribute('d', 'M0,0 L8,4 L0,8 z');
+        tip.setAttribute('class', cls);
+        marker.appendChild(tip);
+        defs.appendChild(marker);
+      }
+      svg.appendChild(defs);
+      const origin = table.getBoundingClientRect();
+      for (const dep of deps || []) {
+        const from = document.getElementById(`tl-bar-${dep.from}`);
+        const to = document.getElementById(`tl-bar-${dep.to}`);
+        if (!from || !to || !table.contains(from) || !table.contains(to)) continue;
+        const a = from.getBoundingClientRect();
+        const b = to.getBoundingClientRect();
+        const x1 = a.right - origin.left;
+        const y1 = a.top + a.height / 2 - origin.top;
+        const x2 = b.left - origin.left;
+        const y2 = b.top + b.height / 2 - origin.top;
+        const bend = Math.max(x1 + 8, Math.min(x2 - 8, x1 + 16));
+        const path = document.createElementNS(ns, 'path');
+        path.setAttribute('d', x2 - 8 >= x1 + 8
+          ? `M${x1},${y1} H${bend} V${y2} H${x2}`
+          : `M${x1},${y1} h8 V${(y1 + y2) / 2} H${x2 - 8} V${y2} H${x2}`);
+        path.setAttribute('class', dep.late ? 'tl-arrow tl-arrow-late' : 'tl-arrow');
+        path.setAttribute('marker-end', dep.late ? 'url(#tl-head-late)' : 'url(#tl-head)');
+        svg.appendChild(path);
+      }
+    },
+
+    // Brings today's line a third of the way into the chart, past the list of work on the left, as Jira's "Today"
+    // does; when asked from the button it scrolls smoothly and the line flashes so the jump is seen.
+    scrollToToday(scroller, smooth) {
       const line = scroller && scroller.querySelector('.tl-today');
-      if (line) scroller.scrollLeft = Math.max(0, line.offsetLeft - scroller.clientWidth / 2);
+      if (!line) return;
+      const corner = scroller.querySelector('.tl-corner');
+      const list = corner ? corner.offsetWidth : 0;
+      const x = line.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
+      const left = Math.max(0, x - list - (scroller.clientWidth - list) / 3);
+      scroller.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+      // A page in the background does not animate: make sure the jump happens anyway.
+      if (smooth) setTimeout(() => { if (Math.abs(scroller.scrollLeft - left) > 2) scroller.scrollLeft = left; }, 600);
+      if (smooth) {
+        line.classList.remove('is-flashing');
+        void line.offsetWidth; // restart the animation
+        line.classList.add('is-flashing');
+      }
     }
   };
 })();

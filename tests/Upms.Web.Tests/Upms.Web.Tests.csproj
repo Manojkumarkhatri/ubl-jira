@@ -12,4 +12,9 @@
     <PackageReference Include="Testcontainers.MsSql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Formatted text that tries to run code (Phase 4 SC-007), read by FormattedTextXssTests. -->
+    <None Update="Shared/xss-samples.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

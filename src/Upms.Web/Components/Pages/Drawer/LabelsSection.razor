@@ -1,0 +1,205 @@
+@using Upms.Application.Work
+@inject ILabelService Labels
+@* Labels on an item (Phase 4 FR-042–FR-045, research R18, R25): chips that contributors can remove, and an "Add label"
+   combobox that suggests labels used in the projects the person can see. Enter or a space adds what is typed, or the
+   suggestion chosen with the arrow keys. Viewers see the labels only. *@
+<div class="drawer-section labels-section" data-testid="labels">
+    <h3 id="labels-title-@WorkItemKey" class="section-title">Labels</h3>
+    @if (_labels.Count == 0 && !CanEdit)
+    {
+        <p class="hint">None</p>
+    }
+    else
+    {
+        @* The chips and "Add label" share a line, as Jira's labels field. *@
+        <div class="label-field">
+            @if (_labels.Count > 0)
+            {
+                <ul class="label-list" aria-labelledby="labels-title-@WorkItemKey">
+                    @foreach (var label in _labels)
+                    {
+                        <li @key="label" class="label-chip">
+                            @label
+                            @if (CanEdit)
+                            {
+                                <button type="button" class="chip-remove" aria-label="Remove label @label" disabled="@_busy" @onclick="() => RemoveAsync(label)">×</button>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            @if (CanEdit)
+            {
+                <div class="label-add">
+                    <label for="label-input" class="sr-only">Add label</label>
+                    <input id="label-input" class="input input-sm" type="text" role="combobox" autocomplete="off" spellcheck="false" maxlength="60"
+                           placeholder="@(_labels.Count == 0 ? "Add labels" : "Add label")" aria-autocomplete="list" aria-expanded="@(Open ? "true" : "false")"
+                           aria-controls="label-suggestions" aria-activedescendant="@ActiveId" aria-describedby="label-error"
+                           @bind="_text" @bind:event="oninput" @bind:after="TypedAsync" @onkeydown="KeyDownAsync" @onblur="() => _suggestions = []" />
+                    @if (Open)
+                    {
+                        <ul id="label-suggestions" class="label-suggestions" role="listbox" aria-label="Labels in use">
+                            @for (var i = 0; i < _suggestions.Count; i++)
+                            {
+                                var index = i;
+                                var suggestion = _suggestions[i];
+                                <li id="@OptionId(index)" role="option" aria-selected="@(index == _active ? "true" : "false")"
+                                    class="@(index == _active ? "is-active" : "")" @onmousedown="() => AddAsync(suggestion)" @onmousedown:preventDefault="true">@suggestion</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+        </div>
+        <span id="label-error" class="error-text" role="alert">@_error</span>
+    }
+    <span class="sr-only" role="status">@_status</span>
+</div>
+
+@code {
+    private IReadOnlyList<string> _labels = [];
+    private IReadOnlyList<string> _suggestions = [];
+    private string _text = "";
+    private int _active = -1;
+    private bool _busy;
+    private string? _error;
+    private string? _status;
+
+    [Parameter, EditorRequired]
+    public string WorkItemKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> Initial { get; set; } = [];
+
+    /// <summary>Contributors add and remove labels; Viewers only see them (FR-042, P4_US4_AS8).</summary>
+    [Parameter]
+    public bool CanEdit { get; set; }
+
+    /// <summary>The labels changed: the board and history follow.</summary>
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    private bool Open => _suggestions.Count > 0;
+
+    private string? ActiveId => Open && _active >= 0 ? OptionId(_active) : null;
+
+    private static string OptionId(int index) => $"label-option-{index}";
+
+    protected override void OnInitialized() => _labels = Initial;
+
+    // @bind keeps characters typed while suggestions are on their way; value= with @oninput would put back an older value.
+    private async Task TypedAsync()
+    {
+        var text = _text;
+        _error = null;
+
+        // A label has no spaces, so a space ends one (FR-042).
+        if (text.Length > 0 && char.IsWhiteSpace(text[^1]) && text.Trim().Length > 0)
+        {
+            _text = "";
+            await AddAsync(text.Trim());
+            return;
+        }
+
+        _active = -1;
+        var term = text.Trim();
+        IReadOnlyList<string> found = [];
+        if (term.Length > 0 && await Labels.SuggestAsync(ProjectKey, term, CancellationToken.None) is { IsSuccess: true } suggested)
+        {
+            found = suggested.Value!;
+        }
+
+        if (_text == text)
+        {
+            // An answer for older text is dropped; labels the item already has are not offered again.
+            _suggestions = found.Where(s => !_labels.Contains(s, StringComparer.OrdinalIgnoreCase)).ToList();
+        }
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when Open:
+                _active = (_active + 1) % _suggestions.Count;
+                break;
+            case "ArrowUp" when Open:
+                _active = _active <= 0 ? _suggestions.Count - 1 : _active - 1;
+                break;
+            case "Escape":
+                _suggestions = [];
+                _active = -1;
+                break;
+            case "Enter":
+                var chosen = Open && _active >= 0 ? _suggestions[_active] : _text.Trim();
+                if (chosen.Length > 0)
+                {
+                    await AddAsync(chosen);
+                }
+
+                break;
+        }
+    }
+
+    private async Task AddAsync(string label)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var added = await Labels.AddAsync(WorkItemKey, label, CancellationToken.None);
+            if (!added.IsSuccess)
+            {
+                _error = added.Error!.MessageFor("Label");
+                _text = label;
+                return;
+            }
+
+            _text = "";
+            _suggestions = [];
+            _active = -1;
+            _labels = added.Value!;
+            _status = $"Added the label {_labels.FirstOrDefault(l => l.Equals(label, StringComparison.OrdinalIgnoreCase)) ?? label}.";
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RemoveAsync(string label)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var removed = await Labels.RemoveAsync(WorkItemKey, label, CancellationToken.None);
+            if (!removed.IsSuccess)
+            {
+                _error = removed.Error!.Message;
+                return;
+            }
+
+            _error = null;
+            _labels = removed.Value!;
+            _status = $"Removed the label {label}.";
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

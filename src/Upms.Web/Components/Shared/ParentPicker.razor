@@ -1,0 +1,119 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject ICreateWorkService CreateWork
+@* The Create form's parent (Jira parity pass FR-005): a combobox that finds the space's epics or stages for standard
+   items, or its stories, tasks and bugs for sub-tasks, by key or title. The chosen parent shows as "WEB-1 Card refunds"
+   with a "Clear" button. *@
+<div class="parent-picker">
+    @if (Value is { } chosen)
+    {
+        <div class="parent-chosen">
+            <TypeIcon Type="chosen.Type" /> <span class="key">@chosen.Key</span> <span>@chosen.Title</span>
+            <button type="button" class="btn btn-sm btn-ghost" aria-label="Clear @Label: @chosen.Key" @onclick="ClearAsync">Clear</button>
+        </div>
+    }
+    else
+    {
+        <input id="@Id" class="input" type="text" role="combobox" autocomplete="off" spellcheck="false" maxlength="100"
+               placeholder="Search by key or title" aria-autocomplete="list" aria-expanded="@(Open ? "true" : "false")"
+               aria-controls="@($"{Id}-options")" aria-activedescendant="@ActiveId" aria-describedby="@($"{Id}-error")"
+               aria-invalid="@(Error is null ? "false" : "true")"
+               @bind="_text" @bind:event="oninput" @bind:after="SearchAsync" @onfocus="SearchAsync" @onkeydown="KeyDownAsync"
+               @onblur="() => _found = []" />
+        @if (Open)
+        {
+            <ul id="@($"{Id}-options")" class="label-suggestions" role="listbox" aria-label="@Label">
+                @for (var i = 0; i < _found.Count; i++)
+                {
+                    var index = i;
+                    var option = _found[i];
+                    <li id="@OptionId(index)" role="option" aria-selected="@(index == _active ? "true" : "false")"
+                        class="@(index == _active ? "is-active" : "")" @onmousedown="() => ChooseAsync(option)" @onmousedown:preventDefault="true">
+                        <span class="key">@option.Key</span> @option.Title
+                    </li>
+                }
+            </ul>
+        }
+    }
+    <span id="@($"{Id}-error")" class="error-text" role="alert">@Error</span>
+</div>
+
+@code {
+    private IReadOnlyList<ParentOption> _found = [];
+    private string _text = "";
+    private int _active = -1;
+    private int _request;
+
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = "";
+
+    /// <summary>"Epic", "Stage" or "Parent".</summary>
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string SpaceKey { get; set; } = "";
+
+    /// <summary>The type being created, which decides what can be its parent.</summary>
+    [Parameter, EditorRequired]
+    public WorkItemType Type { get; set; }
+
+    [Parameter]
+    public ParentOption? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<ParentOption?> ValueChanged { get; set; }
+
+    [Parameter]
+    public string? Error { get; set; }
+
+    private bool Open => _found.Count > 0;
+
+    private string? ActiveId => Open && _active >= 0 ? OptionId(_active) : null;
+
+    private string OptionId(int index) => $"{Id}-option-{index}";
+
+    private async Task SearchAsync()
+    {
+        var request = ++_request;
+        var text = _text;
+        var found = await CreateWork.FindParentsAsync(SpaceKey, Type, text, CancellationToken.None);
+        // An answer for older text, or after a choice, is dropped.
+        if (request == _request && _text == text && Value is null)
+        {
+            _found = found.IsSuccess ? found.Value! : [];
+            _active = -1;
+        }
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when Open:
+                _active = (_active + 1) % _found.Count;
+                break;
+            case "ArrowUp" when Open:
+                _active = _active <= 0 ? _found.Count - 1 : _active - 1;
+                break;
+            case "Escape" when Open:
+                _found = [];
+                _active = -1;
+                break;
+            case "Enter" when Open && _active >= 0:
+                await ChooseAsync(_found[_active]);
+                break;
+        }
+    }
+
+    private async Task ChooseAsync(ParentOption option)
+    {
+        _request++;
+        _found = [];
+        _active = -1;
+        _text = "";
+        await ValueChanged.InvokeAsync(option);
+    }
+
+    private async Task ClearAsync() => await ValueChanged.InvokeAsync(null);
+}

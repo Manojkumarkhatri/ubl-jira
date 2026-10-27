@@ -1,0 +1,200 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject ISpaceFieldService Fields
+@* Creates a space field, or changes one: its name, description, and a dropdown's or checkbox's options or a formula. A
+   new field from "Add field" starts with Jira's type tiles; one from a tile on a layout starts with its type. *@
+<ModalDialog @ref="_dialog" Title="@Title" TestId="field-dialog" Class="field-dialog">
+    <ChildContent>
+        @if (_choosingType)
+        {
+            <p class="hint">Choose the kind of field.</p>
+            <div class="field-tiles" role="group" aria-label="Field types">
+                @foreach (var type in FieldIcons.Types)
+                {
+                    <button type="button" class="field-tile" @onclick="() => ChooseType(type)">
+                        <Icon Name="@FieldIcons.For(type)" Size="18" />
+                        <span>@SpaceField.TypeName(type)</span>
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="field-dialog-type"><Icon Name="@FieldIcons.For(_type)" /> @SpaceField.TypeName(_type) field</p>
+            <div class="field">
+                <label for="field-name">Name <span class="required" aria-hidden="true">*</span></label>
+                <input id="field-name" class="input" type="text" maxlength="@SpaceField.NameMaxLength" autocomplete="off" autofocus
+                       @bind="_name" @bind:event="oninput" aria-required="true"
+                       aria-invalid="@(Error("Name") is null ? "false" : "true")" aria-describedby="field-name-error" />
+                <span id="field-name-error" class="error-text" role="alert">@Error("Name")</span>
+            </div>
+            <div class="field">
+                <label for="field-description">Description</label>
+                <textarea id="field-description" class="input" rows="2" maxlength="@SpaceField.DescriptionMaxLength" @bind="_description" @bind:event="oninput"
+                          aria-describedby="field-description-hint"></textarea>
+                <span id="field-description-hint" class="hint">Shown to people filling the field in.</span>
+            </div>
+            @if (_type is FieldType.Dropdown or FieldType.Checkbox)
+            {
+                <fieldset class="field-options" aria-describedby="field-options-error">
+                    <legend>Options <span class="required" aria-hidden="true">*</span></legend>
+                    @for (var i = 0; i < _options.Count; i++)
+                    {
+                        var index = i;
+                        <div class="field-option">
+                            <label class="sr-only" for="field-option-@index">Option @(index + 1)</label>
+                            <input id="field-option-@index" class="input" type="text" maxlength="@SpaceField.OptionMaxLength" autocomplete="off"
+                                   value="@_options[index].Name" @oninput="e => SetOption(index, e.Value?.ToString())" />
+                            <button type="button" class="icon-btn" aria-label="Remove option @(index + 1)" title="Remove"
+                                    @onclick="() => _options.RemoveAt(index)"><Icon Name="close" Size="14" /></button>
+                        </div>
+                    }
+                    <button type="button" class="btn btn-sm" @onclick="AddOption">Add option</button>
+                    <span id="field-options-error" class="error-text" role="alert">@Error("Options")</span>
+                </fieldset>
+            }
+            @if (_type == FieldType.Formula)
+            {
+                <div class="field">
+                    <label for="field-formula">Formula <span class="required" aria-hidden="true">*</span></label>
+                    <textarea id="field-formula" class="input formula-input" rows="2" maxlength="@SpaceField.FormulaMaxLength" @bind="_formula" @bind:event="oninput"
+                              aria-invalid="@(Error("Formula") is null ? "false" : "true")" aria-describedby="field-formula-hint field-formula-error"></textarea>
+                    <span id="field-formula-hint" class="hint">
+                        Use numbers, + − × ÷ (+ - * /), brackets and number fields in braces, such as {Story point estimate} * 2.
+                        Number fields: @string.Join(", ", NumberFields.Select(n => "{" + n + "}")). Times are in hours.
+                    </span>
+                    <span id="field-formula-error" class="error-text" role="alert">@Error("Formula")</span>
+                </div>
+            }
+            <span class="error-text" role="alert">@_error</span>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+        @if (!_choosingType)
+        {
+            <button type="button" class="btn btn-primary" data-testid="field-save" disabled="@_busy" @onclick="SaveAsync">@(_editing is null ? "Create" : "Save")</button>
+        }
+    </Footer>
+</ModalDialog>
+
+@code {
+    private sealed class OptionDraft
+    {
+        public string? Id { get; init; }
+
+        public string Name { get; set; } = "";
+    }
+
+    private ModalDialog? _dialog;
+    private FieldRow? _editing;
+    private bool _choosingType;
+    private FieldType _type;
+    private string _name = "";
+    private string? _description;
+    private string? _formula;
+    private List<OptionDraft> _options = [];
+    private AppError? _fieldError;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter, EditorRequired]
+    public string SpaceKey { get; set; } = "";
+
+    /// <summary>The space's number fields, for the formula hint.</summary>
+    [Parameter]
+    public IReadOnlyList<string> NumberFields { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<FieldRow> OnSaved { get; set; }
+
+    private string Title => _editing is { } editing ? $"Edit {editing.Name}" : _choosingType ? "Add field" : $"Create a {SpaceField.TypeName(_type).ToLowerInvariant()} field";
+
+    /// <summary>A new field: of <paramref name="type"/>, or chosen from the tiles first.</summary>
+    public void Open(FieldType? type = null)
+    {
+        _editing = null;
+        _choosingType = type is null;
+        _type = type ?? FieldType.ShortText;
+        _name = "";
+        _description = null;
+        _formula = null;
+        _options = [new OptionDraft(), new OptionDraft()];
+        _fieldError = null;
+        _error = null;
+        _dialog!.Open();
+    }
+
+    public void OpenEdit(FieldRow field)
+    {
+        _editing = field;
+        _choosingType = false;
+        _type = field.Type ?? FieldType.ShortText;
+        _name = field.Name;
+        _description = field.Description;
+        _formula = field.Formula;
+        _options = field.Options.Select(o => new OptionDraft { Id = o.Id, Name = o.Name }).ToList();
+        _fieldError = null;
+        _error = null;
+        _dialog!.Open();
+    }
+
+    private void ChooseType(FieldType type)
+    {
+        _type = type;
+        _choosingType = false;
+    }
+
+    private void AddOption() => _options.Add(new OptionDraft());
+
+    private void SetOption(int index, string? name)
+    {
+        if (index < _options.Count)
+        {
+            _options[index].Name = name ?? "";
+        }
+    }
+
+    private string? Error(string field) =>
+        _fieldError?.FieldErrors is { } errors && errors.TryGetValue(field, out var messages) ? string.Join(" ", messages) : null;
+
+    private async Task SaveAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _fieldError = null;
+        _error = null;
+        try
+        {
+            var input = new FieldInput(_type, _name, _description,
+                _options.Where(o => o.Name.Trim().Length > 0).Select(o => new FieldOptionInput(o.Id, o.Name)).ToList(), _formula);
+            var result = _editing is { FieldId: { } id, Version: { } version }
+                ? await Fields.UpdateAsync(id, input, version, CancellationToken.None)
+                : await Fields.CreateAsync(SpaceKey, input, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                if (result.Error!.FieldErrors is { Count: > 0 })
+                {
+                    _fieldError = result.Error;
+                }
+                else
+                {
+                    _error = result.Error.Message;
+                }
+
+                return;
+            }
+
+            await _dialog!.CloseAsync();
+            await OnSaved.InvokeAsync(result.Value!);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

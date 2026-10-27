@@ -1,4 +1,4 @@
-@page "/projects/{Key}/list"
+@page "/spaces/{Key}/list"
 @using System.Globalization
 @using Upms.Application.Work
 @using Upms.Domain.Common
@@ -6,16 +6,19 @@
 @using Upms.Web.Components.Pages.Board
 @using Upms.Web.Components.Pages.Drawer
 @inject IWorkItemListService Lists
-@inject IBoardService Boards
+@inject IWorkItemService Items
 @inject ViewerToday ViewerToday
 @inject LiveAnnouncer Announcer
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject CreateWorkLauncher Launcher
+@implements IDisposable
 
 <PageTitle>@(_view?.ProjectName ?? Key) · List · U-PMS</PageTitle>
 
-@* The List view (Phase 2 FR-027–FR-033): every task and sub-task, sorted and filtered in SQL, with the state in the
-   address so a list can be bookmarked and shared. *@
+@* The List view, laid out as Jira's (Phase 2 FR-027–FR-033; Phase 3 FR-020): a search, the people, "Filter" and "Group"
+   above one table of work items with the columns the viewer chose, sorted and filtered in SQL, with the state in the
+   address so a list can be bookmarked and shared. Rows can be selected to change several at once. *@
 @if (_notFound)
 {
     <NotFoundContent />
@@ -26,159 +29,307 @@ else if (_view is null)
 }
 else
 {
-    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.List"
+    <ProjectHeader ProjectKey="@_view.ProjectKey" Title="@_view.ProjectName" Current="ProjectPage.List" Template="_view.Template"
                    CanManage="_view.CanManage" CanRestoreDeleted="_view.CanRestoreDeleted" />
 
     @if (_error is not null)
     {
-        <div class="alert alert-error" role="alert">@_error</div>
+        <div class="alert alert-error" role="alert">
+            @_error
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _error = null">Dismiss</button>
+        </div>
     }
 
-    <section class="list-filters" aria-label="Filters">
-        <form class="list-search" role="search" @onsubmit="Search">
-            <label for="filter-text">Words</label>
-            <input id="filter-text" type="search" class="input" maxlength="100" autocomplete="off" placeholder="In titles and descriptions"
-                   @bind="_textDraft" @bind:event="oninput" />
-            <button type="submit" class="btn btn-sm">Search</button>
+    <div class="board-toolbar list-toolbar">
+        <form class="board-search" role="search" @onsubmit="SearchNow" @onsubmit:preventDefault>
+            <Icon Name="search" />
+            <label class="sr-only" for="list-search">Search work</label>
+            <input id="list-search" class="input" type="search" placeholder="Search work" autocomplete="off" maxlength="100"
+                   value="@_textDraft" @oninput="SearchTypedAsync" />
         </form>
-        <div class="filter">
-            <label for="filter-column">Status</label>
-            <select id="filter-column" class="select select-sm" value="@ColumnValue" @onchange="ColumnChanged">
-                <option value="">Any</option>
+        <div class="avatar-filter" role="group" aria-label="Filter by assignee">
+            <button type="button" class="avatar-toggle @(State.Unassigned ? "is-on" : "")" aria-pressed="@(State.Unassigned ? "true" : "false")"
+                    title="Unassigned" @onclick="() => Go(Latest.ToggleUnassigned())">
+                <span class="avatar avatar-unassigned" aria-hidden="true"><Icon Name="person" Size="14" /></span>
+                <span class="sr-only">Unassigned</span>
+            </button>
+            @if (_view.People.FirstOrDefault(p => p.IsMe) is { } me)
+            {
+                <button type="button" class="avatar-toggle @(State.Me ? "is-on" : "")" aria-pressed="@(State.Me ? "true" : "false")"
+                        title="@me.DisplayName (you)" @onclick="() => Go(Latest.ToggleMe())">
+                    <Avatar UserId="me.UserId" Initials="@AssigneeRef.InitialsOf(me.DisplayName)" />
+                    <span class="sr-only">Assigned to me</span>
+                </button>
+            }
+            @foreach (var person in _view.People.Where(p => !p.IsMe).Take(6))
+            {
+                var on = State.People.Contains(person.UserId);
+                <button type="button" class="avatar-toggle @(on ? "is-on" : "")" aria-pressed="@(on ? "true" : "false")" title="@person.DisplayName"
+                        @onclick="() => Go(Latest.TogglePerson(person.UserId))">
+                    <Avatar UserId="person.UserId" Initials="@AssigneeRef.InitialsOf(person.DisplayName)" />
+                    <span class="sr-only">@person.DisplayName</span>
+                </button>
+            }
+        </div>
+        <div class="toolbar-pop">
+            <button type="button" class="btn btn-sm toolbar-btn @(State.FilterCount > 0 ? "is-on" : "")" aria-expanded="@(_panel == Panel.Filter ? "true" : "false")"
+                    aria-controls="list-filter-panel" @onclick="() => Toggle(Panel.Filter)">
+                <Icon Name="filter" /> Filter@(State.FilterCount > 0 ? $" ({State.FilterCount})" : "")
+            </button>
+            @if (_panel == Panel.Filter)
+            {
+                <div class="menu-backdrop" @onclick="() => _panel = Panel.None"></div>
+                <div id="list-filter-panel" class="toolbar-panel list-filter-panel" role="group" aria-label="Filter work items" @onkeydown="PanelKeyDown">
+                    <p class="panel-heading">Work type</p>
+                    <div class="quick-filters">
+                        @foreach (var kind in FilterKinds)
+                        {
+                            var pressed = State.ItemTypes.Contains(kind);
+                            <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    @onclick="() => Go(Latest.ToggleItemType(kind))"><TypeIcon Type="kind" /> @WorkItemTypes.DisplayName(kind)</button>
+                        }
+                    </div>
+                    <p class="panel-heading">Status</p>
+                    <div class="quick-filters">
+                        @foreach (var column in _view.Columns)
+                        {
+                            var pressed = State.Columns.Contains(column.Id);
+                            <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    @onclick="() => Go(Latest.ToggleColumn(column.Id))">@column.Name</button>
+                        }
+                    </div>
+                    <p class="panel-heading">Priority</p>
+                    <div class="quick-filters">
+                        @foreach (var priority in Enum.GetValues<Priority>())
+                        {
+                            var pressed = State.Priorities.Contains(priority);
+                            <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    @onclick="() => Go(Latest.TogglePriority(priority))"><PriorityIcon Priority="priority" /> @priority</button>
+                        }
+                    </div>
+                    <p class="panel-heading">@ContainerLabel</p>
+                    <div class="quick-filters">
+                        <button type="button" class="btn btn-sm quick @(State.NoContainer ? "active" : "")" aria-pressed="@(State.NoContainer ? "true" : "false")"
+                                @onclick="() => Go(Latest.ToggleNoContainer())">None</button>
+                        @foreach (var container in _containers)
+                        {
+                            var pressed = State.Containers.Contains(container.Key);
+                            <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    title="@container.Key @container.Title" @onclick="() => Go(Latest.ToggleContainer(container.Key))">@container.Title</button>
+                        }
+                    </div>
+                    <p class="panel-heading">Label</p>
+                    <div class="quick-filters">
+                        @foreach (var label in LabelChoices)
+                        {
+                            var pressed = State.Labels.Contains(label, StringComparer.OrdinalIgnoreCase);
+                            <button type="button" class="btn btn-sm quick label-toggle @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    @onclick="() => Go(Latest.ToggleLabel(label))">@label</button>
+                        }
+                    </div>
+                    <form class="label-add" @onsubmit="AddLabelFilter" @onsubmit:preventDefault>
+                        <label class="sr-only" for="filter-label">Another label</label>
+                        <input id="filter-label" class="input" maxlength="50" autocomplete="off" placeholder="Another label…" @bind="_labelDraft" />
+                    </form>
+                    <p class="panel-heading">Due date</p>
+                    <div class="quick-filters">
+                        @foreach (var due in new[] { DueFilter.Overdue, DueFilter.Next7Days, DueFilter.NoDueDate })
+                        {
+                            var pressed = State.Due == due;
+                            <button type="button" class="btn btn-sm quick @(pressed ? "active" : "")" aria-pressed="@(pressed ? "true" : "false")"
+                                    @onclick="() => Go(Latest.WithDue(pressed ? DueFilter.Any : due))">@DueLabel(due)</button>
+                        }
+                    </div>
+                    @if (State.HasFilters)
+                    {
+                        <button type="button" class="btn btn-sm btn-ghost panel-clear" data-testid="clear-filters" @onclick="ClearFilters">Clear filters</button>
+                    }
+                </div>
+            }
+        </div>
+        <div class="toolbar-pop">
+            <button type="button" class="btn btn-sm toolbar-btn @(Group != ListGroup.None ? "is-on" : "")" aria-expanded="@(_panel == Panel.Group ? "true" : "false")"
+                    aria-controls="list-group-panel" @onclick="() => Toggle(Panel.Group)">
+                <Icon Name="group" /> Group@(Group != ListGroup.None ? $": {GroupLabel(Group)}" : "")
+            </button>
+            @if (_panel == Panel.Group)
+            {
+                <div class="menu-backdrop" @onclick="() => _panel = Panel.None"></div>
+                <div id="list-group-panel" class="toolbar-panel" role="radiogroup" aria-label="Group by" @onkeydown="PanelKeyDown">
+                    @foreach (var group in Enum.GetValues<ListGroup>())
+                    {
+                        <label class="group-choice">
+                            <input type="radio" name="list-group" checked="@(Group == group)" @onchange="() => SetGroup(group)" />
+                            @GroupLabel(group)
+                        </label>
+                    }
+                </div>
+            }
+        </div>
+        @if (State.HasFilters)
+        {
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="ClearFilters">Clear filters</button>
+        }
+        <span class="spacer"></span>
+        <div class="toolbar-pop">
+            <button type="button" class="icon-btn list-more" aria-label="More list actions" title="More" aria-expanded="@(_panel == Panel.More ? "true" : "false")"
+                    @onclick="() => Toggle(Panel.More)"><Icon Name="more" /></button>
+            @if (_panel == Panel.More)
+            {
+                <div class="menu-backdrop" @onclick="() => _panel = Panel.None"></div>
+                <ul class="column-menu-list" role="menu" aria-label="More list actions" @onkeydown="PanelKeyDown">
+                    <li role="none"><button type="button" role="menuitem" class="column-menu-item" @onclick="ClearFilters">Clear filters</button></li>
+                    <li role="none"><button type="button" role="menuitem" class="column-menu-item" @onclick="ResetSort">Reset sorting</button></li>
+                    <li role="none"><button type="button" role="menuitem" class="column-menu-item" @onclick="ResetColumnsAsync">Reset columns</button></li>
+                </ul>
+            }
+        </div>
+    </div>
+
+    @if (_selected.Count > 0)
+    {
+        <div class="bulk-bar" role="region" aria-label="Selected work items">
+            <b>@_selected.Count selected</b>
+            <select class="select select-sm" aria-label="Change the status of the selected items" disabled="@_busy" @onchange="BulkStatusAsync">
+                <option value="">Change status…</option>
                 @foreach (var column in _view.Columns)
                 {
                     <option value="@column.Id">@column.Name</option>
                 }
             </select>
-        </div>
-        <div class="filter">
-            <label for="filter-type">Status type</label>
-            <select id="filter-type" class="select select-sm" value="@TypeValue" @onchange="TypeChanged">
-                <option value="">Any</option>
-                @foreach (var type in Enum.GetValues<StatusCategory>())
-                {
-                    <option value="@ListState.NameOf(type)">@TypeLabel(type)</option>
-                }
-            </select>
-        </div>
-        <div class="filter">
-            <label for="filter-priority">Priority</label>
-            <select id="filter-priority" class="select select-sm" value="@PriorityValue" @onchange="PriorityChanged">
-                <option value="">Any</option>
+            <select class="select select-sm" aria-label="Change the priority of the selected items" disabled="@_busy" @onchange="BulkPriorityAsync">
+                <option value="">Change priority…</option>
                 @foreach (var priority in Enum.GetValues<Priority>())
                 {
-                    <option value="@priority.ToString().ToLowerInvariant()">@priority</option>
+                    <option value="@priority">@priority</option>
                 }
             </select>
-        </div>
-        <div class="filter">
-            <label for="filter-assignee">Assignee</label>
-            <select id="filter-assignee" class="select select-sm" value="@AssigneeValue" @onchange="AssigneeChanged">
-                <option value="">Anyone</option>
-                <option value="@ListState.MeValue">Me</option>
+            <select class="select select-sm" aria-label="Assign the selected items" disabled="@_busy" @onchange="BulkAssignAsync">
+                <option value="">Assign…</option>
                 <option value="@ListState.UnassignedValue">Unassigned</option>
-                @foreach (var person in _view.People.Where(p => !p.IsMe))
+                @foreach (var person in _view.People)
                 {
-                    <option value="@person.UserId">@person.DisplayName</option>
+                    <option value="@person.UserId">@person.DisplayName@(person.IsMe ? " (me)" : "")</option>
                 }
             </select>
-        </div>
-        <div class="filter">
-            <label for="filter-due">Due</label>
-            <select id="filter-due" class="select select-sm" value="@ListState.NameOf(State.Due)" @onchange="DueChanged">
-                <option value="">Any time</option>
-                @foreach (var due in new[] { DueFilter.Overdue, DueFilter.Next7Days, DueFilter.NoDueDate })
-                {
-                    <option value="@ListState.NameOf(due)">@DueLabel(due)</option>
-                }
-            </select>
-        </div>
-    </section>
-
-    @if (State.HasFilters)
-    {
-        <div class="chips-row">
-            <ul class="chips" aria-label="Active filters">
-                @foreach (var chip in Chips())
-                {
-                    <li class="chip" data-testid="filter-chip">
-                        <span class="chip-label">@chip.Label</span>
-                        <button type="button" class="chip-remove" aria-label="Remove filter @chip.Label" @onclick="() => Go(chip.Remove(Latest))">×</button>
-                    </li>
-                }
-            </ul>
-            <button type="button" class="btn btn-sm btn-ghost" data-testid="clear-filters" @onclick="() => Go(Latest.WithoutFilters())">Clear filters</button>
+            <button type="button" class="btn btn-sm btn-ghost btn-danger" data-testid="bulk-delete" disabled="@_busy" @onclick="AskDeleteAsync">
+                <Icon Name="trash" Size="14" /> Delete
+            </button>
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _selected.Clear()">Clear selection</button>
         </div>
     }
+    <DeleteWorkItemsDialog @ref="_deleteDialog" OnDeleted="DeletedAsync" OnProblem="problem => _error = problem" />
 
-    @if (_view.CanContribute)
-    {
-        <div class="list-create">
-            <InlineCreate ColumnName="@FirstToDoName" OnCreate="CreateAsync" />
-        </div>
-    }
-
-    <p class="hint" data-testid="list-count" role="status">@CountText</p>
-
-    @if (_view.Rows.Items.Count == 0)
-    {
-        @if (State.HasFilters)
-        {
-            <EmptyState Title="No task matches these filters.">
-                <button type="button" class="btn" data-testid="empty-clear-filters" @onclick="() => Go(Latest.WithoutFilters())">Clear filters</button>
-            </EmptyState>
-        }
-        else
-        {
-            <EmptyState Title="No tasks yet" Text="Add the first task with “What needs to be done?”, here or on the board." />
-        }
-    }
-    else
-    {
-        <div class="table-wrap">
-            <table class="tbl list-table">
-                <caption class="sr-only">Tasks and sub-tasks of @_view.ProjectName</caption>
+    <div class="list-card">
+        <div class="list-scroll" role="region" aria-label="Work items" tabindex="0">
+            <table class="list-grid">
+                <caption class="sr-only">Work items of @_view.ProjectName</caption>
                 <thead>
                     <tr>
-                        @foreach (var column in TableColumns)
+                        <th scope="col" class="col-check">
+                            <input type="checkbox" aria-label="Select every work item on this page" checked="@AllSelected"
+                                   disabled="@(_view.Rows.Items.Count == 0)" @onchange="ToggleAll" />
+                        </th>
+                        @HeaderCell("work", "Work", ListSort.Key, "col-work")
+                        @foreach (var column in VisibleColumns)
                         {
-                            <th scope="col" class="@column.Class" data-sort="@ListState.NameOf(column.Sort)" aria-sort="@AriaSort(column.Sort)">
-                                <button type="button" class="sort-btn" @onclick="() => Go(Latest.WithSort(column.Sort))">@column.Label</button>
-                            </th>
+                            @HeaderCell(column.Id, column.Label, column.Sort, $"col-{column.Id}")
                         }
+                        <th scope="col" class="col-pick">
+                            <button type="button" class="icon-btn" aria-label="Choose columns" title="Columns" aria-expanded="@(_panel == Panel.Columns ? "true" : "false")"
+                                    aria-controls="list-columns" @onclick="() => Toggle(Panel.Columns)"><Icon Name="board" /></button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var row in _view.Rows.Items)
+                    @if (_view.Rows.Items.Count == 0)
                     {
-                        <tr data-testid="list-row" data-key="@row.Key" @key="row.Key">
-                            <td class="key">@row.Key</td>
-                            <td>
-                                <a id="@LinkId(row.Key)" class="task-link" href="@TaskHref(row.Key)">@row.Title</a>
-                                @if (row.ParentKey is { } parent)
+                        <tr>
+                            <td colspan="@(VisibleColumns.Count + 3)" class="list-empty">
+                                @if (State.HasFilters)
                                 {
-                                    <div class="hint">Sub-task of @parent</div>
+                                    <p>No work items match these filters.</p>
+                                    <button type="button" class="btn btn-sm" data-testid="empty-clear-filters" @onclick="ClearFilters">Clear filters</button>
+                                }
+                                else
+                                {
+                                    <p>No work items yet.</p>
                                 }
                             </td>
-                            <td>@row.Status.Name</td>
-                            <td class="hide-sm"><PriorityIcon Priority="row.Priority" /> <span aria-hidden="true">@row.Priority</span></td>
-                            <td class="hide-sm">
-                                @if (row.Assignee is null)
-                                {
-                                    <span class="hint">Unassigned</span>
-                                }
-                                <AssigneeBadge Assignee="row.Assignee" ShowName="true" />
-                            </td>
-                            <td class="hide-sm">@DateText(row.StartDate)</td>
-                            <td><DueDateText Due="row.DueDate" IsOpen="row.IsOpen" Today="_today" /></td>
-                            <td class="hide-sm hint"><LocalTime Value="row.UpdatedAt" Format="d MMM yyyy" /></td>
                         </tr>
+                    }
+                    @foreach (var group in Groups())
+                    {
+                        @if (Group != ListGroup.None)
+                        {
+                            var open = !_collapsed.Contains(group.Id);
+                            <tr class="group-row" @key="@($"g-{group.Id}")">
+                                <td colspan="@(VisibleColumns.Count + 3)">
+                                    <button type="button" class="group-toggle" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleGroup(group.Id)">
+                                        <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" />
+                                        @GroupHead(group.Rows[0])
+                                        <span class="group-count">@group.Rows.Count @(group.Rows.Count == 1 ? "work item" : "work items")</span>
+                                    </button>
+                                </td>
+                            </tr>
+                            @if (!open)
+                            {
+                                continue;
+                            }
+                        }
+                        @foreach (var row in group.Rows)
+                        {
+                            @RowView(row)
+                        }
                     }
                 </tbody>
             </table>
         </div>
-        <Pager PageNumber="_view.Rows.PageNumber" PageCount="_view.Rows.PageCount" Label="Pages of the list" OnPageChanged="page => Go(Latest.WithPage(page))" />
-    }
+        @if (_panel == Panel.Columns)
+        {
+            <div class="menu-backdrop" @onclick="() => _panel = Panel.None"></div>
+            <div id="list-columns" class="tab-popover list-columns" role="group" aria-label="Columns" @onkeydown="PanelKeyDown">
+                <p class="popover-title">Columns</p>
+                <label class="filter-option is-fixed"><input type="checkbox" checked disabled /> Work</label>
+                @foreach (var column in AllColumns)
+                {
+                    <label class="filter-option"><input type="checkbox" checked="@_columns.Contains(column.Id)" @onchange="() => ToggleColumnAsync(column.Id)" /> @column.Label</label>
+                }
+            </div>
+        }
+        <div class="list-footer">
+            <div class="list-footer-start">
+                @if (_view.CanContribute)
+                {
+                    @if (_creating)
+                    {
+                        <div class="list-create">
+                            <InlineCreate ColumnName="@FirstToDoName" Types="CreateTypes" DefaultType="DefaultCreateType" OnCreate="CreateAsync"
+                                          OnCancel="() => _creating = false" AutoFocus="true" />
+                        </div>
+                    }
+                    else
+                    {
+                        <button type="button" class="tl-create" @onclick="() => _creating = true"><Icon Name="plus" Size="14" /> Create</button>
+                    }
+                }
+            </div>
+            <div class="list-count">
+                <span data-testid="list-count" role="status">@CountText</span>
+                <button type="button" class="icon-btn" aria-label="Refresh the list" title="Refresh" @onclick="LoadAsync"><Icon Name="refresh" Size="14" /></button>
+            </div>
+            <div class="list-pager">
+                @if (_view.Rows.PageCount > 1)
+                {
+                    <span class="hint">Page @_view.Rows.PageNumber of @_view.Rows.PageCount</span>
+                    <button type="button" class="icon-btn" aria-label="Previous page" disabled="@(_view.Rows.PageNumber <= 1)"
+                            @onclick="() => Go(Latest.WithPage(_view.Rows.PageNumber - 1))"><Icon Name="chevron-right" Class="flip" /></button>
+                    <button type="button" class="icon-btn" aria-label="Next page" disabled="@(_view.Rows.PageNumber >= _view.Rows.PageCount)"
+                            @onclick="() => Go(Latest.WithPage(_view.Rows.PageNumber + 1))"><Icon Name="chevron-right" /></button>
+                }
+            </div>
+        </div>
+    </div>
 
     @if (!string.IsNullOrEmpty(TaskKey))
     {
@@ -187,25 +338,46 @@ else
 }
 
 @code {
-    private static readonly (ListSort Sort, string Label, string Class)[] TableColumns =
-    [
-        (ListSort.Key, "Key", ""),
-        (ListSort.Title, "Title", ""),
-        (ListSort.Status, "Status", ""),
-        (ListSort.Priority, "Priority", "hide-sm"),
-        (ListSort.Assignee, "Assignee", "hide-sm"),
-        (ListSort.StartDate, "Start", "hide-sm"),
-        (ListSort.DueDate, "Due", ""),
-        (ListSort.Updated, "Updated", "hide-sm"),
-    ];
+    private enum Panel
+    {
+        None,
+        Filter,
+        Group,
+        More,
+        Columns,
+    }
 
+    private enum ListGroup
+    {
+        None,
+        Status,
+        Assignee,
+        Priority,
+        Epic,
+        Type,
+    }
+
+    private sealed record ListColumn(string Id, string Label, ListSort? Sort, bool ShownByDefault);
+
+    private sealed record RowGroup(string Id, List<WorkItemRow> Rows);
+
+    private const string ColumnsKey = "upms.list.columns";
+    private IReadOnlyList<ContainerOption> _containers = [];
     private WorkItemListView? _view;
     private bool _notFound;
     private string? _error;
     private string? _loadedAddress;
     private string _textDraft = "";
+    private string _labelDraft = "";
     private DateOnly _today;
     private string? _focusKey;
+    private Panel _panel;
+    private HashSet<string> _columns = [];
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
+    private bool _creating;
+    private bool _busy;
+    private CancellationTokenSource? _typing;
 
     [Parameter]
     public string Key { get; set; } = "";
@@ -237,6 +409,22 @@ else
     [SupplyParameterFromQuery(Name = "page")]
     public int? PageValue { get; set; }
 
+    /// <summary>Work item types (Phase 3 FR-020); <c>type</c> is the status type, as in Phase 2.</summary>
+    [SupplyParameterFromQuery(Name = "kind")]
+    public string? KindsValue { get; set; }
+
+    [SupplyParameterFromQuery(Name = "container")]
+    public string? ContainersValue { get; set; }
+
+    /// <summary>Phase 4 FR-046: items with any of these labels.</summary>
+    [SupplyParameterFromQuery(Name = "labels")]
+    public string? LabelsValue { get; set; }
+
+    /// <summary><c>?group=status|assignee|priority|epic|type</c>: rows of the page under a heading per value, as Jira's
+    /// "Group".</summary>
+    [SupplyParameterFromQuery(Name = "group")]
+    public string? GroupValue { get; set; }
+
     /// <summary><c>?task={KEY-N}</c> opens the task's details drawer over the list (FR-032).</summary>
     [SupplyParameterFromQuery(Name = "task")]
     public string? TaskKey { get; set; }
@@ -249,30 +437,72 @@ else
 
     private ListState Latest => _requested ?? State;
 
+    private ListGroup Group => Enum.TryParse<ListGroup>(GroupValue, ignoreCase: true, out var group) ? group : ListGroup.None;
+
     private string FirstToDoName => _view!.Columns.FirstOrDefault(c => c.Id == _view.FirstToDoColumnId)?.Name ?? "To Do";
 
-    private string CountText => _view!.Rows.TotalCount == 1 ? "1 task" : $"{_view.Rows.TotalCount} tasks";
+    private string CountText => string.Create(System.Globalization.CultureInfo.CurrentCulture, $"{_view!.Rows.Items.Count:N0} of {_view.Rows.TotalCount:N0}");
 
-    private string ColumnValue => State.Columns.Count == 1 ? State.Columns[0].ToString(CultureInfo.InvariantCulture) : "";
+    private bool IsStageGate => _view?.Template == ProjectTemplate.StageGate;
 
-    private string TypeValue => State.Types.Count == 1 ? ListState.NameOf(State.Types[0]) : "";
+    /// <summary>"Epic" in agile spaces, "Stage" in Stage-gate spaces.</summary>
+    private string ContainerLabel => IsStageGate ? "Stage" : "Epic";
 
-    private string PriorityValue => State.Priorities.Count == 1 ? State.Priorities[0].ToString().ToLowerInvariant() : "";
+    /// <summary>Jira's list columns besides Work; the first eight show until the viewer chooses others.</summary>
+    private IReadOnlyList<ListColumn> AllColumns =>
+    [
+        new("assignee", "Assignee", ListSort.Assignee, true),
+        new("reporter", "Reporter", null, true),
+        new("priority", "Priority", ListSort.Priority, true),
+        new("status", "Status", ListSort.Status, true),
+        new("resolution", "Resolution", null, true),
+        new("created", "Created", ListSort.Created, true),
+        new("updated", "Updated", ListSort.Updated, true),
+        new("due", "Due date", ListSort.DueDate, true),
+        new("start", "Start date", ListSort.StartDate, false),
+        new("parent", ContainerLabel, null, false),
+        new("labels", "Labels", null, false),
+        new("type", "Work type", ListSort.Type, false),
+    ];
 
-    private string AssigneeValue => (State.Me, State.Unassigned, State.People.Count) switch
+    private List<ListColumn> VisibleColumns => AllColumns.Where(c => _columns.Contains(c.Id)).ToList();
+
+    /// <summary>The types a space's items can have (Phase 3 FR-010).</summary>
+    private IReadOnlyList<WorkItemType> FilterKinds => IsStageGate
+        ? [WorkItemType.Stage, WorkItemType.Task, WorkItemType.Milestone, WorkItemType.Subtask]
+        : [WorkItemType.Epic, WorkItemType.Story, WorkItemType.Task, WorkItemType.Bug, WorkItemType.Subtask];
+
+    /// <summary>The types the caller may create here: sub-tasks are added from their parent, and stages only by Space
+    /// admins (FR-020).</summary>
+    private IReadOnlyList<WorkItemType> CreateTypes => IsStageGate
+        ? _view!.CanManage ? [WorkItemType.Task, WorkItemType.Milestone, WorkItemType.Stage] : [WorkItemType.Task, WorkItemType.Milestone]
+        : new[] { WorkItemType.Task, WorkItemType.Story, WorkItemType.Bug, WorkItemType.Epic }
+            .Where(t => WorkItemTypes.IsOffered(t, _view!.Template, _view.WorkTypes))
+            .ToList();
+
+    private WorkItemType DefaultCreateType => CreateTypes.Contains(WorkItemType.Task) ? WorkItemType.Task : CreateTypes[0];
+
+    /// <summary>The labels on the rows shown and those already chosen, offered as filters (Phase 4 FR-046).</summary>
+    private IReadOnlyList<string> LabelChoices => (_view?.Rows.Items.SelectMany(r => r.Labels) ?? [])
+        .Concat(State.Labels)
+        .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private bool AllSelected => _view!.Rows.Items.Count > 0 && _view.Rows.Items.All(r => _selected.Contains(r.Key));
+
+    protected override void OnInitialized()
     {
-        (true, false, 0) => ListState.MeValue,
-        (false, true, 0) => ListState.UnassignedValue,
-        (false, false, 1) => State.People[0].ToString(),
-        _ => "",
-    };
+        _columns = AllColumns.Where(c => c.ShownByDefault).Select(c => c.Id).ToHashSet();
+        Launcher.Created += OnCreated;
+    }
 
-    // Opening or closing the drawer changes only ?task: the list is not read again.
+    // Opening or closing the drawer, or grouping, changes only the address: the list is not read again.
     protected override async Task OnParametersSetAsync()
     {
-        State = ListState.Parse(SortValue, DirectionValue, ColumnsValue, TypesValue, PrioritiesValue, AssigneesValue, DueValue, TextValue, PageValue);
+        State = ListState.Parse(SortValue, DirectionValue, ColumnsValue, TypesValue, PrioritiesValue, AssigneesValue, DueValue, TextValue, PageValue,
+            KindsValue, ContainersValue, LabelsValue);
         var address = AddressOf(State);
-        if (_requested is { } requested && AddressOf(requested) == address)
+        var asked = _requested is { } requested && AddressOf(requested) == address;
+        if (asked)
         {
             _requested = null;
         }
@@ -283,23 +513,35 @@ else
         }
 
         _loadedAddress = address;
-        _textDraft = State.Text;
+        if (!asked)
+        {
+            _textDraft = State.Text; // a search being typed is not overwritten by the answer to an earlier one
+        }
+
+        _selected.Clear();
         await LoadAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_focusKey is { } key && string.IsNullOrEmpty(TaskKey))
+        try
         {
-            // Focus returns to the row whose drawer was closed.
-            _focusKey = null;
-            try
+            if (firstRender && await JS.InvokeAsync<string?>("upms.store.get", ColumnsKey) is { Length: > 0 } saved)
             {
+                var known = AllColumns.Select(c => c.Id).ToHashSet();
+                _columns = saved.Split(',').Where(known.Contains).ToHashSet();
+                StateHasChanged();
+            }
+
+            if (_focusKey is { } key && string.IsNullOrEmpty(TaskKey))
+            {
+                // Focus returns to the row whose drawer was closed.
+                _focusKey = null;
                 await JS.InvokeVoidAsync("upms.focusByIdIfLost", LinkId(key));
             }
-            catch (JSDisconnectedException)
-            {
-            }
+        }
+        catch (JSDisconnectedException)
+        {
         }
     }
 
@@ -311,10 +553,19 @@ else
         var query = State.ToQuery();
         _today = await ViewerToday.GetAsync();
         var result = await Lists.ListAsync(Key, query, _today, CancellationToken.None);
+        // The epics or stages for the filter; a new one may have been created since the last load.
+        IReadOnlyList<ContainerOption> containers = [];
+        if (result.IsSuccess && await Items.ListContainersAsync(Key, CancellationToken.None) is { IsSuccess: true } listed)
+        {
+            containers = listed.Value!;
+        }
+
         if (address != _loadedAddress)
         {
             return; // the answer for an older address, which arrived after a newer one was asked for
         }
+
+        _containers = containers;
 
         if (!result.IsSuccess)
         {
@@ -326,8 +577,8 @@ else
         }
 
         _notFound = false;
-        _error = null;
         _view = result.Value!;
+        _selected.IntersectWith(_view.Rows.Items.Select(r => r.Key));
     }
 
     private void Go(ListState state)
@@ -336,21 +587,411 @@ else
         Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(state.ToParameters()));
     }
 
-    private void Search() => Go(Latest.WithText(_textDraft));
+    /// <summary>Searches as the person types, a moment after they stop, as Jira's list does; Enter searches at once.</summary>
+    private async Task SearchTypedAsync(ChangeEventArgs e)
+    {
+        _textDraft = e.Value?.ToString() ?? "";
+        _typing?.Cancel();
+        var typing = _typing = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(400, typing.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
 
-    private void ColumnChanged(ChangeEventArgs e) =>
-        Go(Latest.WithColumn(long.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null));
+        if (Latest.Text != _textDraft.Trim())
+        {
+            Go(Latest.WithText(_textDraft));
+        }
+    }
 
-    private void TypeChanged(ChangeEventArgs e) =>
-        Go(Latest.WithType(Enum.GetValues<StatusCategory>().Where(t => ListState.NameOf(t) == e.Value?.ToString()).Select(t => (StatusCategory?)t).FirstOrDefault()));
+    private void SearchNow()
+    {
+        _typing?.Cancel();
+        Go(Latest.WithText(_textDraft));
+    }
 
-    private void PriorityChanged(ChangeEventArgs e) =>
-        Go(Latest.WithPriority(Enum.TryParse<Priority>(e.Value?.ToString(), ignoreCase: true, out var priority) ? priority : null));
+    private void AddLabelFilter()
+    {
+        var label = _labelDraft.Trim();
+        _labelDraft = "";
+        if (label.Length > 0 && !Latest.Labels.Contains(label, StringComparer.OrdinalIgnoreCase))
+        {
+            Go(Latest.ToggleLabel(label));
+        }
+    }
 
-    private void AssigneeChanged(ChangeEventArgs e) => Go(Latest.WithAssignee(e.Value?.ToString() ?? ""));
+    private void ClearFilters()
+    {
+        _panel = Panel.None;
+        _textDraft = "";
+        Go(Latest.WithoutFilters());
+    }
 
-    private void DueChanged(ChangeEventArgs e) =>
-        Go(Latest.WithDue(new[] { DueFilter.Overdue, DueFilter.Next7Days, DueFilter.NoDueDate }.FirstOrDefault(d => ListState.NameOf(d) == e.Value?.ToString())));
+    private void ResetSort()
+    {
+        _panel = Panel.None;
+        Go(Latest with { Sort = ListState.Default.Sort, Descending = ListState.Default.Descending, Page = 1 });
+    }
+
+    private void Toggle(Panel panel) => _panel = _panel == panel ? Panel.None : panel;
+
+    private void PanelKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _panel = Panel.None;
+        }
+    }
+
+    private void SetGroup(ListGroup group)
+    {
+        _panel = Panel.None;
+        _collapsed.Clear();
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("group", group == ListGroup.None ? null : group.ToString().ToLowerInvariant()));
+    }
+
+    private void ToggleGroup(string id)
+    {
+        if (!_collapsed.Remove(id))
+        {
+            _collapsed.Add(id);
+        }
+    }
+
+    private async Task ToggleColumnAsync(string id)
+    {
+        if (!_columns.Remove(id))
+        {
+            _columns.Add(id);
+        }
+
+        await SaveColumnsAsync();
+    }
+
+    private async Task ResetColumnsAsync()
+    {
+        _panel = Panel.None;
+        _columns = AllColumns.Where(c => c.ShownByDefault).Select(c => c.Id).ToHashSet();
+        await SaveColumnsAsync();
+    }
+
+    private async Task SaveColumnsAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("upms.store.set", ColumnsKey, string.Join(',', _columns));
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private void ToggleAll()
+    {
+        if (AllSelected)
+        {
+            _selected.Clear();
+        }
+        else
+        {
+            _selected.UnionWith(_view!.Rows.Items.Select(r => r.Key));
+        }
+    }
+
+    private void ToggleRow(string key)
+    {
+        if (!_selected.Remove(key))
+        {
+            _selected.Add(key);
+        }
+    }
+
+    /// <summary>The page's rows under one heading per value of the grouping, in the order Jira shows them.</summary>
+    private IEnumerable<RowGroup> Groups()
+    {
+        var rows = _view!.Rows.Items;
+        if (Group == ListGroup.None || rows.Count == 0)
+        {
+            return rows.Count == 0 ? [] : [new RowGroup("all", rows.ToList())];
+        }
+
+        var columnOrder = _view.Columns.Select((c, i) => (c.Id, i)).ToDictionary(c => c.Id, c => c.i);
+        var kindOrder = FilterKinds.Select((k, i) => (k, i)).ToDictionary(k => k.k, k => k.i);
+        return Group switch
+        {
+            ListGroup.Status => rows.GroupBy(r => r.Status.Id).OrderBy(g => columnOrder.GetValueOrDefault(g.Key))
+                .Select(g => new RowGroup($"s{g.Key}", g.ToList())),
+            ListGroup.Priority => rows.GroupBy(r => r.Priority).OrderBy(g => g.Key).Select(g => new RowGroup($"p{g.Key}", g.ToList())),
+            ListGroup.Assignee => rows.GroupBy(r => r.Assignee?.UserId)
+                .OrderBy(g => g.Key is null).ThenBy(g => g.First().Assignee?.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(g => new RowGroup($"a{g.Key}", g.ToList())),
+            ListGroup.Epic => rows.GroupBy(r => r.Container?.Key)
+                .OrderBy(g => g.Key is null).ThenBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => new RowGroup($"e{g.Key}", g.ToList())),
+            _ => rows.GroupBy(r => r.Type).OrderBy(g => kindOrder.GetValueOrDefault(g.Key, 99)).Select(g => new RowGroup($"t{g.Key}", g.ToList())),
+        };
+    }
+
+    /// <summary>A group's heading, drawn from its first row.</summary>
+    private RenderFragment GroupHead(WorkItemRow row) => __builder =>
+    {
+        switch (Group)
+        {
+            case ListGroup.Status:
+                <span class="lozenge-status st-@CategoryClass(row.Status.Category)" title="@row.Status.Name">@row.Status.Name</span>
+                break;
+            case ListGroup.Priority:
+                <span class="group-name"><PriorityIcon Priority="row.Priority" /> @row.Priority</span>
+                break;
+            case ListGroup.Assignee:
+                @Person(row.Assignee, "Unassigned")
+                break;
+            case ListGroup.Epic:
+                @if (row.Container is { } container)
+                {
+                    <EpicTag Container="container" ShowKey="true" />
+                }
+                else
+                {
+                    <span class="group-name">No @ContainerLabel.ToLowerInvariant()</span>
+                }
+                break;
+            default:
+                <span class="group-name"><TypeIcon Type="row.Type" /> @WorkItemTypes.DisplayName(row.Type)</span>
+                break;
+        }
+    };
+
+    private RenderFragment HeaderCell(string id, string label, ListSort? sort, string cssClass) => __builder =>
+    {
+        if (sort is { } by)
+        {
+            <th scope="col" class="@cssClass" data-sort="@ListState.NameOf(by)" aria-sort="@AriaSort(by)">
+                <button type="button" class="sort-btn" @onclick="() => Go(Latest.WithSort(by))">
+                    @label
+                    @if (State.Sort == by)
+                    {
+                        <span class="sort-arrow" aria-hidden="true">@(State.Descending ? "↓" : "↑")</span>
+                    }
+                </button>
+            </th>
+        }
+        else
+        {
+            <th scope="col" class="@cssClass">@label</th>
+        }
+    };
+
+    private RenderFragment RowView(WorkItemRow row) => __builder =>
+    {
+        var selected = _selected.Contains(row.Key);
+        <tr data-testid="list-row" data-key="@row.Key" class="@(selected ? "is-selected" : "")" @key="row.Key">
+            <td class="col-check"><input type="checkbox" aria-label="Select @row.Key" checked="@selected" @onchange="() => ToggleRow(row.Key)" /></td>
+            <td class="col-work">
+                <span class="work-cell">
+                    <TypeIcon Type="row.Type" />
+                    <a id="@LinkId(row.Key)" class="task-link work-link" href="@TaskHref(row.Key)"><span class="work-key">@row.Key</span> <span class="work-title">@row.Title</span></a>
+                    @if (row.ParentKey is { } parent)
+                    {
+                        <span class="work-parent">in @parent</span>
+                    }
+                </span>
+            </td>
+            @foreach (var column in VisibleColumns)
+            {
+                <td class="col-@column.Id">@Cell(column.Id, row)</td>
+            }
+            <td class="col-pick"></td>
+        </tr>
+    };
+
+    private RenderFragment Cell(string id, WorkItemRow row) => __builder =>
+    {
+        switch (id)
+        {
+            case "assignee":
+                @Person(row.Assignee, "Unassigned")
+                break;
+            case "reporter":
+                @Person(row.Reporter, "Unknown")
+                break;
+            case "priority":
+                <span class="cell-flex"><PriorityIcon Priority="row.Priority" /> <span aria-hidden="true">@row.Priority</span></span>
+                break;
+            case "status":
+                @if (_view!.CanContribute)
+                {
+                    <select class="list-status st-@CategoryClass(row.Status.Category)" aria-label="Status of @row.Key" disabled="@_busy"
+                            @onchange="e => StatusChangedAsync(row, e)">
+                        @foreach (var column in _view.Columns)
+                        {
+                            <option value="@column.Id" selected="@(column.Id == row.Status.Id)">@column.Name</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <span class="lozenge-status st-@CategoryClass(row.Status.Category)" title="@row.Status.Name">@row.Status.Name</span>
+                }
+                break;
+            case "resolution":
+                @(row.ResolvedAt is null ? "Unresolved" : "Done")
+                break;
+            case "created":
+                <LocalTime Value="row.CreatedAt" Format="d MMM yyyy, HH:mm" />
+                break;
+            case "updated":
+                <LocalTime Value="row.UpdatedAt" Format="d MMM yyyy, HH:mm" />
+                break;
+            case "due":
+                <DueDateText Due="row.DueDate" IsOpen="row.IsOpen" Today="_today" WithYear="true" />
+                break;
+            case "start":
+                @DateText(row.StartDate)
+                break;
+            case "parent":
+                <EpicTag Container="row.Container" ShowKey="true" />
+                break;
+            case "labels":
+                @if (row.Labels.Count > 0)
+                {
+                    <ul class="card-labels">
+                        @foreach (var label in row.Labels)
+                        {
+                            <li class="label-chip">@label</li>
+                        }
+                    </ul>
+                }
+                break;
+            default:
+                <span class="cell-flex"><TypeIcon Type="row.Type" /> @WorkItemTypes.DisplayName(row.Type)</span>
+                break;
+        }
+    };
+
+    private static RenderFragment Person(AssigneeRef? person, string none) => __builder =>
+    {
+        <span class="cell-flex">
+            @if (person is { } who)
+            {
+                <Avatar UserId="who.UserId" Initials="@who.Initials" />
+                <span class="cell-text">@who.DisplayName</span>
+            }
+            else
+            {
+                <span class="avatar avatar-unassigned" aria-hidden="true"><Icon Name="person" Size="12" /></span>
+                <span class="cell-text">@none</span>
+            }
+        </span>
+    };
+
+    /// <summary>Moves one item from its Status cell, with the same rules as the board and the drawer; saves run one at a
+    /// time.</summary>
+    private async Task StatusChangedAsync(WorkItemRow row, ChangeEventArgs e)
+    {
+        if (_busy || !long.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id == row.Status.Id)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Items.UpdateAsync(row.Key, new WorkItemEdit.Status(id), row.Version, CancellationToken.None);
+            if (saved.IsSuccess)
+            {
+                Announcer.Announce($"{row.Key} moved to {_view!.Columns.First(c => c.Id == id).Name}.");
+            }
+            else
+            {
+                _error = saved.Error!.Kind == ErrorKind.Conflict
+                    ? $"{row.Key} was changed by someone else. The list now shows the latest."
+                    : $"{row.Key}: {saved.Error.Message}";
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task BulkStatusAsync(ChangeEventArgs e) =>
+        long.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+            ? BulkAsync(new WorkItemEdit.Status(id), $"moved to {_view!.Columns.First(c => c.Id == id).Name}")
+            : Task.CompletedTask;
+
+    private Task BulkPriorityAsync(ChangeEventArgs e) =>
+        Enum.TryParse<Priority>(e.Value?.ToString(), out var priority)
+            ? BulkAsync(new WorkItemEdit.Priority(priority), $"set to {priority} priority")
+            : Task.CompletedTask;
+
+    private Task BulkAssignAsync(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        if (value == ListState.UnassignedValue)
+        {
+            return BulkAsync(new WorkItemEdit.Assignee(null), "unassigned");
+        }
+
+        return Guid.TryParse(value, out var id)
+            ? BulkAsync(new WorkItemEdit.Assignee(id), $"assigned to {_view!.People.First(p => p.UserId == id).DisplayName}")
+            : Task.CompletedTask;
+    }
+
+    private DeleteWorkItemsDialog? _deleteDialog;
+
+    /// <summary>Jira's "Delete" for the selected items: asks first, listing any the person cannot delete.</summary>
+    private Task AskDeleteAsync()
+    {
+        _error = null;
+        return _deleteDialog!.AskAsync(_view!.Rows.Items.Where(r => _selected.Contains(r.Key)).Select(r => r.Key).ToList());
+    }
+
+    private async Task DeletedAsync()
+    {
+        _selected.Clear();
+        await LoadAsync();
+    }
+
+    /// <summary>Applies one change to every selected item, one save at a time, then says how many it changed.</summary>
+    private async Task BulkAsync(WorkItemEdit edit, string what)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var rows = _view!.Rows.Items.Where(r => _selected.Contains(r.Key)).ToList();
+            var failed = new List<string>();
+            foreach (var row in rows)
+            {
+                var saved = await Items.UpdateAsync(row.Key, edit, row.Version, CancellationToken.None);
+                if (!saved.IsSuccess)
+                {
+                    failed.Add($"{row.Key}: {saved.Error!.Message}");
+                }
+            }
+
+            var changed = rows.Count - failed.Count;
+            Announcer.Announce($"{changed} {(changed == 1 ? "work item" : "work items")} {what}.");
+            _error = failed.Count == 0 ? null : string.Join(" ", failed);
+            _selected.Clear();
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 
     private string TaskHref(string key) => Navigation.ToBaseRelativePath(Navigation.GetUriWithQueryParameter("task", key));
 
@@ -362,9 +1003,9 @@ else
         Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("task", (string?)null));
     }
 
-    private async Task<string?> CreateAsync(string title)
+    private async Task<string?> CreateAsync(string title, WorkItemType type)
     {
-        var result = await Boards.CreateInlineAsync(Key, _view!.FirstToDoColumnId, title, CancellationToken.None);
+        var result = await Items.CreateAsync(Key, new NewWorkItem(type, title), CancellationToken.None);
         if (result.Error is { Kind: ErrorKind.NotFound or ErrorKind.Forbidden })
         {
             await LoadAsync();
@@ -386,67 +1027,45 @@ else
 
     private string AriaSort(ListSort sort) => sort != State.Sort ? "none" : State.Descending ? "descending" : "ascending";
 
-    private string DateText(DateOnly? date) => date is { } d
-        ? d.ToString(d.Year == _today.Year ? "d MMM" : "d MMM yyyy", CultureInfo.InvariantCulture)
-        : "";
+    private string DateText(DateOnly? date) => date is { } d ? d.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : "";
 
-    private static string TypeLabel(StatusCategory type) => type switch
+    private static string CategoryClass(StatusCategory category) => category switch
     {
-        StatusCategory.ToDo => "To do",
-        StatusCategory.InProgress => "In progress",
-        _ => "Done",
+        StatusCategory.Done => "done",
+        StatusCategory.InProgress => "inprogress",
+        _ => "todo",
+    };
+
+    private string GroupLabel(ListGroup group) => group switch
+    {
+        ListGroup.Epic => ContainerLabel,
+        ListGroup.Type => "Work type",
+        _ => group.ToString(),
     };
 
     private static string DueLabel(DueFilter due) => due switch
     {
         DueFilter.Overdue => "Overdue",
-        DueFilter.Next7Days => "In the next 7 days",
+        DueFilter.Next7Days => "Due in the next 7 days",
         _ => "No due date",
     };
 
-    /// <summary>One removable chip per active filter value, in the order of the filter controls (FR-030).</summary>
-    private IEnumerable<(string Label, Func<ListState, ListState> Remove)> Chips()
+    // An item made with the Create form in this space shows at once (Jira parity pass FR-001).
+    private void OnCreated(string spaceKey, string itemKey)
     {
-        foreach (var id in State.Columns)
+        if (string.Equals(spaceKey, Key, StringComparison.OrdinalIgnoreCase))
         {
-            var name = _view!.Columns.FirstOrDefault(c => c.Id == id)?.Name ?? id.ToString(CultureInfo.InvariantCulture);
-            yield return ($"Status: {name}", s => s with { Columns = s.Columns.Where(c => c != id).ToList(), Page = 1 });
+            _ = InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                StateHasChanged();
+            });
         }
+    }
 
-        foreach (var type in State.Types)
-        {
-            yield return ($"Status type: {TypeLabel(type)}", s => s with { Types = s.Types.Where(t => t != type).ToList(), Page = 1 });
-        }
-
-        foreach (var priority in State.Priorities)
-        {
-            yield return ($"Priority: {priority}", s => s with { Priorities = s.Priorities.Where(p => p != priority).ToList(), Page = 1 });
-        }
-
-        if (State.Me)
-        {
-            yield return ("Assignee: Me", s => s with { Me = false, Page = 1 });
-        }
-
-        if (State.Unassigned)
-        {
-            yield return ("Assignee: Unassigned", s => s with { Unassigned = false, Page = 1 });
-        }
-
-        foreach (var person in State.People)
-        {
-            var name = _view!.People.FirstOrDefault(p => p.UserId == person)?.DisplayName ?? "someone";
-            yield return ($"Assignee: {name}", s => s with { People = s.People.Where(p => p != person).ToList(), Page = 1 });
-        }
-
-        if (State.Due != DueFilter.Any)
-        {
-            yield return ($"Due: {DueLabel(State.Due)}", s => s with { Due = DueFilter.Any, Page = 1 });
-        }
-
-        if (State.Text.Length > 0)
-        {
-            yield return ($"Words: {State.Text}", s => s with { Text = "", Page = 1 });
-        }
+    public void Dispose()
+    {
+        _typing?.Cancel();
+        Launcher.Created -= OnCreated;
     }
 }

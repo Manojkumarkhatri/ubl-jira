@@ -1,0 +1,179 @@
+@page "/spaces/{Key}/forms"
+@using Upms.Application.Projects
+@using Upms.Application.Work
+@using Upms.Domain.Projects
+@using Upms.Domain.Work
+@inject ISpaceViewService SpaceViews
+@inject ISpaceFormService Forms
+@inject NavigationManager Navigation
+
+<PageTitle>@(_space?.SpaceName ?? Key) · Forms · U-PMS</PageTitle>
+
+@* The space's Forms, as Jira's: Space admins build forms; anyone who can add work fills them in, and each response
+   becomes a work item. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_space is null || _forms is null)
+{
+    <p aria-busy="true">Loading the forms…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@Key" Title="@_space.SpaceName" Current="ProjectPage.Forms" Template="_space.Template"
+                   CanManage="_space.CanManage" CanRestoreDeleted="_space.IsAdministrator" />
+
+    @if (_forms.Forms.Count == 0 && !_creating)
+    {
+        <div class="empty-hero empty-panel">
+            <svg class="empty-art" viewBox="0 0 300 200" aria-hidden="true" focusable="false">
+                <path d="M60 50c40-45 160-40 190 10 25 45 0 105-50 125-55 20-135 5-160-40C20 110 30 80 60 50z" fill="#1868db" />
+                <rect x="85" y="35" width="130" height="140" rx="6" fill="#fff" stroke="#dfe1e6" />
+                <rect x="98" y="50" width="70" height="7" rx="3" fill="#292a2e" />
+                <rect x="98" y="68" width="40" height="4" rx="2" fill="#8590a2" /><rect x="98" y="76" width="104" height="12" rx="3" fill="#fff" stroke="#8590a2" />
+                <rect x="98" y="98" width="40" height="4" rx="2" fill="#8590a2" /><rect x="98" y="106" width="104" height="24" rx="3" fill="#fff" stroke="#8590a2" />
+                <rect x="98" y="140" width="40" height="4" rx="2" fill="#8590a2" /><rect x="152" y="152" width="50" height="14" rx="3" fill="#1868db" />
+            </svg>
+            <h2>Collect work with forms</h2>
+            <p>Build a form that your team or stakeholders fill in. Every response becomes a work item in this space, ready to plan.</p>
+            @if (_forms.CanManage)
+            {
+                <button type="button" class="btn btn-primary" @onclick="StartCreate">Create form</button>
+            }
+            else
+            {
+                <p class="hint">Someone who manages the space can create forms.</p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="cal-toolbar">
+            <div class="board-search">
+                <Icon Name="search" />
+                <input type="search" class="input" aria-label="Search forms" placeholder="Search forms" @bind="_search" @bind:event="oninput" />
+            </div>
+            <span class="spacer"></span>
+            @if (_forms.CanManage && !_creating)
+            {
+                <button type="button" class="btn btn-primary" @onclick="StartCreate"><Icon Name="plus" /> Create form</button>
+            }
+        </div>
+        @if (_creating)
+        {
+            <form class="doc-create card" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+                <label for="form-name">Form name</label>
+                <div class="doc-create-row">
+                    <input id="form-name" class="input" maxlength="100" placeholder="For example: Report a data issue" @bind="_name" required />
+                    <button type="submit" class="btn btn-primary" disabled="@_busy">Create</button>
+                    <button type="button" class="btn btn-ghost" @onclick="() => _creating = false">Cancel</button>
+                </div>
+                @if (_error is not null)
+                {
+                    <p class="field-error" role="alert">@_error</p>
+                }
+            </form>
+        }
+        @if (_forms.Forms.Count > 0)
+        {
+            <div class="table-wrap">
+                <table class="tbl form-table">
+                    <caption class="sr-only">Forms of this space</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Form</th>
+                            <th scope="col" class="hide-sm">Creates</th>
+                            <th scope="col">Status</th>
+                            <th scope="col" class="hide-sm">Responses</th>
+                            <th scope="col"><span class="sr-only">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var form in _forms.Forms.Where(f => string.IsNullOrWhiteSpace(_search) || f.Name.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase)))
+                        {
+                            <tr @key="form.Id">
+                                <td>
+                                    <a class="form-name" href="spaces/@Key/forms/@form.Id"><Icon Name="forms" /> @form.Name</a>
+                                    @if (form.Intro is { } intro)
+                                    {
+                                        <span class="hint form-intro">@intro</span>
+                                    }
+                                </td>
+                                <td class="hide-sm"><TypeIcon Type="form.WorkType" /> @WorkItemTypes.DisplayName(form.WorkType)</td>
+                                <td><span class="lozenge-status @(form.IsOpen ? "st-done" : "st-todo")">@(form.IsOpen ? "Open" : "Closed")</span></td>
+                                <td class="hide-sm">@form.ResponseCount</td>
+                                <td class="actions">
+                                    @if (form.IsOpen && form.CanSubmit)
+                                    {
+                                        <a class="btn btn-sm" href="spaces/@Key/forms/@form.Id">Fill in</a>
+                                    }
+                                    @if (form.CanManage)
+                                    {
+                                        <a class="btn btn-sm btn-ghost" href="spaces/@Key/forms/@form.Id/edit">Edit</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    private SpaceViews? _space;
+    private SpaceFormList? _forms;
+    private bool _notFound;
+    private bool _creating;
+    private bool _busy;
+    private string _name = "";
+    private string _search = "";
+    private string? _error;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var space = await SpaceViews.GetAsync(Key, CancellationToken.None);
+        var forms = await Forms.ListAsync(Key, CancellationToken.None);
+        _notFound = !space.IsSuccess || !forms.IsSuccess;
+        _space = space.Value;
+        _forms = forms.Value;
+    }
+
+    private void StartCreate()
+    {
+        _creating = true;
+        _name = "";
+        _error = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var created = await Forms.CreateAsync(Key, _name, CancellationToken.None);
+            if (created.IsSuccess)
+            {
+                Navigation.NavigateTo($"spaces/{Key}/forms/{created.Value!.Id}/edit");
+            }
+            else
+            {
+                _error = created.Error!.MessageFor("Name");
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

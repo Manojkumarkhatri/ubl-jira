@@ -5,6 +5,9 @@ namespace Upms.Web.Security;
 /// come from this site only.</summary>
 internal sealed class SecurityHeadersMiddleware(RequestDelegate next, IWebHostEnvironment environment)
 {
+    /// <summary>Set in <see cref="HttpContext.Items"/> by a response that sends its own, stricter policy.</summary>
+    public const string OwnPolicyKey = "Upms.OwnContentSecurityPolicy";
+
     private readonly string _contentSecurityPolicy = string.Join("; ",
         "default-src 'self'",
         "script-src 'self'",
@@ -22,7 +25,12 @@ internal sealed class SecurityHeadersMiddleware(RequestDelegate next, IWebHostEn
         context.Response.OnStarting(() =>
         {
             var headers = context.Response.Headers;
-            headers.ContentSecurityPolicy = _contentSecurityPolicy;
+            // A response may set a stricter policy of its own, as attachment downloads do (Phase 4 research R13).
+            if (!context.Items.ContainsKey(OwnPolicyKey))
+            {
+                headers.ContentSecurityPolicy = _contentSecurityPolicy;
+            }
+
             headers.XContentTypeOptions = "nosniff";
             headers.XFrameOptions = "DENY";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";

@@ -1,12 +1,12 @@
 @implements IDisposable
 @inject IJSRuntime JS
 
-<dialog @ref="_dialog" class="modal @Class" aria-labelledby="@_titleId" data-testid="@TestId">
+<dialog @ref="_dialog" class="modal @Class" aria-labelledby="@_titleId" data-testid="@TestId" data-close-guard="@(GuardsClose ? "true" : null)">
     @if (_open)
     {
         <div class="modal-head">
             <h2 id="@_titleId">@Title</h2>
-            <button type="button" class="icon-btn" aria-label="Close" @onclick="CloseAsync">×</button>
+            <button type="button" class="icon-btn" aria-label="Close" @onclick="CloseRequestedAsync">×</button>
         </div>
         <div class="modal-body">@ChildContent</div>
         @if (Footer is not null)
@@ -35,6 +35,11 @@
     [Parameter]
     public EventCallback OnClosed { get; set; }
 
+    /// <summary>When set, Esc and the close button ask the owner instead of closing, so it can confirm before typed text is
+    /// lost (the Create form, Jira parity pass FR-008); the owner then calls <see cref="CloseAsync"/>.</summary>
+    [Parameter]
+    public EventCallback OnCloseRequested { get; set; }
+
     [Parameter]
     public string? Class { get; set; }
 
@@ -42,6 +47,8 @@
     public string? TestId { get; set; }
 
     public bool IsOpen => _open;
+
+    private bool GuardsClose => OnCloseRequested.HasDelegate;
 
     /// <summary>Opens the dialog as a native modal: focus moves in, Esc closes, the page behind is inert.</summary>
     public void Open()
@@ -68,6 +75,12 @@
 
         await HandleClosedAsync();
     }
+
+    /// <summary>Called by the browser on Esc in a guarded dialog.</summary>
+    [JSInvokable]
+    public Task OnDialogCloseRequested() => CloseRequestedAsync();
+
+    private Task CloseRequestedAsync() => GuardsClose ? OnCloseRequested.InvokeAsync() : CloseAsync();
 
     /// <summary>Called by the browser when the dialog closes (Esc or <see cref="CloseAsync"/>).</summary>
     [JSInvokable]

@@ -1,0 +1,116 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+
+@* One card of the backlog or a sprint (Phase 3 FR-021): one tab stop for its link and one for its Move menu, the
+   keyboard alternative to dragging (contracts/ui-routes.md, "Keyboard"). *@
+<li class="brow @(IsDragging ? "dragging" : "") @(_dropHint ? "drop-hint" : "")" data-testid="backlog-row" data-key="@Row.Key"
+    draggable="@(CanContribute ? "true" : "false")"
+    @ondragstart="() => OnDragStart.InvokeAsync(Row)" @ondragend="() => OnDragEnd.InvokeAsync()"
+    @ondragenter="() => _dropHint = CanContribute" @ondragleave="() => _dropHint = false"
+    @ondragover:preventDefault @ondrop:preventDefault @ondrop="DropAsync">
+    <TypeIcon Type="Row.Type" />
+    <span class="key">@Row.Key</span>
+    <a class="brow-title" href="spaces/@ProjectKey/backlog?task=@Row.Key" draggable="false">@Row.Title</a>
+    @if (Row.SubtaskCount > 0)
+    {
+        <span class="hint brow-subtasks">@Row.SubtaskCount sub-task@(Row.SubtaskCount == 1 ? "" : "s")</span>
+    }
+    <span class="spacer"></span>
+    @if (Row.Epic is { } epic)
+    {
+        <span class="brow-epic" data-testid="row-epic">@epic.Key @epic.Title</span>
+    }
+    <span class="brow-status" data-testid="row-status">@Row.Status.Name</span>
+    <AssigneeBadge Assignee="Row.Assignee" />
+    @if (Row.Estimate is { } estimate)
+    {
+        <span class="estimate" data-testid="row-estimate">@WorkItem.FormatEstimate(estimate)<span class="sr-only"> points</span></span>
+    }
+    else
+    {
+        <span class="estimate unestimated" data-testid="row-estimate"><span aria-hidden="true">–</span><span class="sr-only">No estimate</span></span>
+    }
+    @if (CanContribute)
+    {
+        <div class="move-menu" @onkeydown="OnKeyDownAsync">
+            <button type="button" id="move-@Row.Key" class="btn btn-sm btn-ghost move-btn" aria-expanded="@(_open ? "true" : "false")"
+                    aria-controls="move-list-@Row.Key" @ref="_button" @onclick="() => _open = !_open">
+                Move<span class="sr-only"> @Row.Key to…</span>
+            </button>
+            @if (_open)
+            {
+                <div id="move-list-@Row.Key" class="move-list" role="group" aria-label="Move @Row.Key">
+                    <button type="button" class="menu-item" @onclick="() => ChooseAsync(CurrentList, BacklogPlacement.AtTop)">Move to top</button>
+                    <button type="button" class="menu-item" @onclick="() => ChooseAsync(CurrentList, BacklogPlacement.AtBottom)">Move to bottom</button>
+                    <button type="button" class="menu-item" @onclick="() => ChooseAsync(CurrentList, BacklogPlacement.OneUp)">Move up</button>
+                    <button type="button" class="menu-item" @onclick="() => ChooseAsync(CurrentList, BacklogPlacement.OneDown)">Move down</button>
+                    @foreach (var list in Lists.Where(l => l.Target != CurrentList))
+                    {
+                        <button type="button" class="menu-item" @onclick="() => ChooseAsync(list.Target, BacklogPlacement.KeepRank)">Move to @list.Name</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+</li>
+
+@code {
+    private ElementReference _button;
+    private bool _open;
+    private bool _dropHint;
+
+    [Parameter, EditorRequired]
+    public BacklogRow Row { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = "";
+
+    /// <summary>The list the row is in: the backlog or a sprint.</summary>
+    [Parameter, EditorRequired]
+    public BacklogTarget CurrentList { get; set; } = BacklogTarget.ToBacklog;
+
+    /// <summary>Every list a card can be moved to, with the name the menu shows ("MOB Sprint 2", "backlog").</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<(string Name, BacklogTarget Target)> Lists { get; set; } = [];
+
+    /// <summary>False for Viewers: the row can be opened but not dragged or moved (Phase 3 FR-055).</summary>
+    [Parameter]
+    public bool CanContribute { get; set; }
+
+    [Parameter]
+    public bool IsDragging { get; set; }
+
+    [Parameter]
+    public EventCallback<BacklogRow> OnDragStart { get; set; }
+
+    [Parameter]
+    public EventCallback OnDragEnd { get; set; }
+
+    /// <summary>Another row was dropped on this one: it goes just before this row.</summary>
+    [Parameter]
+    public EventCallback<BacklogRow> OnDropBefore { get; set; }
+
+    [Parameter]
+    public EventCallback<(BacklogRow Row, BacklogTarget Target, BacklogPlacement Placement)> OnMove { get; set; }
+
+    private Task DropAsync()
+    {
+        _dropHint = false;
+        return OnDropBefore.InvokeAsync(Row);
+    }
+
+    private async Task ChooseAsync(BacklogTarget target, BacklogPlacement placement)
+    {
+        _open = false;
+        await OnMove.InvokeAsync((Row, target, placement));
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _open)
+        {
+            _open = false;
+            await _button.FocusAsync();
+        }
+    }
+}

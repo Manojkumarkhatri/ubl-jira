@@ -1,0 +1,324 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject IWorkItemActionService Actions
+@inject ICreateWorkService CreateWork
+@* Jira's "Move" in two steps: first the destination space, work type and (for a sub-task) parent; then a confirmation of
+   what changes, with the status it lands in when it goes to another space. Epics, stories, tasks, bugs and sub-tasks
+   change into one another this way. *@
+<ModalDialog @ref="_dialog" Title="@Title" TestId="move-dialog" Class="move-dialog">
+    <ChildContent>
+        @if (_details is { } d)
+        {
+            @if (_preview is not { } preview)
+            {
+                <p class="hint">Choose where @d.Key goes. Its comments, attachments, history, watchers and work logs go with it.</p>
+                <table class="move-table">
+                    <thead><tr><th scope="col"></th><th scope="col">Current</th><th scope="col">New</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <th scope="row"><label for="move-space">Space</label></th>
+                            <td>@d.ProjectName</td>
+                            <td>
+                                <select id="move-space" class="select" autofocus value="@_spaceKey" @onchange="SpaceChanged">
+                                    @foreach (var space in _spaces)
+                                    {
+                                        <option value="@space.Key">@space.Name (@space.Key)</option>
+                                    }
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="move-type">Work type</label></th>
+                            <td><span class="type-with-icon"><TypeIcon Type="d.Type" /> @WorkItemTypes.DisplayName(d.Type)</span></td>
+                            <td>
+                                <select id="move-type" class="select" value="@_type.ToString()" @onchange="TypeChanged">
+                                    @foreach (var type in Types)
+                                    {
+                                        <option value="@type.ToString()">@WorkItemTypes.DisplayName(type)</option>
+                                    }
+                                </select>
+                            </td>
+                        </tr>
+                        @if (_type == WorkItemType.Subtask || d.Parent is not null)
+                        {
+                            <tr>
+                                <th scope="row"><label for="move-parent">Parent</label></th>
+                                <td>@(d.Parent is { } parent ? $"{parent.Key} {parent.Title}" : "None")</td>
+                                <td>
+                                    @if (_type == WorkItemType.Subtask)
+                                    {
+                                        <input id="move-parent" class="input" type="search" autocomplete="off" placeholder="Search by key or summary"
+                                               value="@_parentText" @oninput="ParentTextChangedAsync" aria-describedby="move-parent-chosen" />
+                                        <span id="move-parent-chosen" class="hint">@(_parentKey is null ? "Choose a story, task or bug." : $"Chosen: {_parentKey}")</span>
+                                        @if (_parents.Count > 0)
+                                        {
+                                            <ul class="move-parents" aria-label="Parents found">
+                                                @foreach (var option in _parents)
+                                                {
+                                                    <li>
+                                                        <button type="button" class="move-parent @(option.Key == _parentKey ? "is-chosen" : "")" aria-pressed="@(option.Key == _parentKey ? "true" : "false")"
+                                                                @onclick="() => ChooseParent(option)">
+                                                            <TypeIcon Type="option.Type" /> <span class="key">@option.Key</span> @option.Title
+                                                        </button>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span>None</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <p>Check the changes, then move <strong>@preview.Key</strong> @preview.Title.</p>
+                <table class="move-table">
+                    <thead><tr><th scope="col"></th><th scope="col">Current</th><th scope="col">New</th></tr></thead>
+                    <tbody>
+                        <tr><th scope="row">Space</th><td>@preview.FromSpace</td><td>@preview.ToSpace</td></tr>
+                        <tr><th scope="row">Work type</th><td>@WorkItemTypes.DisplayName(preview.FromType)</td><td>@WorkItemTypes.DisplayName(preview.ToType)</td></tr>
+                        @if (preview.FromParent is not null || preview.ToParent is not null)
+                        {
+                            <tr><th scope="row">Parent</th><td>@(preview.FromParent ?? "None")</td><td>@(preview.ToParent ?? "None")</td></tr>
+                        }
+                        <tr>
+                            <th scope="row"><label for="move-status">Status</label></th>
+                            <td>@preview.FromStatus</td>
+                            <td>
+                                @if (IsOtherSpace(preview))
+                                {
+                                    <select id="move-status" class="select" value="@_statusId" @onchange="StatusChanged">
+                                        @foreach (var status in preview.Statuses)
+                                        {
+                                            <option value="@status.Id">@status.Name</option>
+                                        }
+                                    </select>
+                                }
+                                else
+                                {
+                                    @preview.FromStatus
+                                }
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                @if (preview.Consequences.Count > 0)
+                {
+                    <ul class="move-consequences">
+                        @foreach (var line in preview.Consequences)
+                        {
+                            <li>@line</li>
+                        }
+                    </ul>
+                }
+            }
+            <span class="error-text" role="alert">@_error</span>
+        }
+    </ChildContent>
+    <Footer>
+        @if (_preview is null)
+        {
+            <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn btn-primary" data-testid="move-next" disabled="@(_busy || _spaces.Count == 0)" @onclick="NextAsync">Next</button>
+        }
+        else
+        {
+            <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+            <button type="button" class="btn" @onclick="Back">Back</button>
+            <button type="button" class="btn btn-primary" data-testid="move-save" disabled="@_busy" @onclick="MoveAsync">Move</button>
+        }
+    </Footer>
+</ModalDialog>
+
+@code {
+    private static readonly WorkItemType[] Movable =
+        [WorkItemType.Epic, WorkItemType.Story, WorkItemType.Task, WorkItemType.Bug, WorkItemType.Subtask];
+
+    private ModalDialog? _dialog;
+    private WorkItemDetails? _details;
+    private IReadOnlyList<CreateSpaceOption> _spaces = [];
+    private string _spaceKey = "";
+    private WorkItemType _type;
+    private string _parentText = "";
+    private string? _parentKey;
+    private IReadOnlyList<ParentOption> _parents = [];
+    private int _search;
+    private MovePreview? _preview;
+    private long _statusId;
+    private string? _error;
+    private bool _busy;
+
+    /// <summary>The item's key afterwards (new when it went to another space) and its space.</summary>
+    [Parameter]
+    public EventCallback<(string Key, string SpaceKey)> OnMoved { get; set; }
+
+    private string Title => $"Move {_details?.Key}: step {(_preview is null ? 1 : 2)} of 2";
+
+    private IReadOnlyList<WorkItemType> Types =>
+        _spaces.FirstOrDefault(s => s.Key == _spaceKey)?.Types.Where(Movable.Contains).ToList() ?? [];
+
+    public async Task OpenAsync(WorkItemDetails details)
+    {
+        _details = details;
+        _preview = null;
+        _error = null;
+        _spaceKey = details.ProjectKey;
+        _type = details.Type;
+        _parentKey = details.Parent?.Key;
+        _parentText = "";
+        _parents = [];
+        _dialog!.Open();
+        var spaces = await CreateWork.SpacesAsync(details.ProjectKey, CancellationToken.None);
+        _spaces = spaces.IsSuccess ? spaces.Value!.Spaces : [];
+        if (_spaces.Count == 0)
+        {
+            _error = "You can't add work to any space.";
+        }
+        else if (_spaces.All(s => s.Key != _spaceKey))
+        {
+            _spaceKey = _spaces[0].Key;
+        }
+
+        // A sub-task usually moves to become a task; other items start on their own type for the person to change.
+        if (_type == WorkItemType.Subtask && Types.Contains(WorkItemType.Task))
+        {
+            _type = WorkItemType.Task;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SpaceChanged(ChangeEventArgs e)
+    {
+        _spaceKey = e.Value?.ToString() ?? _spaceKey;
+        if (!Types.Contains(_type))
+        {
+            _type = Types.FirstOrDefault(t => t != WorkItemType.Subtask && t != WorkItemType.Epic, Types.FirstOrDefault());
+        }
+
+        _parentKey = null;
+        _parents = [];
+        _parentText = "";
+        if (_type == WorkItemType.Subtask)
+        {
+            await FindParentsAsync();
+        }
+    }
+
+    private async Task TypeChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<WorkItemType>(e.Value?.ToString(), out var type))
+        {
+            _type = type;
+        }
+
+        _error = null;
+        if (_type == WorkItemType.Subtask && _parents.Count == 0)
+        {
+            await FindParentsAsync();
+        }
+    }
+
+    private async Task ParentTextChangedAsync(ChangeEventArgs e)
+    {
+        _parentText = e.Value?.ToString() ?? "";
+        await FindParentsAsync();
+    }
+
+    private async Task FindParentsAsync()
+    {
+        var search = ++_search;
+        var result = await CreateWork.FindParentsAsync(_spaceKey, WorkItemType.Subtask, _parentText, CancellationToken.None);
+        if (search != _search)
+        {
+            return; // a later search is on its way
+        }
+
+        _parents = result.IsSuccess ? result.Value!.Where(p => p.Key != _details?.Key).ToList() : [];
+    }
+
+    private void ChooseParent(ParentOption option)
+    {
+        _parentKey = option.Key;
+        _parentText = option.Key;
+    }
+
+    private void StatusChanged(ChangeEventArgs e)
+    {
+        if (long.TryParse(e.Value?.ToString(), out var id))
+        {
+            _statusId = id;
+        }
+    }
+
+    private bool IsOtherSpace(MovePreview preview) => !string.Equals(_spaceKey, _details?.ProjectKey, StringComparison.OrdinalIgnoreCase);
+
+    private MoveTarget Request(long? statusId = null) =>
+        new(_spaceKey, _type, _type == WorkItemType.Subtask ? _parentKey : null, statusId);
+
+    private async Task NextAsync()
+    {
+        if (_busy || _details is not { } d)
+        {
+            return;
+        }
+
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Actions.PreviewMoveAsync(d.Key, Request(), CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            _preview = result.Value!;
+            _statusId = _preview.StatusId;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Back()
+    {
+        _preview = null;
+        _error = null;
+    }
+
+    private async Task MoveAsync()
+    {
+        if (_busy || _details is not { } d || _preview is not { } preview)
+        {
+            return;
+        }
+
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Actions.MoveAsync(d.Key, Request(IsOtherSpace(preview) ? _statusId : null), CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error!.Message;
+                return;
+            }
+
+            await _dialog!.CloseAsync();
+            await OnMoved.InvokeAsync((result.Value!, _spaceKey));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

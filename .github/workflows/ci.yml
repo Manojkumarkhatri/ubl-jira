@@ -31,11 +31,13 @@ jobs:
       - name: Build (warnings as errors, NuGet audit)
         run: dotnet build Upms.slnx -c Release --no-restore
       - name: Test (unit, integration, component, architecture)
-        # The performance suite is opt-in (quickstart step 7); end-to-end tests run in their own job.
+        # The performance suite is opt-in (quickstart step 7); end-to-end tests and the tests that need the
+        # ClamAV and smtp4dev containers (trait Category=ExternalServices) run in their own jobs.
         run: |
           for project in Domain Application Web Architecture; do
             dotnet test --project "tests/Upms.$project.Tests" -c Release --no-build \
-              --results-directory TestResults --report-xunit-trx --report-xunit-trx-filename "$project.trx"
+              --results-directory TestResults --report-xunit-trx --report-xunit-trx-filename "$project.trx" \
+              --filter-not-trait "Category=ExternalServices"
           done
       - name: EF Core model and migrations in sync
         run: dotnet ef migrations has-pending-model-changes --project src/Upms.Infrastructure --startup-project src/Upms.Web -c Release --no-build
@@ -70,3 +72,46 @@ jobs:
           path: |
             TestResults
             tests/Upms.E2E.Tests/bin/Release/net10.0/traces
+
+  external-services:
+    # Protocol tests against real ClamAV and SMTP servers (research R27); they pull two container images.
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build
+        run: dotnet build tests/Upms.Application.Tests -c Release
+      - name: ClamAV and SMTP tests
+        run: >-
+          dotnet test --project tests/Upms.Application.Tests -c Release --no-build
+          --filter-trait "Category=ExternalServices"
+          --results-directory TestResults --report-xunit-trx --report-xunit-trx-filename external.trx
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-services-results
+          path: TestResults
+
+  editor:
+    # The formatted-text editor bundle (research R2): the committed wwwroot/js/editor.js must match its sources,
+    # and its npm dependencies must have no known high-severity vulnerabilities.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Upms.Web/Editor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/Upms.Web/Editor/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run build
+      - name: The committed bundle matches its sources
+        run: git diff --exit-code -- ../wwwroot/js/editor.js

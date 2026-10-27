@@ -1,0 +1,31 @@
+@page "/for-you/viewed"
+@using Upms.Application.Work
+@inject ISearchService Search
+
+<PageTitle>Viewed · For you · U-PMS</PageTitle>
+
+@* "Viewed": the items the person opened last (Jira parity pass FR-022a; Phase 4 FR-033). *@
+<ForYouTabs Current="ForYouTab.Viewed" />
+
+@if (_rows is null)
+{
+    <p aria-busy="true">Loading…</p>
+}
+else if (_rows.Count == 0)
+{
+    <EmptyState Title="Nothing viewed yet" Text="The items you open appear here, the latest first." />
+}
+else
+{
+    <ItemRows Rows="_rows" Caption="Items you opened last, the latest first" WhenLabel="Last update" />
+}
+
+@code {
+    private IReadOnlyList<SearchResultRow>? _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Search.RecentAsync(CancellationToken.None);
+        _rows = result.IsSuccess ? result.Value! : [];
+    }
+}

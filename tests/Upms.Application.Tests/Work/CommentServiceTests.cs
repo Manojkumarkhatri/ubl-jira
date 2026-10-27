@@ -17,7 +17,7 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
     }
 
     private Task<Result<CommentView>> CommentAsync(string body) =>
-        CallAsync<ICommentService, Result<CommentView>>(s => s.AddAsync("WEB-1", body, Ct));
+        CallAsync<ICommentService, Result<CommentView>>(s => s.AddAsync("WEB-1", Documents.Text(body), Ct));
 
     private async Task<Page<CommentView>> ListAsync(PageRequest? page = null) =>
         (await CallAsync<ICommentService, Result<Page<CommentView>>>(s => s.ListAsync("WEB-1", page ?? PageRequest.First, Ct))).ValueOrThrow();
@@ -32,7 +32,7 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
 
         var comments = (await ListAsync()).Items;
 
-        Assert.Equal(["First", "Second"], comments.Select(c => c.Body));
+        Assert.Equal(["First", "Second"], comments.Select(c => c.Body!.PlainText));
         Assert.Equal(Owner.DisplayName, comments[0].AuthorName);
         Assert.False(comments[0].IsMine);
         Assert.True(comments[1].IsMine);
@@ -45,10 +45,10 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
         var comment = (await CommentAsync("First draft")).Value!;
         Harness.Time.Advance(TimeSpan.FromMinutes(2));
 
-        var edited = await CallAsync<ICommentService, Result<CommentView>>(s => s.EditAsync(comment.Id, "Final", comment.Version, Ct));
+        var edited = await CallAsync<ICommentService, Result<CommentView>>(s => s.EditAsync(comment.Id, Documents.Text("Final"), comment.Version, Ct));
 
         Assert.True(edited.IsSuccess, edited.Error?.Message);
-        Assert.Equal(("Final", Harness.Time.GetUtcNow()), (edited.Value!.Body, edited.Value.EditedAt));
+        Assert.Equal(("Final", Harness.Time.GetUtcNow()), (edited.Value!.Body!.PlainText, edited.Value.EditedAt));
     }
 
     [Fact]
@@ -70,12 +70,12 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
         var comment = (await CommentAsync("Mine")).Value!;
         ActAs(await Data.AdministratorAsync());
 
-        var edit = await CallAsync<ICommentService, Result<CommentView>>(s => s.EditAsync(comment.Id, "Changed", comment.Version, Ct));
+        var edit = await CallAsync<ICommentService, Result<CommentView>>(s => s.EditAsync(comment.Id, Documents.Text("Changed"), comment.Version, Ct));
         var delete = await CallAsync<ICommentService, Result>(s => s.DeleteAsync(comment.Id, Ct));
 
         Assert.Equal(ErrorCodes.CommentNotOwned, edit.Error!.Code);
         Assert.Equal(ErrorCodes.CommentNotOwned, delete.Error!.Code);
-        Assert.Equal("Mine", (await ListAsync()).Items.Single().Body);
+        Assert.Equal("Mine", (await ListAsync()).Items.Single().Body!.PlainText);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
     public async Task Comment_activity_is_recorded_in_the_task_history()
     {
         var comment = (await CommentAsync("Hello")).Value!;
-        var edited = (await CallAsync<ICommentService, Result<CommentView>>(s => s.EditAsync(comment.Id, "Hello!", comment.Version, Ct))).Value!;
+        var edited = (await CallAsync<ICommentService, Result<CommentView>>(s => s.EditAsync(comment.Id, Documents.Text("Hello!"), comment.Version, Ct))).Value!;
         await CallAsync<ICommentService, Result>(s => s.DeleteAsync(edited.Id, Ct));
 
         var fields = (await HistoryAsync("WEB-1")).Items.Select(h => h.Field).ToList();
@@ -110,7 +110,7 @@ public sealed class CommentServiceTests(SqlServerFixture fixture) : DrawerTestBa
         var second = await ListAsync(new PageRequest(2));
 
         Assert.Equal((50, 51), (first.Items.Count, first.TotalCount));
-        Assert.Equal("Comment 51", Assert.Single(second.Items).Body);
+        Assert.Equal("Comment 51", Assert.Single(second.Items).Body!.PlainText);
     }
 
     [Fact]

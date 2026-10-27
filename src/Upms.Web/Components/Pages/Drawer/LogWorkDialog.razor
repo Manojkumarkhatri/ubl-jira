@@ -1,0 +1,164 @@
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@inject IWorkItemActionService Actions
+@inject IJSRuntime JS
+@* Jira's "Log work" (time tracking) dialog: the time logged against the estimate, then the time spent, the time remaining,
+   when the work started and what was done. Also edits one of the item's work logs. *@
+<ModalDialog @ref="_dialog" Title="@(_editing is null ? "Time tracking" : "Edit work log")" TestId="log-work-dialog" Class="log-work-dialog">
+    <ChildContent>
+        @if (_time is { } time)
+        {
+            <TimeTrackingBar Time="ShownTime(time)" />
+        }
+        <div class="log-work-row">
+            <div class="field">
+                <label for="log-spent">Time spent</label>
+                <input id="log-spent" class="input" type="text" autofocus autocomplete="off" maxlength="40" placeholder="2h 30m" @bind="_spent" @bind:event="oninput"
+                       aria-invalid="@(_spentError is null ? "false" : "true")" aria-describedby="log-format log-spent-error" />
+                <span id="log-spent-error" class="error-text" role="alert">@_spentError</span>
+            </div>
+            <div class="field">
+                <label for="log-remaining">Time remaining</label>
+                <input id="log-remaining" class="input" type="text" autocomplete="off" maxlength="40" placeholder="@RemainingPlaceholder" @bind="_remaining" @bind:event="oninput"
+                       aria-invalid="@(_remainingError is null ? "false" : "true")" aria-describedby="log-format log-remaining-error" />
+                <span id="log-remaining-error" class="error-text" role="alert">@_remainingError</span>
+            </div>
+        </div>
+        <p id="log-format" class="hint">Use the format 2w 4d 6h 45m: w weeks, d days (8 hours), h hours, m minutes. Leave the time remaining empty to work it out.</p>
+        <div class="field">
+            <label for="log-started">Date started</label>
+            <input id="log-started" class="input" type="datetime-local" @bind="_started" @bind:format="yyyy-MM-ddTHH:mm" />
+        </div>
+        <div class="field">
+            <label for="log-note">Work description</label>
+            <textarea id="log-note" class="input" rows="3" maxlength="@WorkLog.NoteMaxLength" @bind="_note" @bind:event="oninput"></textarea>
+        </div>
+        <span class="error-text" role="alert">@_error</span>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" data-testid="log-work-save" disabled="@_busy" @onclick="SaveAsync">Save</button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _dialog;
+    private string _key = "";
+    private TimeTracking? _time;
+    private WorkLogView? _editing;
+    private string _spent = "";
+    private string _remaining = "";
+    private DateTime _started;
+    private int _offsetMinutes;
+    private string? _note;
+    private string? _spentError;
+    private string? _remainingError;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter]
+    public EventCallback<TimeTracking> OnSaved { get; set; }
+
+    /// <summary>Opens the dialog for a new work log, or to change <paramref name="editing"/>.</summary>
+    public async Task OpenAsync(string workItemKey, TimeTracking? time, WorkLogView? editing = null)
+    {
+        _key = workItemKey;
+        _time = time;
+        _editing = editing;
+        _spentError = _remainingError = _error = null;
+        _remaining = "";
+        var now = await LocalNowAsync();
+        _offsetMinutes = now.Offset;
+        if (editing is { } log)
+        {
+            _spent = WorkDuration.Format(log.Minutes);
+            _started = log.StartedAt.ToOffset(TimeSpan.FromMinutes(_offsetMinutes)).DateTime;
+            _note = log.Note;
+        }
+        else
+        {
+            _spent = "";
+            _started = now.Value;
+            _note = null;
+        }
+
+        _dialog!.Open();
+    }
+
+    private static string? FieldError(Upms.Application.Common.Results.AppError error, string field) =>
+        error.FieldErrors is { } errors && errors.TryGetValue(field, out var messages) ? string.Join(" ", messages) : null;
+
+    private sealed record LocalNow(DateTime Value, int Offset);
+
+    private async Task<LocalNow> LocalNowAsync()
+    {
+        try
+        {
+            var parts = await JS.InvokeAsync<string[]>("upms.localNow");
+            if (DateTime.TryParseExact(parts[0], "yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var local)
+                && int.TryParse(parts[1], CultureInfo.InvariantCulture, out var offset))
+            {
+                return new LocalNow(local, offset);
+            }
+        }
+        catch (JSException)
+        {
+        }
+
+        var utc = DateTime.UtcNow;
+        return new LocalNow(new DateTime(utc.Year, utc.Month, utc.Day, utc.Hour, utc.Minute, 0, DateTimeKind.Unspecified), 0);
+    }
+
+    /// <summary>The bar as it will be once the typed time is saved, as Jira's dialog shows it.</summary>
+    private TimeTracking ShownTime(TimeTracking time)
+    {
+        if (!WorkDuration.TryParse(_spent, out var typed))
+        {
+            return time;
+        }
+
+        var added = typed - (_editing?.Minutes ?? 0);
+        var spent = Math.Max(0, time.SpentMinutes + added);
+        int? remaining = WorkDuration.TryParse(_remaining, out var left) ? left
+            : (time.RemainingMinutes ?? time.OriginalMinutes) is { } estimate ? Math.Max(0, estimate - added) : null;
+        return time with { SpentMinutes = spent, RemainingMinutes = remaining };
+    }
+
+    private string RemainingPlaceholder =>
+        _time is { } time && ShownTime(time).RemainingMinutes is { } left ? WorkDuration.Format(left) : "None";
+
+    private async Task SaveAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _spentError = _remainingError = _error = null;
+        _busy = true;
+        try
+        {
+            var started = new DateTimeOffset(DateTime.SpecifyKind(_started, DateTimeKind.Unspecified), TimeSpan.FromMinutes(_offsetMinutes));
+            var input = new WorkLogInput(_spent, started, _note, string.IsNullOrWhiteSpace(_remaining) ? null : _remaining);
+            var result = _editing is { } log
+                ? await Actions.ChangeWorkLogAsync(log.Id, input, CancellationToken.None)
+                : await Actions.LogWorkAsync(_key, input, CancellationToken.None);
+            if (!result.IsSuccess)
+            {
+                var error = result.Error!;
+                _spentError = FieldError(error, "TimeSpent") ?? FieldError(error, "Minutes");
+                _remainingError = FieldError(error, "Remaining");
+                _error = _spentError is null && _remainingError is null ? error.Message : null;
+                return;
+            }
+
+            await _dialog!.CloseAsync();
+            await OnSaved.InvokeAsync(result.Value!);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

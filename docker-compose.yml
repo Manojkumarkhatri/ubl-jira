@@ -17,5 +17,24 @@ services:
       retries: 12
       start_period: 20s
 
+  # Malware checks for attachments (Phase 4). The first start downloads virus definitions and takes a few minutes.
+  clamav:
+    image: clamav/clamav:stable
+    ports:
+      - "3310:3310"
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+
+  # A development mail server for Phase 4 email: SMTP on 2525, and its inbox at http://localhost:5025.
+  smtp4dev:
+    image: rnwood/smtp4dev
+    ports:
+      - "2525:25"
+      - "5025:80"
+
 volumes:
   sqlserver-data:

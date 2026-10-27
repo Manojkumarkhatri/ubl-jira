@@ -1,0 +1,170 @@
+@using Upms.Application.Notifications
+@inject INotificationService Notifications
+@inject NavigationManager Navigation
+@* The notification panel (Phase 4 FR-019, research R25): a non-modal dialog, newest first, 20 at a time. Escape closes it
+   and focus goes back to the bell. *@
+<div id="notification-panel" class="notification-panel" role="dialog" aria-modal="false" aria-labelledby="notification-panel-title"
+     tabindex="-1" @ref="_panel" @onkeydown="OnKeyDownAsync">
+    <div class="panel-head">
+        <h2 id="notification-panel-title" class="panel-title">Notifications</h2>
+        @if (_items.Any(n => !n.IsRead))
+        {
+            <button type="button" class="btn btn-ghost btn-sm" data-testid="mark-all-read" disabled="@_busy" @onclick="MarkAllReadAsync">Mark all as read</button>
+        }
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error-text" role="alert">@_error</p>
+    }
+    else if (_loaded && _items.Count == 0)
+    {
+        <p class="hint">No notifications yet.</p>
+    }
+    else
+    {
+        <ul class="notification-list">
+            @foreach (var n in _items)
+            {
+                var sentence = NotificationText.Sentence(n);
+                <li @key="n.Id" class="notification @(n.IsRead ? "read" : "unread")">
+                    <a href="@NotificationText.Link(n)" @onclick="() => OpenAsync(n)" @onclick:preventDefault="true">@sentence</a>
+                    <span class="when"><LocalTime Value="n.OccurredAt" /></span>
+                    <button type="button" class="btn btn-ghost btn-sm" data-testid="@($"mark-{n.Id}")" disabled="@_busy"
+                            aria-label="@($"{(n.IsRead ? "Mark as unread" : "Mark as read")}: {sentence}")"
+                            @onclick="() => MarkAsync(n, !n.IsRead)">@(n.IsRead ? "Mark unread" : "Mark read")</button>
+                </li>
+            }
+        </ul>
+        @if (_items.Count < _total)
+        {
+            <button type="button" class="btn btn-sm btn-ghost show-more" data-testid="more-notifications" disabled="@_busy"
+                    @onclick="ShowMoreAsync">Show more</button>
+        }
+    }
+</div>
+
+@code {
+    private readonly List<NotificationView> _items = [];
+    private ElementReference _panel;
+    private int _total;
+    private int _page;
+    private bool _loaded;
+    private bool _busy;
+    private string? _error;
+
+    /// <summary>Closes the panel; the bell puts focus back on itself.</summary>
+    [Parameter, EditorRequired]
+    public EventCallback OnClose { get; set; }
+
+    /// <summary>Something was marked read or unread: the bell recounts.</summary>
+    [Parameter, EditorRequired]
+    public EventCallback OnChanged { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync(1);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _panel.FocusAsync();
+        }
+    }
+
+    private async Task LoadAsync(int page)
+    {
+        var result = await Notifications.ListAsync(new Application.Common.PageRequest(page, NotificationsPageSize), CancellationToken.None);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error!.Message;
+            return;
+        }
+
+        var known = _items.Select(n => n.Id).ToHashSet();
+        _items.AddRange(result.Value!.Items.Where(n => !known.Contains(n.Id)));
+        _total = result.Value.TotalCount;
+        _page = page;
+        _loaded = true;
+    }
+
+    private const int NotificationsPageSize = 20;
+
+    private async Task ShowMoreAsync()
+    {
+        _busy = true;
+        try
+        {
+            await LoadAsync(_page + 1);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OpenAsync(NotificationView n)
+    {
+        if (!n.IsRead)
+        {
+            await Notifications.MarkAsync(n.Id, read: true, CancellationToken.None);
+        }
+
+        Navigation.NavigateTo(NotificationText.Link(n));
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task MarkAsync(NotificationView n, bool read)
+    {
+        _busy = true;
+        try
+        {
+            var result = await Notifications.MarkAsync(n.Id, read, CancellationToken.None);
+            if (result.IsSuccess)
+            {
+                Replace(n with { IsRead = read });
+                await OnChanged.InvokeAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        _busy = true;
+        try
+        {
+            if ((await Notifications.MarkAllReadAsync(CancellationToken.None)).IsSuccess)
+            {
+                for (var i = 0; i < _items.Count; i++)
+                {
+                    _items[i] = _items[i] with { IsRead = true };
+                }
+
+                await OnChanged.InvokeAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Replace(NotificationView n)
+    {
+        var index = _items.FindIndex(x => x.Id == n.Id);
+        if (index >= 0)
+        {
+            _items[index] = n;
+        }
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+}

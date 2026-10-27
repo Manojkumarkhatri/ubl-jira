@@ -11,8 +11,8 @@ using Upms.Web.Tests.Fakes;
 
 namespace Upms.Web.Tests.Timeline;
 
-/// <summary>The Timeline view (Phase 2 FR-034–FR-040). "Today" is 27 Sep 2026; in months the track starts on 1 Aug, so
-/// 5 Oct is 520 px in and a day is 8 px.</summary>
+/// <summary>The Timeline view (Phase 2 FR-034–FR-040). "Today" is 27 Sep 2026; in months the track starts three months
+/// before the earliest date's month, on 1 Jun, so 5 Oct is 1008 px in and a day is 8 px.</summary>
 public sealed class TimelinePageTests : BunitTestBase
 {
     private readonly FakeTimelineService _timeline = new();
@@ -34,7 +34,7 @@ public sealed class TimelinePageTests : BunitTestBase
 
     private IRenderedComponent<TimelinePage> RenderTimeline(string query = "")
     {
-        _navigation.NavigateTo($"projects/WEB/timeline{query}");
+        _navigation.NavigateTo($"spaces/WEB/timeline{query}");
         return Render<TimelinePage>(p => p.Add(x => x.Key, "WEB"));
     }
 
@@ -45,6 +45,19 @@ public sealed class TimelinePageTests : BunitTestBase
 
     private static string Style(IRenderedComponent<TimelinePage> cut, string key) => Bar(cut, key).GetAttribute("style") ?? "";
 
+    /// <summary>"Hide completed work items" in the toolbar's View settings, as in Jira.</summary>
+    internal static void ToggleHideCompleted<T>(IRenderedComponent<T> cut)
+        where T : IComponent
+    {
+        if (cut.FindAll("#tl-settings").Count == 0)
+        {
+            cut.Find("#tl-settings-button").Click();
+        }
+
+        var box = cut.Find("[data-testid=hide-completed]");
+        box.Change(!box.HasAttribute("checked"));
+    }
+
     [Fact]
     public void P2_US4_AS1_Bars_are_named_with_key_title_dates_status_and_assignee()
     {
@@ -53,13 +66,15 @@ public sealed class TimelinePageTests : BunitTestBase
         Assert.Equal("WEB-1 Plan the launch, 5 Oct 2026 to 10 Oct 2026, In progress, assigned to Bilal Ahmed",
             Bar(cut, "WEB-1").GetAttribute("aria-label"));
         Assert.Equal("WEB-2 Book the venue, due 3 Oct 2026, To do, unassigned", Bar(cut, "WEB-2").GetAttribute("aria-label"));
-        Assert.Contains("left:520px", Style(cut, "WEB-1"), StringComparison.Ordinal);
+        Assert.Contains("left:1008px", Style(cut, "WEB-1"), StringComparison.Ordinal);
         Assert.Contains("width:48px", Style(cut, "WEB-1"), StringComparison.Ordinal);
         Assert.Contains("width:8px", Style(cut, "WEB-2"), StringComparison.Ordinal); // P2_US4_AS2: one day
-        Assert.Contains("In progress", Bar(cut, "WEB-1").TextContent, StringComparison.Ordinal);
+        // As in Jira the bar has no words inside: its tooltip and the row's Status column give the status in words.
+        Assert.Contains("In progress", Bar(cut, "WEB-1").GetAttribute("title"), StringComparison.Ordinal);
+        Assert.Equal("In Progress", cut.Find("[data-testid=tl-row][data-key='WEB-1'] .tl-col-status .lozenge-status").TextContent.Trim());
         Assert.Contains("BA", cut.Find("[data-testid=tl-row][data-key='WEB-1']").TextContent, StringComparison.Ordinal);
         Assert.Equal(["WEB-5", "WEB-2", "WEB-1"], cut.FindAll("[data-testid=tl-row]").Select(r => r.GetAttribute("data-key")));
-        Assert.Equal("page", cut.Find("nav.project-nav a[href='projects/WEB/timeline']").GetAttribute("aria-current"));
+        Assert.Equal("page", cut.Find("nav.project-nav a[href='spaces/WEB/timeline']").GetAttribute("aria-current"));
         Assert.NotNull(cut.Find(".tl-today"));
         Assert.Equal("true", cut.Find("[data-scale=months]").GetAttribute("aria-pressed"));
     }
@@ -72,7 +87,7 @@ public sealed class TimelinePageTests : BunitTestBase
         Press(cut, "WEB-1", "ArrowRight");
         Press(cut, "WEB-1", "ArrowRight");
 
-        Assert.Contains("left:536px", Style(cut, "WEB-1"), StringComparison.Ordinal);
+        Assert.Contains("left:1024px", Style(cut, "WEB-1"), StringComparison.Ordinal);
         Assert.Equal("WEB-1: 7 Oct 2026 to 12 Oct 2026. Enter saves, Escape cancels.", _announced[^1]);
         Press(cut, "WEB-1", "ArrowRight", shift: true);
         Assert.Equal("WEB-1: 7 Oct 2026 to 13 Oct 2026. Enter saves, Escape cancels.", _announced[^1]);
@@ -84,7 +99,7 @@ public sealed class TimelinePageTests : BunitTestBase
 
         Assert.Equal(("WEB-1", (DateOnly?)Oct(6), (DateOnly?)Oct(13)), Single(_timeline.Reschedules));
         Assert.Equal("WEB-1 now runs from 6 Oct 2026 to 13 Oct 2026.", _announced[^1]);
-        Assert.Contains("left:528px", Style(cut, "WEB-1"), StringComparison.Ordinal);
+        Assert.Contains("left:1016px", Style(cut, "WEB-1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -96,7 +111,7 @@ public sealed class TimelinePageTests : BunitTestBase
         Press(cut, "WEB-1", "Escape");
 
         Assert.Empty(_timeline.Reschedules);
-        Assert.Contains("left:520px", Style(cut, "WEB-1"), StringComparison.Ordinal);
+        Assert.Contains("left:1008px", Style(cut, "WEB-1"), StringComparison.Ordinal);
         Assert.Equal("Change to WEB-1 cancelled.", _announced[^1]);
     }
 
@@ -178,7 +193,7 @@ public sealed class TimelinePageTests : BunitTestBase
         Press(cut, "WEB-1", "Enter");
 
         Assert.Contains("WEB-1 was changed by someone else.", cut.Find("[data-testid=conflict]").TextContent, StringComparison.Ordinal);
-        Assert.Contains("left:576px", Style(cut, "WEB-1"), StringComparison.Ordinal);
+        Assert.Contains("left:1064px", Style(cut, "WEB-1"), StringComparison.Ordinal);
         Assert.Contains("width:32px", Style(cut, "WEB-1"), StringComparison.Ordinal);
     }
 
@@ -191,7 +206,7 @@ public sealed class TimelinePageTests : BunitTestBase
         Press(cut, "WEB-1", "ArrowRight");
         cut.InvokeAsync(() => cut.Instance.OnBarDragged("WEB-1", "move", 3));
 
-        Assert.Contains("left:520px", Style(cut, "WEB-1"), StringComparison.Ordinal);
+        Assert.Contains("left:1008px", Style(cut, "WEB-1"), StringComparison.Ordinal);
         Assert.Empty(cut.FindAll(".tl-handle"));
         Assert.Empty(cut.FindAll("button.schedule-btn"));
         Assert.Empty(_timeline.Reschedules);
@@ -247,11 +262,11 @@ public sealed class TimelinePageTests : BunitTestBase
     {
         var cut = RenderTimeline();
 
-        cut.Find("[data-testid=hide-completed]").Click();
+        ToggleHideCompleted(cut);
 
         Assert.EndsWith("?completed=hide", _navigation.Uri, StringComparison.Ordinal);
         Assert.True(_timeline.Loads[^1]);
-        Assert.Equal("true", cut.Find("[data-testid=hide-completed]").GetAttribute("aria-pressed"));
+        Assert.True(cut.Find("[data-testid=hide-completed]").HasAttribute("checked"));
     }
 
     [Fact]
@@ -295,7 +310,7 @@ public sealed class TimelinePageTests : BunitTestBase
         await cut.InvokeAsync(() => cut.Instance.OnBarDragged("WEB-1", mode, days));
 
         Assert.Empty(_timeline.Reschedules);
-        Assert.Contains("left:520px", Style(cut, "WEB-1"), StringComparison.Ordinal);
+        Assert.Contains("left:1008px", Style(cut, "WEB-1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -315,8 +330,21 @@ public sealed class TimelinePageTests : BunitTestBase
 
         var cut = RenderTimeline();
 
-        Assert.Contains("No task has dates yet.", cut.Markup, StringComparison.Ordinal);
-        Assert.NotEmpty(cut.FindAll("button.schedule-btn"));
+        // The work without dates is listed, each with "Schedule" where its bar would be.
+        Assert.Empty(cut.FindAll("button.tl-bar"));
+        Assert.Equal(["Schedule WEB-4"], cut.FindAll("[data-testid=unscheduled-item] button.schedule-btn").Select(b => b.GetAttribute("aria-label")));
+    }
+
+    [Fact]
+    public void A_space_with_no_work_says_how_to_start()
+    {
+        _timeline.Rows = [];
+        _timeline.Unscheduled.Clear();
+
+        var cut = RenderTimeline();
+
+        Assert.Contains("No work items yet.", cut.Find(".tl-scroll").TextContent, StringComparison.Ordinal);
+        Assert.Contains("give it dates to see it on the timeline", cut.Find(".tl-scroll").TextContent, StringComparison.Ordinal);
     }
 
     private static (string Key, DateOnly? Start, DateOnly? Due) Single(List<(string Key, DateOnly? Start, DateOnly? Due, byte[] Version)> calls)

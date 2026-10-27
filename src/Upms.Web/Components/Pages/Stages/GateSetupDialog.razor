@@ -1,0 +1,160 @@
+@using Upms.Application.Work
+@inject IStageGateService Stages
+
+@* Naming a gate's approvers (Phase 3 FR-035): anyone active in the organization, the approvals needed, and whether the
+   person who requests approval is excluded. People outside the project become Viewers. *@
+<ModalDialog @ref="_dialog" Title="@($"Set up the {_stage?.Title} gate")" TestId="gate-setup-dialog" OnClosed="() => _error = null">
+    <ChildContent>
+        <div class="field">
+            <label for="approver-search">Find people</label>
+            <input id="approver-search" class="input" type="search" autocomplete="off" maxlength="100" placeholder="Name or user name"
+                   @bind="_term" @bind:event="oninput" @bind:after="SearchAsync" aria-describedby="approver-search-hint" />
+            <span id="approver-search-hint" class="hint">Anyone in the organization. People outside the space become Viewers.</span>
+        </div>
+        @if (_found.Count > 0)
+        {
+            <ul class="person-results" aria-label="People found">
+                @foreach (var person in _found.Where(p => _chosen.All(c => c.UserId != p.UserId)))
+                {
+                    <li>
+                        <button type="button" class="btn btn-sm btn-ghost" data-testid="person-result" @onclick="() => Choose(person)">
+                            Add @person.DisplayName@(person.IsMember ? "" : " (not on the team yet)")
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+        <h3 class="section-title">Approvers</h3>
+        @if (_chosen.Count == 0)
+        {
+            <p class="hint">No approvers yet.</p>
+        }
+        <ul class="chosen-approvers">
+            @foreach (var approver in _chosen)
+            {
+                <li data-testid="chosen-approver">
+                    <span class="approver-name">@approver.DisplayName</span>
+                    <button type="button" class="btn btn-sm btn-ghost" aria-label="Remove @approver.DisplayName" @onclick="() => Remove(approver.UserId)">Remove</button>
+                </li>
+            }
+        </ul>
+        <div class="field">
+            <label for="gate-required">Approvals needed</label>
+            <select id="gate-required" class="select" value="@_required" @onchange="e => _required = e.Value?.ToString() ?? string.Empty">
+                <option value="">All (@_chosen.Count)</option>
+                @for (var n = 1; n <= _chosen.Count; n++)
+                {
+                    var count = n;
+                    <option value="@count">@count</option>
+                }
+            </select>
+        </div>
+        <div class="field checkbox-row">
+            <input id="gate-exclude" type="checkbox" checked="@_exclude" @onchange="e => _exclude = e.Value is true" />
+            <label for="gate-exclude">The person who requests approval can't approve</label>
+        </div>
+        <p class="error-text" role="alert" data-testid="setup-error">@_error</p>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="() => _dialog!.CloseAsync()">Cancel</button>
+        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">Save gate</button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private ModalDialog? _dialog;
+    private StageView? _stage;
+    private string _projectKey = "";
+    private string _term = "";
+    private IReadOnlyList<ApproverOption> _found = [];
+    private List<(Guid UserId, string DisplayName)> _chosen = [];
+    private string _required = "";
+    private bool _exclude = true;
+    private string? _error;
+    private bool _busy;
+
+    /// <summary>Called with the saved stage's title; the page reads the stages again.</summary>
+    [Parameter]
+    public EventCallback<string> OnSaved { get; set; }
+
+    /// <summary>Called when the gate changed meanwhile: the page reads the stages again and says why.</summary>
+    [Parameter]
+    public EventCallback<string> OnConflict { get; set; }
+
+    public void Open(string projectKey, StageView stage)
+    {
+        _projectKey = projectKey;
+        _stage = stage;
+        _term = "";
+        _found = [];
+        _chosen = stage.Gate.Approvers.Select(a => (a.UserId, a.DisplayName)).ToList();
+        _required = stage.Gate.RequiredIsAll ? "" : stage.Gate.ApprovalsNeeded.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _exclude = stage.Gate.ExcludeRequester;
+        _error = null;
+        StateHasChanged();
+        _dialog!.Open();
+    }
+
+    // @bind keeps characters typed while an answer is on its way; value= with @oninput would put back an older value.
+    private async Task SearchAsync()
+    {
+        var term = _term;
+        var result = await Stages.FindPeopleAsync(_projectKey, term, CancellationToken.None);
+        if (term == _term)
+        {
+            _found = result.Value ?? []; // an answer for an older search is ignored
+        }
+    }
+
+    private void Choose(ApproverOption person)
+    {
+        _chosen.Add((person.UserId, person.DisplayName));
+        _term = "";
+        _found = [];
+    }
+
+    private void Remove(Guid userId)
+    {
+        _chosen.RemoveAll(c => c.UserId == userId);
+        if (int.TryParse(_required, out var required) && required > _chosen.Count)
+        {
+            _required = ""; // the number needed cannot exceed the approvers
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy || _stage is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            int? required = int.TryParse(_required, out var n) ? n : null;
+            var result = await Stages.SetUpGateAsync(_stage.Key, _chosen.ConvertAll(c => c.UserId), required, _exclude, _stage.Gate.Version,
+                CancellationToken.None);
+            if (result.IsSuccess)
+            {
+                await _dialog!.CloseAsync();
+                await OnSaved.InvokeAsync(_stage.Title);
+                return;
+            }
+
+            if (result.Error!.Kind == ErrorKind.Conflict)
+            {
+                await _dialog!.CloseAsync();
+                await OnConflict.InvokeAsync(result.Error.Message);
+                return;
+            }
+
+            _error = result.Error.FieldErrors is { Count: > 0 } fields ? result.Error.MessageFor(fields.Keys.First()) : result.Error.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

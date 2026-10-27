@@ -1,16 +1,36 @@
 @using Upms.Application.Work
 <div class="move-menu" @onkeydown="OnKeyDownAsync">
+    @* Jira's "⋯" on a card: move it, or delete it. *@
     <button type="button" class="btn btn-sm btn-ghost move-btn" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_menuId"
-            @ref="_button" @onclick="Toggle">
-        Move<span class="sr-only"> @CardKey to…</span>
+            title="Actions" @ref="_button" @onclick="Toggle">
+        <Icon Name="more" Size="16" /><span class="sr-only">Actions for @CardKey</span>
     </button>
     @if (_open)
     {
-        <div id="@_menuId" class="move-list" role="group" aria-label="Move @CardKey to">
-            @foreach (var column in Columns)
+        @* One line per column, its name and then "to top" and "to bottom" arrows, so ten long column names still make a short menu; the
+           buttons are named "Done: top" and "Done: bottom" for screen readers, as before. *@
+        <div id="@_menuId" class="move-list card-actions" role="group" aria-label="Actions for @CardKey">
+            <p class="move-heading" aria-hidden="true">Move to</p>
+            <div class="move-scroll">
+                @foreach (var column in Columns)
+                {
+                    <div class="move-row">
+                        <span class="move-name" title="@column.Name" aria-hidden="true">@column.Name</span>
+                        <button type="button" class="menu-item move-pos" title="Top of @column.Name" @onclick="() => ChooseAsync(new MoveRequest(column.Id, CardPlacement.AtTop))"><span class="sr-only">@($"{column.Name}: top")</span><Icon Name="to-top" /></button>
+                        <button type="button" class="menu-item move-pos" title="Bottom of @column.Name" @onclick="() => ChooseAsync(new MoveRequest(column.Id, CardPlacement.AtEnd))"><span class="sr-only">@($"{column.Name}: bottom")</span><Icon Name="to-bottom" /></button>
+                    </div>
+                }
+                @* In epic, stage or person lanes, "Lane" moves the card to another one and keeps its column (Jira parity pass
+                   FR-027). *@
+                @foreach (var lane in Lanes)
+                {
+                    <button type="button" class="menu-item lane-option" title="@lane.Title" @onclick="() => ChooseAsync(new MoveRequest(ColumnId, CardPlacement.InPlace, lane.Change))">Lane: @lane.Title</button>
+                }
+            </div>
+            @if (OnDelete.HasDelegate)
             {
-                <button type="button" class="menu-item" @onclick="() => ChooseAsync(column.Id, CardPlacement.AtTop)">@column.Name: top</button>
-                <button type="button" class="menu-item" @onclick="() => ChooseAsync(column.Id, CardPlacement.AtEnd)">@column.Name: bottom</button>
+                <span class="move-separator" aria-hidden="true"></span>
+                <button type="button" class="menu-item menu-item-danger" data-testid="card-delete" @onclick="DeleteAsync">Delete @CardKey</button>
             }
         </div>
     }
@@ -27,15 +47,33 @@
     [Parameter, EditorRequired]
     public IReadOnlyList<ColumnOption> Columns { get; set; } = [];
 
+    /// <summary>The card's column, which a lane move keeps.</summary>
+    [Parameter]
+    public long ColumnId { get; set; }
+
+    /// <summary>The other lanes the card can go to; none when the board has no lanes or they cannot take it.</summary>
+    [Parameter]
+    public IReadOnlyList<LaneOption> Lanes { get; set; } = [];
+
     [Parameter]
     public EventCallback<MoveRequest> OnMove { get; set; }
 
+    /// <summary>Asks to delete the card; the board confirms first.</summary>
+    [Parameter]
+    public EventCallback OnDelete { get; set; }
+
     private void Toggle() => _open = !_open;
 
-    private async Task ChooseAsync(long columnId, CardPlacement placement)
+    private async Task DeleteAsync()
     {
         _open = false;
-        await OnMove.InvokeAsync(new MoveRequest(columnId, placement));
+        await OnDelete.InvokeAsync();
+    }
+
+    private async Task ChooseAsync(MoveRequest request)
+    {
+        _open = false;
+        await OnMove.InvokeAsync(request);
     }
 
     private async Task OnKeyDownAsync(KeyboardEventArgs e)

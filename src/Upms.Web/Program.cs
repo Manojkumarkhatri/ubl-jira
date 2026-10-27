@@ -64,8 +64,14 @@ app.UseUpmsSecurityHeaders();
 app.UseUpmsStatusCodePages();
 app.UseHttpsRedirection();
 app.UseBlazorOriginCheck();
-app.UseRateLimiter();
 app.UseAuthentication();
+if (DevSignInMiddleware.Guard(app.Environment, app.Configuration))
+{
+    // Until the company's LDAP sign-in is connected (UAT): Development only, see DevSignInMiddleware.
+    app.UseMiddleware<DevSignInMiddleware>();
+}
+
+app.UseRateLimiter(); // after authentication, so per-user limits know the user
 app.UseAuthorization();
 app.UseMustChangePassword();
 app.UseAntiforgery();
@@ -74,6 +80,10 @@ app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.MapAccountEndpoints();
 app.MapKeepAlive();
+app.MapAttachmentEndpoints();
+app.MapItemExportEndpoints();
+app.MapTimelineExportEndpoints();
+app.MapMisEndpoints();
 app.MapHealthEndpoints();
 
 await app.RunAsync();

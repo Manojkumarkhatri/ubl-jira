@@ -1,7 +1,8 @@
 @using Upms.Application.Work
 @using Upms.Domain.Common
+@inject IJSRuntime JS
 
-<section class="col @(Column.OverLimit ? "over-limit" : "")" data-testid="column" aria-labelledby="col-@Column.Id-title">
+<section class="col col-@Column.Category.ToString().ToLowerInvariant() @(Column.OverLimit ? "over-limit" : "") @(HeaderOnly ? "is-header-only" : "")" data-testid="column" aria-labelledby="col-@Column.Id-title">
     <header class="col-head">
         <h2 id="col-@Column.Id-title">@Column.Name</h2>
         <span class="sr-only">, cards:</span>
@@ -23,34 +24,105 @@
         {
             <span class="over-badge">Over limit</span>
         }
+        @HeaderActions
     </header>
-    <ol class="col-body">
-        @foreach (var card in VisibleCards)
-        {
-            <li @key="card.Key">
-                <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
-                          CanContribute="CanContribute" IsOpen="@(Column.Category != StatusCategory.Done)" Today="Today"
-                          OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" />
-            </li>
-        }
-    </ol>
+    @if (ShowEmptyState && !HeaderOnly)
+    {
+        @* A board with no work at all, as Jira shows it in its first column. *@
+        <div class="col-empty-state" data-testid="board-empty">
+            <span class="col-empty-icon" aria-hidden="true"><Icon Name="empty" Size="20" /></span>
+            <p class="col-empty-title">No work items</p>
+            <p class="col-empty-text">Create a work item to get started. Work will appear here.</p>
+        </div>
+    }
+    @if (!HeaderOnly)
+    {
+        var visible = VisibleCards;
+        var window = BoardPaging.Window(visible, _shown, RevealKey);
+        <ol class="col-body">
+            @foreach (var card in visible.Take(window.Shown))
+            {
+                <li @key="card.Key">@CardItem(card)</li>
+            }
+            @if (window.Hidden > 0)
+            {
+                <li class="col-more-item" @key="@("show-more")">
+                    <button type="button" class="col-more" data-testid="column-more" @onclick="() => ShowMore(visible, window.Shown)">
+                        @BoardPaging.MoreText(window.Hidden)
+                        @if (window.Hidden > BoardPaging.PageSize)
+                        {
+                            <span class="col-more-left">@BoardPaging.HiddenText(window.Hidden)</span>
+                        }
+                    </button>
+                </li>
+            }
+            @if (window.Tail is { } tail)
+            {
+                <li @key="tail.Key">@CardItem(tail)</li>
+            }
+        </ol>
+    }
     @if (CanContribute)
     {
-        <div class="col-drop-end @(DraggingKey is null ? "" : "active")" data-testid="column-drop-end"
-             @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDropAtEnd.InvokeAsync(Column)">
-            @(DraggingKey is not null ? "Drop here to move to the end" : EmptyText)
-        </div>
-        <InlineCreate ColumnName="@Column.Name" OnCreate="title => OnCreate(Column.Id, title)" />
+        @if (!HeaderOnly)
+        {
+            <div class="col-drop-end @(DraggingKey is null ? "" : "active")" data-testid="column-drop-end"
+                 @ondragover:preventDefault @ondrop:preventDefault @ondrop="() => OnDropAtEnd.InvokeAsync(Column)">
+                @(DraggingKey is not null ? "Drop here to move to the end" : "")
+            </div>
+        }
+        @* Jira's "+": the create box opens on demand and closes with Escape. *@
+        @if (_creating)
+        {
+            <InlineCreate ColumnName="@Column.Name" Types="CreateTypes" DefaultType="DefaultType" AutoFocus="true"
+                          OnCreate="(title, type) => OnCreate(Column.Id, title, type)" OnCancel="() => _creating = false" />
+        }
+        else
+        {
+            <button type="button" class="col-add" aria-label="Create a work item in @Column.Name" title="Create" @onclick="CreateClickedAsync">
+                <Icon Name="plus" /> <span>Create</span>
+            </button>
+        }
     }
-    else if (VisibleCards.Count == 0)
+    else if (!HeaderOnly && VisibleCards.Count == 0)
     {
         <p class="col-empty hint">@EmptyText</p>
     }
 </section>
 
 @code {
+    private bool _creating;
+
     [Parameter, EditorRequired]
     public ColumnView Column { get; set; } = default!;
+
+    /// <summary>Opens the Create form for this column, as Jira's "+ Create" does; without it the column's own box opens.</summary>
+    [Parameter]
+    public EventCallback<ColumnView> OnRequestCreate { get; set; }
+
+    private async Task CreateClickedAsync()
+    {
+        if (OnRequestCreate.HasDelegate)
+        {
+            await OnRequestCreate.InvokeAsync(Column);
+        }
+        else
+        {
+            _creating = true;
+        }
+    }
+
+    /// <summary>The board has no work at all: this (first) column says so, as Jira does.</summary>
+    [Parameter]
+    public bool ShowEmptyState { get; set; }
+
+    /// <summary>Only the header and "What needs to be done?": the cards are in the swimlanes below (Jira parity pass FR-026).</summary>
+    [Parameter]
+    public bool HeaderOnly { get; set; }
+
+    /// <summary>The column's menu for Space admins (Jira parity pass FR-011).</summary>
+    [Parameter]
+    public RenderFragment? HeaderActions { get; set; }
 
     [Parameter, EditorRequired]
     public string ProjectKey { get; set; } = "";
@@ -68,6 +140,10 @@
     /// <summary>The cards to show while a filter is on; null shows them all (Phase 2 FR-022).</summary>
     [Parameter]
     public Func<CardView, bool>? Filter { get; set; }
+
+    /// <summary>The board's filters for the cards' links (Phase 4 FR-047).</summary>
+    [Parameter]
+    public string FilterQuery { get; set; } = "";
 
     /// <summary>The viewer's today, for overdue marks (Phase 2 FR-042).</summary>
     [Parameter, EditorRequired]
@@ -92,13 +168,62 @@
     [Parameter]
     public EventCallback<(CardView Card, MoveRequest Request)> OnMove { get; set; }
 
+    /// <summary>The card menu's "Delete": the board asks first.</summary>
+    [Parameter]
+    public EventCallback<CardView> OnDelete { get; set; }
+
+    /// <summary>The card types "What needs to be done?" offers (Phase 3 FR-010).</summary>
+    [Parameter]
+    public IReadOnlyList<Upms.Domain.Work.WorkItemType> CreateTypes { get; set; } = [];
+
+    [Parameter]
+    public Upms.Domain.Work.WorkItemType DefaultType { get; set; } = Upms.Domain.Work.WorkItemType.Task;
+
     [Parameter, EditorRequired]
-    public Func<long, string, Task<string?>> OnCreate { get; set; } = default!;
+    public Func<long, string, Upms.Domain.Work.WorkItemType, Task<string?>> OnCreate { get; set; } = default!;
 
     private IReadOnlyList<CardView> VisibleCards => Filter is null ? Column.Cards : Column.Cards.Where(Filter).ToList();
+
+    private int _shown = BoardPaging.PageSize;
+    private string? _focusAfterRender;
+
+    /// <summary>The card just moved or created: shown even past the first cards.</summary>
+    [Parameter]
+    public string? RevealKey { get; set; }
+
+    private RenderFragment CardItem(CardView card) => __builder =>
+    {
+        <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" FilterQuery="@FilterQuery" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
+                  CanContribute="CanContribute" IsOpen="@(Column.Category != StatusCategory.Done)" Today="Today"
+                  OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" OnDelete="OnDelete" />
+    };
+
+    /// <summary>"Show more": the next cards appear and focus moves to the first of them.</summary>
+    private void ShowMore(IReadOnlyList<CardView> visible, int shown)
+    {
+        _shown = shown + BoardPaging.PageSize;
+        _focusAfterRender = $"card-{visible[shown].Key}-title";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusAfterRender is { } id)
+        {
+            _focusAfterRender = null;
+            try
+            {
+                await JS.InvokeVoidAsync("upms.focusById", id);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
 
     private string EmptyText => Column.Cards.Count == 0 ? "No cards yet" : VisibleCards.Count == 0 ? "No cards match the filter" : "";
 
     // "4 of 3" when a work-in-progress limit is set (FR-036).
-    private string CountText => Column.WipLimit is { } limit ? $"{Column.CardCount} of {limit}" : Column.CardCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    private string CountText => Column.WipLimit is { } limit
+        ? string.Create(System.Globalization.CultureInfo.CurrentCulture, $"{Column.CardCount:N0} of {limit:N0}")
+        : Column.CardCount.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
 }

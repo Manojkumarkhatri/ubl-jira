@@ -1,0 +1,289 @@
+@page "/spaces/{Key}/reports"
+@using System.Globalization
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@using Upms.Web.Components.Pages.Board
+@using Upms.Web.Components.Pages.Search
+@inject ISpaceSummaryService Summaries
+@inject ISpaceReportService Reports
+@inject IWorkItemListService Lists
+@inject ViewerToday ViewerToday
+@inject TimeProvider Time
+@inject NavigationManager Navigation
+
+<PageTitle>@(_summary?.SpaceName ?? Key) · Reports · U-PMS</PageTitle>
+
+@* The space's Reports, laid out as Jira's reports dashboard: the four counts, work items by status, type and assignee,
+   the creation and completion trends, cycle and lead time, created vs resolved, and the work item details. Every chart
+   has its numbers in words or a table too. *@
+@if (_notFound)
+{
+    <NotFoundContent />
+}
+else if (_summary is not { } summary || _report is not { } report)
+{
+    <p aria-busy="true">Loading the reports…</p>
+}
+else
+{
+    <ProjectHeader ProjectKey="@summary.SpaceKey" Title="@summary.SpaceName" Current="ProjectPage.Reports" Template="summary.Template"
+                   CanManage="summary.CanManage" CanRestoreDeleted="summary.CanRestoreDeleted" />
+
+    var days = report.Days.Select(d => d.Day).ToList();
+    var labelEvery = Math.Max(1, (int)Math.Ceiling(days.Count / 8.0));
+    <div class="rep-toolbar">
+        <div class="seg" role="group" aria-label="Period">
+            @foreach (var period in Periods)
+            {
+                <button type="button" class="seg-btn" aria-pressed="@(_days == period ? "true" : "false")" @onclick="() => SetPeriod(period)">Last @period days</button>
+            }
+        </div>
+    </div>
+
+    <div class="rep-dashboard">
+        <section class="rep-counts" aria-label="The last 7 days and the next 7 days">
+            @Count("check-circle", "rep-ok", summary.Last7Days.Completed, "completed in the last 7 days", Search(s => s with { Resolved = Week }))
+            @Count("pencil", "rep-info", summary.Last7Days.Updated, "updated in the last 7 days", Search(s => s with { Updated = Week }))
+            @Count("created", "rep-info", summary.Last7Days.Created, "created in the last 7 days", Search(s => s with { Created = Week }))
+            @Count("calendar", "rep-warn", summary.Last7Days.DueSoon, "due in the next 7 days", Search(s => s with { Due = new DateRange(null, _today.AddDays(7)), Categories = Open }))
+        </section>
+
+        <div class="rep-row rep-row-3">
+            <section class="rep-card" aria-labelledby="by-status">
+                <h2 id="by-status">Work items by status</h2>
+                @Donut(StatusSlices(summary), "Total value")
+            </section>
+            <section class="rep-card" aria-labelledby="by-type">
+                <h2 id="by-type">Work items by type</h2>
+                @Donut(summary.Types.Select((t, i) => new DonutChart.Slice(WorkItemTypes.DisplayName(t.Type), t.Count, TypeColor(t.Type), Search(s => s with { Kinds = [t.Type] }))).ToList(), "Total value")
+            </section>
+            <section class="rep-card" aria-labelledby="by-assignee">
+                <h2 id="by-assignee">Open work items by assignee</h2>
+                @Donut(summary.Workload.Select((w, i) => new DonutChart.Slice(w.Assignee?.DisplayName ?? "Unassigned", w.OpenCount, DonutChart.Palette[i % DonutChart.Palette.Length])).ToList(), "Total value")
+            </section>
+        </div>
+
+        <div class="rep-row">
+            <section class="rep-card" aria-labelledby="creation-trend">
+                <h2 id="creation-trend">Work item creation trend</h2>
+                <p class="rep-sub">Work items created each day.</p>
+                <ColumnChart Caption="Work items created per day" LabelEvery="labelEvery" AxisTitle="Work item creation date"
+                             Columns="@report.Days.Select(d => new ColumnChart.Column(d.Day.ToString("d MMM", CultureInfo.CurrentCulture), d.Created)).ToList()" />
+            </section>
+            <section class="rep-card" aria-labelledby="cycle-time">
+                <h2 id="cycle-time">Work item cycle time</h2>
+                <p class="rep-sub">Average days from first "in progress" to done, by the day work was done.</p>
+                @Trend(days, report.Days.Select(d => d.CycleDays).ToList(), "Average cycle time (days)", "s-cycle")
+            </section>
+        </div>
+
+        <div class="rep-row">
+            <section class="rep-card" aria-labelledby="lead-time">
+                <h2 id="lead-time">Work item lead time</h2>
+                <p class="rep-sub">Average days from created to done, by the day work was done.</p>
+                @Trend(days, report.Days.Select(d => d.LeadDays).ToList(), "Average lead time (days)", "s-lead")
+            </section>
+            <section class="rep-card" aria-labelledby="completion-trend">
+                <h2 id="completion-trend">Work item completion trend</h2>
+                <p class="rep-sub">Work items done each day.</p>
+                @if (report.ResolvedTotal == 0)
+                {
+                    @NoData()
+                }
+                else
+                {
+                    <ColumnChart Caption="Work items done per day" LabelEvery="labelEvery" AxisTitle="Work item completion date" Color="#22a06b"
+                                 Columns="@report.Days.Select(d => new ColumnChart.Column(d.Day.ToString("d MMM", CultureInfo.CurrentCulture), d.Resolved)).ToList()" />
+                }
+            </section>
+        </div>
+
+        <div class="rep-row">
+            <section class="rep-card" aria-labelledby="cvr-title" data-testid="created-vs-resolved">
+                <h2 id="cvr-title">Created vs resolved</h2>
+                <p class="rep-sub"><b class="text-created">@report.CreatedTotal</b> created, <b class="text-resolved">@report.ResolvedTotal</b> resolved, @Signed(report.CreatedTotal - report.ResolvedTotal) open work in the last @_days days.</p>
+                <LineChart Days="days" Series="@([LineChart.ChartSeries.Of("Created", "s-created", report.Days.Select(d => d.Created)), LineChart.ChartSeries.Of("Resolved", "s-resolved", report.Days.Select(d => d.Resolved))])" />
+            </section>
+            <section class="rep-card" aria-labelledby="open-title" data-testid="open-work">
+                <h2 id="open-title">Open work over time</h2>
+                <p class="rep-sub">Work items still open at the end of each day; @(report.Days.LastOrDefault()?.Open ?? 0) today.</p>
+                <LineChart Days="days" Series="@([LineChart.ChartSeries.Of("Open work items", "s-open", report.Days.Select(d => d.Open), true)])" />
+            </section>
+        </div>
+
+        <section class="rep-card" aria-labelledby="details-title">
+            <h2 id="details-title">Work item details</h2>
+            @if (_details is not { } details)
+            {
+                <p aria-busy="true" class="rep-sub">Loading…</p>
+            }
+            else if (details.TotalCount == 0)
+            {
+                @NoData()
+            }
+            else
+            {
+                <table class="rep-table">
+                    <caption class="sr-only">Work items in this space, newest first</caption>
+                    <thead><tr><th scope="col">Work item key</th><th scope="col">Work type</th><th scope="col">Work item priority</th><th scope="col">Summary</th><th scope="col">Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in details.Items)
+                        {
+                            <tr>
+                                <td><a href="spaces/@summary.SpaceKey/board?task=@row.Key">@row.Key</a></td>
+                                <td><TypeIcon Type="row.Type" /> @WorkItemTypes.DisplayName(row.Type)</td>
+                                <td><PriorityIcon Priority="row.Priority" /> @row.Priority</td>
+                                <td>@row.Title</td>
+                                <td><span class="lozenge-status st-@CategoryClass(row.Status.Category)" title="@row.Status.Name">@row.Status.Name</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="rep-pager">
+                    <span class="rep-sub">@(details.PageNumber * details.PageSize - details.PageSize + 1)–@(Math.Min(details.TotalCount, details.PageNumber * details.PageSize)) of @details.TotalCount</span>
+                    <button type="button" class="icon-btn" aria-label="Previous page" disabled="@(details.PageNumber <= 1)" @onclick="() => LoadDetailsAsync(details.PageNumber - 1)"><Icon Name="chevron-right" Class="flip" /></button>
+                    <button type="button" class="icon-btn" aria-label="Next page" disabled="@(details.PageNumber * details.PageSize >= details.TotalCount)" @onclick="() => LoadDetailsAsync(details.PageNumber + 1)"><Icon Name="chevron-right" /></button>
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly int[] Periods = [7, 30, 90];
+    private static readonly IReadOnlyList<StatusCategory> Open = [StatusCategory.ToDo, StatusCategory.InProgress];
+    private SpaceSummary? _summary;
+    private CreatedVsResolved? _report;
+    private Page<WorkItemRow>? _details;
+    private bool _notFound;
+    private int _days = 30;
+    private int? _loadedDays;
+    private int _request;
+    private DateOnly _today;
+    private DateOnly _utcToday;
+
+    [Parameter]
+    public string Key { get; set; } = "";
+
+    /// <summary><c>?days=7|30|90</c>; 30 when absent.</summary>
+    [SupplyParameterFromQuery(Name = "days")]
+    public int? DaysValue { get; set; }
+
+    private DateRange Week => new(_utcToday.AddDays(-6), _utcToday);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _days = DaysValue is { } days && Periods.Contains(days) ? days : 30;
+        if (_summary is null)
+        {
+            _today = await ViewerToday.GetAsync();
+            _utcToday = DateOnly.FromDateTime(Time.GetUtcNow().UtcDateTime);
+            var summary = await Summaries.GetAsync(Key, _today, CancellationToken.None);
+            _notFound = !summary.IsSuccess;
+            _summary = summary.Value;
+            if (!_notFound)
+            {
+                await LoadDetailsAsync(1);
+            }
+        }
+
+        if (_loadedDays != _days && !_notFound)
+        {
+            _loadedDays = _days;
+            var request = ++_request;
+            var report = await Reports.CreatedVsResolvedAsync(Key, _days, CancellationToken.None);
+            if (request == _request)
+            {
+                _notFound = !report.IsSuccess;
+                _report = report.Value;
+            }
+        }
+    }
+
+    private async Task LoadDetailsAsync(int page)
+    {
+        var list = await Lists.ListAsync(Key, new WorkItemListQuery(Page: Math.Max(1, page)), _today, CancellationToken.None);
+        if (list.IsSuccess)
+        {
+            _details = list.Value!.Rows;
+        }
+    }
+
+    private void SetPeriod(int days) => Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("days", days == 30 ? null : days));
+
+    private string Search(Func<SearchState, SearchState> filter) =>
+        "search?" + filter(SearchState.Default with { Projects = [_summary!.SpaceKey] }).ToQueryString();
+
+    private static string Signed(int value) => value > 0 ? $"+{value}" : value.ToString(CultureInfo.CurrentCulture);
+
+    private static string CategoryClass(StatusCategory category) => category switch
+    {
+        StatusCategory.Done => "done",
+        StatusCategory.InProgress => "inprogress",
+        _ => "todo",
+    };
+
+    private static string TypeColor(WorkItemType type) => type switch
+    {
+        WorkItemType.Epic => "#8270db",
+        WorkItemType.Story => "#22a06b",
+        WorkItemType.Bug => "#c9372c",
+        WorkItemType.Subtask => "#2898bd",
+        WorkItemType.Stage => "#0b7f7a",
+        WorkItemType.Milestone => "#e06c00",
+        _ => "#1868db",
+    };
+
+    private static List<DonutChart.Slice> StatusSlices(SpaceSummary summary)
+    {
+        var seen = new Dictionary<StatusCategory, int>();
+        return summary.Statuses.Select(s =>
+        {
+            var index = seen.GetValueOrDefault(s.Category);
+            seen[s.Category] = index + 1;
+            return new DonutChart.Slice(s.Name, s.Count, DonutChart.StatusColor(s.Category, index));
+        }).ToList();
+    }
+
+    private static RenderFragment Count(string icon, string tone, int count, string what, string href) => __builder =>
+    {
+        <a class="rep-count" href="@href">
+            <span class="rep-count-icon @tone"><Icon Name="@icon" Size="16" /></span>
+            <span><b>@count @(count == 1 ? "work item" : "work items")</b><span>@what</span></span>
+        </a>
+    };
+
+    private static RenderFragment Donut(List<DonutChart.Slice> slices, string caption) => __builder =>
+    {
+        if (slices.Sum(s => s.Count) == 0)
+        {
+            @NoData()
+        }
+        else
+        {
+            <DonutChart Slices="slices" Caption="@caption" Compact="true" />
+        }
+    };
+
+    private static RenderFragment Trend(List<DateOnly> days, List<double?> values, string name, string cssClass) => __builder =>
+    {
+        if (values.All(v => v is null))
+        {
+            @NoData()
+        }
+        else
+        {
+            <LineChart Days="days" Series="@([new LineChart.ChartSeries(name, cssClass, values)])" />
+            <p class="sr-only">@name: @string.Join(", ", days.Zip(values).Where(p => p.Second is not null).Select(p => $"{p.First:d MMM} {p.Second:0.#}"))</p>
+        }
+    };
+
+    private static RenderFragment NoData() => __builder =>
+    {
+        <div class="rep-nodata">
+            <Icon Name="reports" Size="20" />
+            <b>No data available</b>
+            <span>Try a longer period, or come back once work moves.</span>
+        </div>
+    };
+}

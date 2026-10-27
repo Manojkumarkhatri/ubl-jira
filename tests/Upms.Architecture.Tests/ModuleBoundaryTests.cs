@@ -8,7 +8,8 @@ namespace Upms.Architecture.Tests;
 /// <summary>Layer and module boundaries of the modular monolith (research R4, constitution V).</summary>
 public sealed class ModuleBoundaryTests
 {
-    private static readonly string[] Modules = ["Identity", "Projects", "Work"];
+    // Phase 4 adds Notifications (research R1): the Work module raises events only through its contract.
+    private static readonly string[] Modules = ["Identity", "Projects", "Work", "Notifications"];
 
     internal static readonly ArchUnitNET.Domain.Architecture Architecture = new ArchLoader()
         .LoadAssemblies(
@@ -66,6 +67,16 @@ public sealed class ModuleBoundaryTests
                     .Check(Architecture);
             }
         }
+    }
+
+    [Fact]
+    public void The_Work_module_reaches_the_Notifications_module_through_its_contract()
+    {
+        // The rule above keeps every other Notifications type out of reach; the contract itself must be public there.
+        var center = typeof(Upms.Application.Notifications.Contracts.INotificationCenter);
+
+        Assert.True(center.IsPublic);
+        Assert.Equal("Upms.Application.Notifications.Contracts", center.Namespace);
     }
 
     [Fact]

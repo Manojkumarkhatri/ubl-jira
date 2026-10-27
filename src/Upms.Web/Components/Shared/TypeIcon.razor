@@ -1,0 +1,21 @@
+@using Upms.Domain.Work
+@* A work item's type as a symbol with its name as text, never by color alone (Phase 3 FR-009). *@
+<span class="type-icon type-@Type.ToString().ToLowerInvariant()" title="@Name"><span aria-hidden="true">@Symbol</span><span class="sr-only">@Name</span></span>
+
+@code {
+    [Parameter, EditorRequired]
+    public WorkItemType Type { get; set; }
+
+    private string Name => WorkItemTypes.DisplayName(Type);
+
+    private string Symbol => Type switch
+    {
+        WorkItemType.Epic => "⚡",
+        WorkItemType.Story => "▭",
+        WorkItemType.Bug => "✱",
+        WorkItemType.Stage => "▤",
+        WorkItemType.Milestone => "◆",
+        WorkItemType.Subtask => "↳",
+        _ => "✓",
+    };
+}
