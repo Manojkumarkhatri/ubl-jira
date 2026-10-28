@@ -43,4 +43,8 @@ public sealed record MemberView(Guid UserId, string DisplayName, string UserName
     public bool FromPortfolio { get; init; }
 }
 
-public sealed record PersonOption(Guid UserId, string DisplayName, string UserName);
+public sealed record PersonOption(Guid UserId, string DisplayName, string UserName)
+{
+    /// <summary>The person's type, shown as a badge so the inviter sees what access they will get.</summary>
+    public Upms.Domain.Common.UserType Type { get; init; }
+}

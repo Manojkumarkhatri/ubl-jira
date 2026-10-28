@@ -4,6 +4,7 @@
 @implements IDisposable
 @inject ICreateWorkService CreateWork
 @inject IWorkItemService Items
+@inject ISpaceFieldService SpaceFields
 @inject CreateWorkLauncher Launcher
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -12,16 +13,6 @@
    with typed text asks first; "Create another" keeps the space, type and parent. *@
 <ModalDialog @ref="_dialog" Title="Create" TestId="create-work" Class="@(_expanded ? "create-work is-expanded" : "create-work")" OnClosed="Closed" OnCloseRequested="CloseRequestedAsync">
     <ChildContent>
-        @if (_confirmDiscard)
-        {
-            <div class="alert alert-warning discard-confirm" role="alertdialog" aria-labelledby="discard-title" data-testid="discard-confirm">
-                <p id="discard-title"><strong>Discard this work item?</strong></p>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-danger" data-testid="discard" @onclick="DiscardAsync">Discard</button>
-                    <button type="button" class="btn" data-testid="keep-editing" @onclick="KeepEditing">Keep editing</button>
-                </div>
-            </div>
-        }
         @if (_spaces is null)
         {
             <p class="hint" role="status">Loading…</p>
@@ -38,7 +29,7 @@
                 <div class="create-top">
                     <label class="chip-select space-chip" title="@(_spaces.Spaces.FirstOrDefault(s => s.Key == _spaceKey) is { } current ? $"Space: {current.Name}" : "Space")">
                         <span class="sr-only">Space</span>
-                        <span class="space-icon space-icon-@Upms.Web.Components.Shared.ProjectHeader.SpaceColor(_spaceKey) chip-space-icon" aria-hidden="true">@(_spaceKey.Length > 0 ? _spaceKey[..1] : "?")</span>
+                        <span class="space-icon space-icon-@Upms.Web.Components.Shared.ProjectHeader.SpaceColor(_spaceKey) chip-space-icon" aria-hidden="true">@(_spaceKey.Length > 0 ? Upms.Web.Components.Shared.ProjectHeader.SpaceInitials(_spaceKey) : "?")</span>
                         <select id="create-space" value="@_spaceKey" @onchange="SpaceChangedAsync">
                             @foreach (var space in _spaces.Spaces)
                             {
@@ -56,6 +47,7 @@
                         </button>
                         @if (_typeMenuOpen)
                         {
+                            <div class="menu-backdrop" @onclick="() => _typeMenuOpen = false"></div>
                             <div id="create-type-list" class="type-list" role="menu" aria-label="Work type">
                                 @foreach (var type in Types)
                                 {
@@ -67,9 +59,6 @@
                             </div>
                         }
                     </div>
-                    <span class="spacer"></span>
-                    <button type="button" class="icon-btn create-expand" aria-pressed="@(_expanded ? "true" : "false")" title="@(_expanded ? "Show fewer fields" : "Show all fields")"
-                            @onclick="() => _expanded = !_expanded"><Icon Name="@(_expanded ? "collapse" : "expand")" /><span class="sr-only">Show all fields</span></button>
                 </div>
                 <span id="create-type-error" class="error-text">@ErrorFor("type")</span>
                 @if (_error is not null && FieldOf(_error) is null)
@@ -77,10 +66,14 @@
                     <div class="alert alert-error" role="alert">@ErrorText(_error)</div>
                 }
                 <label class="sr-only" for="create-summary">Summary (required)</label>
-                <input id="create-summary" class="create-summary" autofocus maxlength="200" autocomplete="off" required placeholder="Summary"
-                       @bind="_summary" @bind:event="oninput"
-                       aria-invalid="@Invalid("summary")" aria-describedby="create-summary-error" />
+                <input id="create-summary" class="create-summary" autofocus maxlength="@SummaryMax" autocomplete="off" required placeholder="Summary"
+                       @bind="_summary" @bind:event="oninput" @bind:after="SummaryChanged"
+                       aria-invalid="@Invalid("summary")" aria-describedby="create-summary-error create-summary-count" />
                 <span id="create-summary-error" class="error-text">@ErrorFor("summary")</span>
+                @* Near the limit, the count shows, so text is not cut off without a word (Jira shows the limit too). *@
+                <span id="create-summary-count" class="hint create-summary-count @(_summary.Length >= SummaryMax ? "is-full" : "")" aria-live="polite">
+                    @(_summary.Length >= SummaryMax - 40 ? $"{_summary.Length} of {SummaryMax} characters" + (_summary.Length >= SummaryMax ? ": the summary is full." : "") : "")
+                </span>
                 <div class="create-description">
                     <span class="sr-only" id="create-description-label">Description</span>
                     <RichTextEditor @ref="_description" Id="create-description" Label="Description" SpaceKey="@_spaceKey" Embedded="true"
@@ -94,7 +87,7 @@
                     {
                         <div class="field">
                             <label for="create-parent">@parentLabel@(_type == WorkItemType.Subtask ? " *" : "")</label>
-                            <ParentPicker Id="create-parent" Label="@parentLabel" SpaceKey="@_spaceKey" Type="_type" @bind-Value="_parent" Error="@ErrorFor("parent")" />
+                            <ParentPicker @ref="_parentPicker" Id="create-parent" Label="@parentLabel" SpaceKey="@_spaceKey" Type="_type" @bind-Value="_parent" Error="@ErrorFor("parent")" />
                         </div>
                     }
                     <div class="create-chips" role="group" aria-label="Fields">
@@ -137,7 +130,8 @@
                         </label>
                         <button type="button" class="chip-btn @(_labels.Count > 0 ? "has-value" : "")" aria-expanded="@(_labelsOpen ? "true" : "false")" aria-controls="create-labels-panel"
                                 @onclick="() => _labelsOpen = !_labelsOpen">
-                            <Icon Name="tag" /> @(_labels.Count == 0 ? "Labels" : string.Join(", ", _labels))
+                            @* The labels themselves show once, in the panel below; the chip only says how many. *@
+                            <Icon Name="tag" /> @(_labels.Count == 0 ? "Labels" : $"Labels ({_labels.Count})")
                         </button>
                         @if (_type != WorkItemType.Milestone)
                         {
@@ -153,20 +147,25 @@
                             <LabelPicker Id="create-labels" SpaceKey="@_spaceKey" @bind-Labels="_labels" Error="@ErrorFor("labels")" />
                         </div>
                     }
-                    @if (_expanded)
+                    @* Sprint and story points always show in a Scrum space, as in Jira; the status waits behind "Show all
+                       fields". *@
+                    @if (_expanded || HasSprint || HasEstimate || ErrorFor("status") is not null)
                     {
                         <div class="form-grid create-more">
-                            <div class="field">
-                                <label for="create-status">Status</label>
-                                <select id="create-status" class="select" value="@_statusId" @onchange="e => _statusId = long.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture)"
-                                        aria-invalid="@Invalid("status")" aria-describedby="create-status-error">
-                                    @foreach (var column in options.Columns)
-                                    {
-                                        <option value="@column.Id">@column.Name</option>
-                                    }
-                                </select>
-                                <span id="create-status-error" class="error-text">@ErrorFor("status")</span>
-                            </div>
+                            @if (_expanded || ErrorFor("status") is not null)
+                            {
+                                <div class="field">
+                                    <label for="create-status">Status</label>
+                                    <select id="create-status" class="select" value="@_statusId" @onchange="e => _statusId = long.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture)"
+                                            aria-invalid="@Invalid("status")" aria-describedby="create-status-error">
+                                        @foreach (var column in options.Columns)
+                                        {
+                                            <option value="@column.Id">@column.Name</option>
+                                        }
+                                    </select>
+                                    <span id="create-status-error" class="error-text">@ErrorFor("status")</span>
+                                </div>
+                            }
                             @if (HasSprint)
                             {
                                 <div class="field">
@@ -194,16 +193,44 @@
                             }
                         </div>
                     }
+                    @if (_fields.Count > 0)
+                    {
+                        @* The space's own fields on this type's layout, as Jira's Create shows them (live test, 2026-10-28). *@
+                        <div class="form-grid create-fields" role="group" aria-label="Space fields">
+                            @foreach (var field in _fields)
+                            {
+                                <SpaceFieldBox @key="field.Id" Field="field" IdPrefix="create-field" Value="@ValueOf(field.Id)"
+                                               ValueChanged="v => SetValue(field.Id, v)" Items="ItemsOf(field.Id)" ItemsChanged="items => SetItems(field.Id, items)"
+                                               People="@options.Assignees.Select(a => (a.UserId, a.DisplayName)).ToList()" />
+                            }
+                        </div>
+                    }
+                    @* A named button, not an icon that reads as "open in a new window" (live test, 2026-10-28). *@
+                    <button type="button" class="link-btn create-more-toggle" aria-expanded="@(_expanded ? "true" : "false")"
+                            @onclick="() => _expanded = !_expanded">@(_expanded ? "Show fewer fields" : "Show all fields")</button>
                 }
             </div>
         }
     </ChildContent>
     <Footer>
-        <span class="spacer"></span>
-        <label class="check create-another">
-            <input type="checkbox" data-testid="create-another" @bind="_createAnother" /> Create another
-        </label>
-        <button type="button" class="btn btn-primary" data-testid="create-submit" disabled="@(_busy || _options is null)" @onclick="CreateAsync">Create</button>
+        @if (_confirmDiscard)
+        {
+            @* In place of Create, so nothing can be saved while the question is open and nothing covers the form. *@
+            <div class="discard-confirm" role="alertdialog" aria-labelledby="discard-title" data-testid="discard-confirm">
+                <p id="discard-title"><strong>Discard this work item?</strong> What you typed will be lost.</p>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-testid="keep-editing" @onclick="KeepEditing">Keep editing</button>
+                <button type="button" class="btn btn-danger" data-testid="discard" @onclick="DiscardAsync">Discard</button>
+            </div>
+        }
+        else
+        {
+            <span class="spacer"></span>
+            <label class="check create-another">
+                <input type="checkbox" data-testid="create-another" @bind="_createAnother" /> Create another
+            </label>
+            <button type="button" class="btn btn-primary" data-testid="create-submit" disabled="@(_busy || _options is null)" @onclick="CreateAsync">Create</button>
+        }
     </Footer>
 </ModalDialog>
 
@@ -219,8 +246,58 @@
 @code {
     private const string DescriptionHint = "Describe the work. Type @ to mention someone.";
 
+    private const int SummaryMax = 200;
+
     private ModalDialog _dialog = default!;
     private RichTextEditor? _description;
+    private ParentPicker? _parentPicker;
+
+    // The labels "Create another" kept from the last item: still there, they are not new typing to confirm before closing.
+    private IReadOnlyList<string> _keptLabels = [];
+
+    // The space fields of the chosen type and what was typed into them, saved once the item exists.
+    private IReadOnlyList<CustomFieldView> _fields = [];
+    private readonly Dictionary<long, string?> _fieldValues = [];
+    private readonly Dictionary<long, IReadOnlyList<string>> _fieldItems = [];
+    private int _fieldsRequest;
+
+    private string? ValueOf(long fieldId) => _fieldValues.GetValueOrDefault(fieldId);
+
+    private IReadOnlyList<string> ItemsOf(long fieldId) => _fieldItems.GetValueOrDefault(fieldId) ?? [];
+
+    private void SetValue(long fieldId, object? value) =>
+        _fieldValues[fieldId] = value?.ToString() is { Length: > 0 } text ? text.Trim() : null;
+
+    private void SetItems(long fieldId, IReadOnlyList<string> items) => _fieldItems[fieldId] = items;
+
+    /// <summary>The fields of the chosen space and type; a late answer for another choice is dropped.</summary>
+    private async Task LoadFieldsAsync()
+    {
+        var request = ++_fieldsRequest;
+        var found = await CreateWork.FieldsAsync(_spaceKey, _type, CancellationToken.None);
+        if (request == _fieldsRequest)
+        {
+            _fields = found.IsSuccess ? found.Value! : [];
+        }
+    }
+
+    /// <summary>Saves what was typed into the space fields of the new item; returns the fields that were refused.</summary>
+    private async Task<List<string>> SaveFieldsAsync(string itemKey)
+    {
+        var refused = new List<string>();
+        foreach (var field in _fields)
+        {
+            var value = field.Type is FieldType.Checkbox or FieldType.People or FieldType.Labels
+                ? (ItemsOf(field.Id).Count == 0 ? null : new FieldValueInput(null, ItemsOf(field.Id)))
+                : (ValueOf(field.Id) is { } text ? new FieldValueInput(text) : null);
+            if (value is not null && await SpaceFields.SetValueAsync(itemKey, field.Id, value, CancellationToken.None) is { IsSuccess: false } failed)
+            {
+                refused.Add($"{field.Name} ({failed.Error!.Message})");
+            }
+        }
+
+        return refused;
+    }
     private CreateSpaces? _spaces;
     private CreateOptions? _options;
     private string _spaceKey = "";
@@ -337,6 +414,9 @@
         _statusId = _options.Columns.First(c => c.Category == StatusCategory.ToDo).Id;
         _parent = null;
         _sprintId = null;
+        _fieldValues.Clear();
+        _fieldItems.Clear();
+        await LoadFieldsAsync();
         if (_assigneeId is { } assignee && _options.Assignees.All(a => a.UserId != assignee))
         {
             _assigneeId = null;
@@ -349,6 +429,7 @@
     {
         SetType(type);
         _typeMenuOpen = false;
+        await LoadFieldsAsync(); // each type has its own layout of space fields
         await FocusAsync("create-type");
     }
 
@@ -387,10 +468,26 @@
 
     private void AssigneeChanged(ChangeEventArgs e) => _assigneeId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
 
+    /// <summary>A refusal of an empty summary goes away as soon as a summary is typed.</summary>
+    private void SummaryChanged()
+    {
+        if (_error is not null && FieldOf(_error) == "summary" && _summary.Trim().Length > 0)
+        {
+            _error = null;
+        }
+    }
+
     private async Task CreateAsync()
     {
-        if (_busy || _options is null)
+        if (_busy || _options is null || _confirmDiscard)
         {
+            return;
+        }
+
+        if (_parentPicker?.HasUnpickedText == true && ParentLabel is { } label)
+        {
+            // Saving without the typed epic, with no word, lost it (live test, 2026-10-28).
+            _error = AppError.Validation("Parent", $"Pick the {label.ToLowerInvariant()} from the list, or clear the box.");
             return;
         }
 
@@ -421,12 +518,28 @@
             }
 
             _error = null;
+            _confirmDiscard = false;
             _created = created.Value!;
+            var refused = await SaveFieldsAsync(_created.Key);
             Launcher.NotifyCreated(_spaceKey, _created.Key);
+            if (refused.Count > 0)
+            {
+                // The item exists: say which fields did not save, and start the next one rather than create it twice.
+                _error = AppError.Rule("FieldsNotSaved", $"{_created.Key} was created, but these fields were not saved: {string.Join("; ", refused)}. Set them in {_created.Key}'s details.");
+                _summary = "";
+                if (_description is not null)
+                {
+                    await _description.ClearAsync();
+                }
+
+                return;
+            }
+
             if (_createAnother)
             {
                 // The same space, type and parent; a new summary and description (FR-007).
                 _summary = "";
+                _keptLabels = _labels;
                 if (_description is not null)
                 {
                     await _description.ClearAsync();
@@ -457,7 +570,8 @@
     }
 
     private async Task<bool> IsDirtyAsync() =>
-        _summary.Trim().Length > 0 || _labels.Count > 0 || (_description is not null && await _description.GetDocumentAsync() is not null);
+        _summary.Trim().Length > 0 || (_labels.Count > 0 && !_labels.SequenceEqual(_keptLabels))
+        || (_description is not null && await _description.GetDocumentAsync() is not null);
 
     private async Task DiscardAsync()
     {
@@ -471,6 +585,10 @@
     {
         _summary = "";
         _labels = [];
+        _keptLabels = [];
+        _fields = [];
+        _fieldValues.Clear();
+        _fieldItems.Clear();
         _parent = null;
         _sprintId = null;
         _start = null;
@@ -496,6 +614,7 @@
             "StartDate" or "DueDate" => "dates",
             "Estimate" => "estimate",
             "Label" => "labels",
+            "Parent" => "parent",
             _ => null,
         };
         return field ?? error.Code switch

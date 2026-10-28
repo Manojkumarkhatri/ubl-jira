@@ -26,8 +26,10 @@
         @if (_canCreate)
         {
             @* One form for every work type, on every screen (Jira parity pass FR-001). *@
-            <button type="button" class="btn btn-primary create-button" data-testid="create-button" @onclick="() => Launcher.Open()">
-                <span aria-hidden="true">+</span> Create
+            @* Says what it creates: an epic, story, task, bug or sub-task (live test, 2026-10-28). *@
+            <button type="button" class="btn btn-primary create-button" data-testid="create-button" title="Create a work item: epic, story, task, bug or sub-task"
+                    @onclick="() => Launcher.Open()">
+                <span aria-hidden="true">+</span> Create<span class="sr-only"> a work item</span>
             </button>
         }
         <NotificationBell />

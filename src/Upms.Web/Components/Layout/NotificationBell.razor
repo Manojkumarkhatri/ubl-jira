@@ -17,6 +17,8 @@
     </button>
     @if (_open)
     {
+        @* A click anywhere else closes the panel, as with the other menus. *@
+        <div class="menu-backdrop" @onclick="CloseOutsideAsync"></div>
         <NotificationPanel OnClose="CloseAsync" OnChanged="RefreshAsync" />
     }
 </div>
@@ -79,6 +81,12 @@
         _open = false;
         await RefreshAsync();
         await _button.FocusAsync();
+    }
+
+    private async Task CloseOutsideAsync()
+    {
+        _open = false;
+        await RefreshAsync();
     }
 
     public void Dispose()

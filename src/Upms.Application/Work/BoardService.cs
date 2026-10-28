@@ -72,6 +72,7 @@ internal sealed class BoardService(
                 w.Rank,
                 w.CoverColor,
                 w.CoverAttachmentId,
+                w.CreatedById,
             })
             .ToListAsync(ct);
 
@@ -101,6 +102,7 @@ internal sealed class BoardService(
                 s.ParentContainerId,
                 s.Item.CoverColor,
                 s.Item.CoverAttachmentId,
+                s.Item.CreatedById,
             })
             .ToListAsync(ct);
 
@@ -135,12 +137,12 @@ internal sealed class BoardService(
                 return (Order: (r.Rank, r.Id, Sub: ""), Card: new CardView(r.Key, r.Title, r.Priority, r.StatusId, counts?.Done ?? 0,
                     counts?.Total ?? 0, r.RowVersion, PersonOf(r.AssigneeId), r.DueDate, r.Type, r.Estimate, labels.GetValueOrDefault(r.Id),
                     ContainerOf(r.ContainerId))
-                { CoverColor = r.CoverColor, CoverImageId = CoverImage(r.CoverAttachmentId) });
+                { CoverColor = r.CoverColor, CoverImageId = CoverImage(r.CoverAttachmentId), CreatedById = r.CreatedById });
             })
             .Concat(subtaskRows.Select(s => (Order: (s.ParentRank, s.ParentId, Sub: s.Rank), Card: new CardView(s.Key, s.Title,
                 s.Priority, s.StatusId, 0, 0, s.RowVersion, PersonOf(s.AssigneeId), s.DueDate, WorkItemType.Subtask, null,
                 labels.GetValueOrDefault(s.Id), ContainerOf(s.ParentContainerId), s.ParentKey)
-            { CoverColor = s.CoverColor, CoverImageId = CoverImage(s.CoverAttachmentId) })))
+            { CoverColor = s.CoverColor, CoverImageId = CoverImage(s.CoverAttachmentId), CreatedById = s.CreatedById })))
             .OrderBy(c => c.Order.Item1, StringComparer.Ordinal).ThenBy(c => c.Order.Item2).ThenBy(c => c.Order.Sub, StringComparer.Ordinal)
             .Select(c => c.Card)
             .ToList();
@@ -156,10 +158,14 @@ internal sealed class BoardService(
             return new ColumnView(s.Id, s.Name, s.Category, s.WipLimit, columnCards.Count,
                 s.WipLimit is { } limit && columnCards.Count > limit, columnCards);
         }).ToList();
+        // The same rule the delete itself checks: no creator matches Guid.Empty, so that answer means "delete any".
+        var canDeleteAny = await access.CanDeleteWorkItemAsync(projectId, Guid.Empty, ct);
+        var canDeleteOwn = canDeleteAny || await access.CanDeleteWorkItemAsync(projectId, allowed.Value.UserId, ct);
         return new BoardView(info.Key, info.Name, info.BoardVersion, allowed.Value.CanManage, showAllDone, hiddenDone, columns,
             allowed.Value.UserId, CanRestoreDeleted: allowed.Value.IsAdministrator, CanContribute: allowed.Value.CanContribute,
             Template: info.Template, Sprint: sprint, CanManageSprints: scrum && allowed.Value.CanManage,
-            WorkTypes: allowed.Value.WorkTypes);
+            WorkTypes: allowed.Value.WorkTypes)
+        { CanDeleteAny = canDeleteAny, CanDeleteOwn = canDeleteOwn };
     }
 
     public async Task<Result<CardView>> CreateInlineAsync(string projectKey, long columnId, string title, WorkItemType type,

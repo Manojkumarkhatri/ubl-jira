@@ -463,7 +463,11 @@ else
         new("parent", ContainerLabel, null, false),
         new("labels", "Labels", null, false),
         new("type", "Work type", ListSort.Type, false),
+        // The space's own fields, offered in "Choose columns" (live test, 2026-10-28).
+        .. (_view?.Fields ?? []).Select(f => new ListColumn(FieldColumnPrefix + f.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), f.Name, null, false)),
     ];
+
+    private const string FieldColumnPrefix = "field-";
 
     private List<ListColumn> VisibleColumns => AllColumns.Where(c => _columns.Contains(c.Id)).ToList();
 
@@ -528,8 +532,9 @@ else
         {
             if (firstRender && await JS.InvokeAsync<string?>("upms.store.get", ColumnsKey) is { Length: > 0 } saved)
             {
+                // Space-field columns are kept too: the fields may not have loaded yet, and only existing ones show.
                 var known = AllColumns.Select(c => c.Id).ToHashSet();
-                _columns = saved.Split(',').Where(known.Contains).ToHashSet();
+                _columns = saved.Split(',').Where(c => known.Contains(c) || c.StartsWith(FieldColumnPrefix, StringComparison.Ordinal)).ToHashSet();
                 StateHasChanged();
             }
 
@@ -866,6 +871,10 @@ else
                         }
                     </ul>
                 }
+                break;
+            case var field when field.StartsWith(FieldColumnPrefix, StringComparison.Ordinal):
+                @* A space field's value in words (live test, 2026-10-28). *@
+                @(long.TryParse(field[FieldColumnPrefix.Length..], out var fieldId) && row.FieldText.TryGetValue(fieldId, out var text) ? text : "")
                 break;
             default:
                 <span class="cell-flex"><TypeIcon Type="row.Type" /> @WorkItemTypes.DisplayName(row.Type)</span>

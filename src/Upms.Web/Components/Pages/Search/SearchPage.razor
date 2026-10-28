@@ -86,17 +86,24 @@
                 <div class="field">
                     <label class="checkbox"><input type="checkbox" checked="@State.CreatedByMe" @onchange="e => Go(Latest.WithCreatedByMe(e.Value is true))" /> Created by me</label>
                 </div>
-                @foreach (var (name, label, range) in new[] { ("created", "Created", State.Created), ("updated", "Updated", State.Updated), ("due", "Due", State.Due), ("resolved", "Completed", State.Resolved) })
-                {
-                    <fieldset class="field date-range">
-                        <legend>@label</legend>
-                        <label for="@($"filter-{name}-from")">From</label>
-                        <input id="@($"filter-{name}-from")" class="input" type="date" value="@Iso(range?.From)" @onchange="e => DateChanged(name, e, from: true)" />
-                        <label for="@($"filter-{name}-to")">To</label>
-                        <input id="@($"filter-{name}-to")" class="input" type="date" value="@Iso(range?.To)" @onchange="e => DateChanged(name, e, from: false)" />
-                    </fieldset>
-                }
             </fieldset>
+            @* The four date ranges wait behind "Dates", open when one is set, instead of eight date boxes always on show (live
+               test, 2026-10-28). *@
+            <details class="search-dates" open="@(State.Created is not null || State.Updated is not null || State.Due is not null || State.Resolved is not null)">
+                <summary>Dates <span class="hint">created, updated, due, completed</span></summary>
+                <div class="search-dates-grid">
+                    @foreach (var (name, label, range) in new[] { ("created", "Created", State.Created), ("updated", "Updated", State.Updated), ("due", "Due", State.Due), ("resolved", "Completed", State.Resolved) })
+                    {
+                        <fieldset class="field date-range">
+                            <legend>@label</legend>
+                            <label for="@($"filter-{name}-from")">From</label>
+                            <input id="@($"filter-{name}-from")" class="input" type="date" value="@Iso(range?.From)" @onchange="e => DateChanged(name, e, from: true)" />
+                            <label for="@($"filter-{name}-to")">To</label>
+                            <input id="@($"filter-{name}-to")" class="input" type="date" value="@Iso(range?.To)" @onchange="e => DateChanged(name, e, from: false)" />
+                        </fieldset>
+                    }
+                </div>
+            </details>
 
             @if (Chips.Count > 0)
             {

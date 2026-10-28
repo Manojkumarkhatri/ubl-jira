@@ -90,4 +90,23 @@ public sealed class SpaceForm
     }
 
     public void Responded() => ResponseCount++;
+
+    public const int SpaceFieldsMaxLength = 1_000;
+
+    /// <summary>The space fields the form also asks for, by id, comma separated (live test, 2026-10-28: Jira's forms can ask
+    /// for a space's own fields).</summary>
+    public string? SpaceFieldIds { get; private set; }
+
+    /// <summary>The space fields the form asks for, in the order chosen.</summary>
+    public IReadOnlyList<long> SpaceFields =>
+        (SpaceFieldIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(id => long.TryParse(id, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0)
+            .Where(n => n > 0).Distinct().ToList();
+
+    /// <summary>Sets the space fields the form asks for; the caller passes only fields of the form's space.</summary>
+    public void AskForSpaceFields(IEnumerable<long> fieldIds)
+    {
+        var text = string.Join(',', fieldIds.Distinct().Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        SpaceFieldIds = text.Length == 0 ? null : text[..Math.Min(text.Length, SpaceFieldsMaxLength)];
+    }
 }

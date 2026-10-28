@@ -28,7 +28,7 @@ public sealed class AccountServiceTests(SqlServerFixture fixture) : IntegrationT
 
         Assert.Equal("amina", profile.UserName);
         Assert.Null(profile.TimeZoneId);
-        Assert.Equal("UTC", profile.EffectiveTimeZoneId);
+        Assert.Equal(OrganizationSettings.DefaultTimeZone, profile.EffectiveTimeZoneId);
     }
 
     [Fact]

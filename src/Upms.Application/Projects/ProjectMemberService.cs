@@ -39,7 +39,7 @@ internal sealed class ProjectMemberService(
             .ToListAsync(ct);
         var found = await users.SearchActiveAsync(term, MaxPeople, ct);
         return found.Where(u => !memberIds.Contains(u.Id))
-            .Select(u => new PersonOption(u.Id, u.DisplayName, u.UserName))
+            .Select(u => new PersonOption(u.Id, u.DisplayName, u.UserName) { Type = u.Type })
             .ToList();
     }
 

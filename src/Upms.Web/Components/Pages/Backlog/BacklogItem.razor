@@ -39,6 +39,7 @@
             </button>
             @if (_open)
             {
+                <div class="menu-backdrop" @onclick="() => _open = false"></div>
                 <div id="move-list-@Row.Key" class="move-list" role="group" aria-label="Move @Row.Key">
                     <button type="button" class="menu-item" @onclick="() => ChooseAsync(CurrentList, BacklogPlacement.AtTop)">Move to top</button>
                     <button type="button" class="menu-item" @onclick="() => ChooseAsync(CurrentList, BacklogPlacement.AtBottom)">Move to bottom</button>

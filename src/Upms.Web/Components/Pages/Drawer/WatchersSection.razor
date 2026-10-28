@@ -15,6 +15,7 @@
         <span class="sr-only" role="status">@_status</span>
         @if (_open)
         {
+            <div class="menu-backdrop" @onclick="() => _open = false"></div>
             <div id="watchers-pop" class="watch-pop">
                 <div class="watch-row">
                     <button type="button" class="btn btn-sm" data-testid="watch-toggle" disabled="@_busy" @onclick="ToggleWatchAsync">

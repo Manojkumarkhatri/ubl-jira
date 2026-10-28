@@ -103,6 +103,13 @@ else
                         <LabelPicker Id="ff-labels" SpaceKey="@Key" @bind-Labels="_labels" />
                     </div>
                 }
+                @* The space's own fields the form asks for (live test, 2026-10-28). *@
+                @foreach (var field in _form.AskedFields)
+                {
+                    <SpaceFieldBox @key="field.Id" Field="field" IdPrefix="ff-field" Value="@_fieldValues.GetValueOrDefault(field.Id)"
+                                   ValueChanged="v => _fieldValues[field.Id] = v" Items="@(_fieldItems.GetValueOrDefault(field.Id) ?? [])"
+                                   ItemsChanged="items => _fieldItems[field.Id] = items" />
+                }
                 @if (_error is not null)
                 {
                     <p class="field-error" role="alert">@_error</p>
@@ -153,7 +160,7 @@ else
         try
         {
             var sent = await Forms.SubmitAsync(Key, FormId,
-                new FormResponse(_summary, _description, _priority, _start, _due, _labels), CancellationToken.None);
+                new FormResponse(_summary, _description, _priority, _start, _due, _labels) { FieldValues = Answers() }, CancellationToken.None);
             if (sent.IsSuccess)
             {
                 _createdKey = sent.Value;
@@ -171,9 +178,20 @@ else
         }
     }
 
+    private readonly Dictionary<long, string?> _fieldValues = [];
+    private readonly Dictionary<long, IReadOnlyList<string>> _fieldItems = [];
+
+    /// <summary>The answers to the space fields, as the item's details would set them.</summary>
+    private Dictionary<long, FieldValueInput> Answers() =>
+        (_form?.AskedFields ?? []).ToDictionary(f => f.Id, f => f.Type is FieldType.Checkbox or FieldType.Labels or FieldType.People
+            ? new FieldValueInput(null, _fieldItems.GetValueOrDefault(f.Id) ?? [])
+            : new FieldValueInput(_fieldValues.GetValueOrDefault(f.Id)));
+
     private void Again()
     {
         _createdKey = null;
+        _fieldValues.Clear();
+        _fieldItems.Clear();
         _summary = "";
         _description = "";
         _priority = Priority.Medium;

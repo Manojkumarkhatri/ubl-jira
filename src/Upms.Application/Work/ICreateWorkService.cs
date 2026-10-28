@@ -19,6 +19,10 @@ public interface ICreateWorkService
     /// <summary>Up to 20 possible parents by key or title: epics or stages for standard items, stories, tasks and bugs for
     /// sub-tasks.</summary>
     Task<Result<IReadOnlyList<ParentOption>>> FindParentsAsync(string spaceKey, WorkItemType type, string text, CancellationToken ct);
+
+    /// <summary>The space fields the type's layout shows, empty, for the Create form (Contribute right); formulas are left out,
+    /// they are worked out (live test, 2026-10-28: Jira's Create shows the space's own fields).</summary>
+    Task<Result<IReadOnlyList<CustomFieldView>>> FieldsAsync(string spaceKey, WorkItemType type, CancellationToken ct);
 }
 
 public sealed record CreateSpaces(IReadOnlyList<CreateSpaceOption> Spaces, string? DefaultKey);

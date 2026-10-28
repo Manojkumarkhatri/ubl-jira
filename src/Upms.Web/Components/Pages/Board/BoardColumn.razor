@@ -32,7 +32,7 @@
         <div class="col-empty-state" data-testid="board-empty">
             <span class="col-empty-icon" aria-hidden="true"><Icon Name="empty" Size="20" /></span>
             <p class="col-empty-title">No work items</p>
-            <p class="col-empty-text">Create a work item to get started. Work will appear here.</p>
+            <p class="col-empty-text">@(EmptyHint ?? "Create a work item to get started. Work will appear here.")</p>
         </div>
     }
     @if (!HeaderOnly)
@@ -84,8 +84,9 @@
             </button>
         }
     }
-    else if (!HeaderOnly && VisibleCards.Count == 0)
+    else if (!HeaderOnly && VisibleCards.Count == 0 && !ShowEmptyState)
     {
+        @* Not under the welcome message above: one empty message per column (live test, 2026-10-28). *@
         <p class="col-empty hint">@EmptyText</p>
     }
 </section>
@@ -115,6 +116,10 @@
     /// <summary>The board has no work at all: this (first) column says so, as Jira does.</summary>
     [Parameter]
     public bool ShowEmptyState { get; set; }
+
+    /// <summary>What the empty board asks for; a sprint board points to the backlog instead of "Create a work item".</summary>
+    [Parameter]
+    public string? EmptyHint { get; set; }
 
     /// <summary>Only the header and "What needs to be done?": the cards are in the swimlanes below (Jira parity pass FR-026).</summary>
     [Parameter]
@@ -172,6 +177,10 @@
     [Parameter]
     public EventCallback<CardView> OnDelete { get; set; }
 
+    /// <summary>Which cards this viewer may delete; the others get no "Delete" in their menu (live test, 2026-10-28).</summary>
+    [Parameter]
+    public Func<CardView, bool>? CanDelete { get; set; }
+
     /// <summary>The card types "What needs to be done?" offers (Phase 3 FR-010).</summary>
     [Parameter]
     public IReadOnlyList<Upms.Domain.Work.WorkItemType> CreateTypes { get; set; } = [];
@@ -195,7 +204,7 @@
     {
         <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" FilterQuery="@FilterQuery" MoveTargets="MoveTargets" IsDragging="@(DraggingKey == card.Key)"
                   CanContribute="CanContribute" IsOpen="@(Column.Category != StatusCategory.Done)" Today="Today"
-                  OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" OnDelete="OnDelete" />
+                  OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" OnDelete="@(CanDelete is null || CanDelete(card) ? OnDelete : default)" />
     };
 
     /// <summary>"Show more": the next cards appear and focus moves to the first of them.</summary>

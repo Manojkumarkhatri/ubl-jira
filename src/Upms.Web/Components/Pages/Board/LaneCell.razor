@@ -57,7 +57,7 @@
         <TaskCard Card="card" ProjectKey="@ProjectKey" ShowAllDone="ShowAllDone" FilterQuery="@FilterQuery" MoveTargets="MoveTargets"
                   Lanes="LanesFor(card)" IsDragging="@(DraggingKey == card.Key)" CanContribute="CanContribute"
                   IsOpen="@(Column.Category != StatusCategory.Done)" Today="Today"
-                  OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" OnDelete="OnDelete" />
+                  OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDropBefore="OnDropBefore" OnMove="OnMove" OnDelete="@(CanDelete is null || CanDelete(card) ? OnDelete : default)" />
     };
 
     /// <summary>"Show more": the next cards appear and focus moves to the first of them.</summary>
@@ -135,6 +135,10 @@
     /// <summary>The card menu's "Delete": the board asks first.</summary>
     [Parameter]
     public EventCallback<CardView> OnDelete { get; set; }
+
+    /// <summary>Which cards this viewer may delete; the others get no "Delete" in their menu (live test, 2026-10-28).</summary>
+    [Parameter]
+    public Func<CardView, bool>? CanDelete { get; set; }
 
     /// <summary>The "+" at the foot of the cell: Jira's create in this column.</summary>
     [Parameter]

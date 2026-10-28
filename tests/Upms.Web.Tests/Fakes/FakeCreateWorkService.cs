@@ -65,6 +65,12 @@ public sealed class FakeCreateWorkService : ICreateWorkService
             space.Template == ProjectTemplate.Scrum ? [new SprintOption(7, "MOB Sprint 3")] : []);
     }
 
+    /// <summary>The space fields the form shows; none unless a test sets them.</summary>
+    public IReadOnlyList<CustomFieldView> Fields { get; set; } = [];
+
+    public Task<Result<IReadOnlyList<CustomFieldView>>> FieldsAsync(string spaceKey, WorkItemType type, CancellationToken ct) =>
+        Task.FromResult(Result<IReadOnlyList<CustomFieldView>>.Ok(Fields));
+
     public Task<Result<IReadOnlyList<ParentOption>>> FindParentsAsync(string spaceKey, WorkItemType type, string text, CancellationToken ct)
     {
         IReadOnlyList<ParentOption> found = Parents

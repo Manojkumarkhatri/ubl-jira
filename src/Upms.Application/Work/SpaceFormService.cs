@@ -7,7 +7,8 @@ using Upms.Domain.Work;
 
 namespace Upms.Application.Work;
 
-internal sealed class SpaceFormService(IAppDbContext db, IProjectAccess access, IWorkItemService items, TimeProvider time)
+internal sealed class SpaceFormService(IAppDbContext db, IProjectAccess access, IWorkItemService items, ISpaceFieldService spaceFields,
+    TimeProvider time)
     : ISpaceFormService
 {
     public const int MaxForms = 100;
@@ -38,7 +39,7 @@ internal sealed class SpaceFormService(IAppDbContext db, IProjectAccess access, 
         }
 
         var form = await db.SpaceForms.AsNoTracking().SingleOrDefaultAsync(f => f.Id == formId && f.ProjectId == allowed.Value!.ProjectId, ct);
-        return form is null ? AppError.NotFound("form") : View(form, allowed.Value!);
+        return form is null ? AppError.NotFound("form") : await WithFieldsAsync(View(form, allowed.Value!), form, ct);
     }
 
     public async Task<Result<SpaceFormView>> CreateAsync(string spaceKey, string name, CancellationToken ct)
@@ -93,8 +94,12 @@ internal sealed class SpaceFormService(IAppDbContext db, IProjectAccess access, 
             return error.ToAppError();
         }
 
+        // Only fields of this space a form can ask for count, in the order chosen.
+        var askable = (await AskableFieldsAsync(caller.ProjectId, ct)).Select(f => f.Id).ToHashSet();
+        form.AskForSpaceFields((settings.SpaceFields ?? []).Where(askable.Contains));
+
         await db.SaveChangesAsync(ct);
-        return View(form, caller);
+        return await WithFieldsAsync(View(form, caller), form, ct);
     }
 
     public async Task<Result> DeleteAsync(string spaceKey, long formId, CancellationToken ct)
@@ -147,7 +152,31 @@ internal sealed class SpaceFormService(IAppDbContext db, IProjectAccess access, 
 
         form.Responded();
         await db.SaveChangesAsync(ct);
+
+        // The answers to the space fields the form asks for, as the item's details would set them; an answer the field
+        // refuses is left out rather than losing the response.
+        foreach (var fieldId in form.SpaceFields)
+        {
+            if (response.FieldValues.TryGetValue(fieldId, out var value) && (value.Value is not null || value.Items is { Count: > 0 }))
+            {
+                await spaceFields.SetValueAsync(created.Value!.Key, fieldId, value, ct);
+            }
+        }
+
         return created.Value!.Key;
+    }
+
+    /// <summary>The space fields a form can ask for: all but formulas (worked out) and people (chosen from a team list).</summary>
+    private async Task<List<SpaceField>> AskableFieldsAsync(long projectId, CancellationToken ct) =>
+        (await FieldReads.LiveFieldsAsync(db, projectId, ct)).Where(f => f.Type is not (FieldType.Formula or FieldType.People)).ToList();
+
+    private async Task<SpaceFormView> WithFieldsAsync(SpaceFormView view, SpaceForm form, CancellationToken ct)
+    {
+        var fields = await AskableFieldsAsync(form.ProjectId, ct);
+        CustomFieldView Field(SpaceField f) =>
+            new(f.Id, SystemFields.KeyOf(f.Id), f.Name, f.Type, f.Description, f.Options, null, [], null, []);
+        var asked = form.SpaceFields.Select(id => fields.FirstOrDefault(f => f.Id == id)).OfType<SpaceField>().Select(Field).ToList();
+        return view with { AskedFields = asked, AvailableFields = fields.Select(Field).ToList() };
     }
 
     /// <summary>The types the space offers that can be created on their own, in the Create form's order.</summary>

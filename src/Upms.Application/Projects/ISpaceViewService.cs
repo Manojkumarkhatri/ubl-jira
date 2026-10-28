@@ -58,8 +58,10 @@ public static class SpaceViewNames
         Summary,
         .. template == ProjectTemplate.Scrum ? [Backlog] : Array.Empty<string>(),
         Board, List, Calendar, Timeline,
-        .. template == ProjectTemplate.StageGate ? [Stages] : Array.Empty<string>(),
-        Approvals, Forms, Docs, Attachments, Reports, Archived,
+        // Approvals come with Stage-gate gates; elsewhere the tab only pointed to a Stage-gate space (live test, 2026-10-28;
+        // approvals in other spaces wait for the owner's decision).
+        .. template == ProjectTemplate.StageGate ? [Stages, Approvals] : Array.Empty<string>(),
+        Forms, Docs, Attachments, Reports, Archived,
     ];
 
     /// <summary>The tabs of a space that has not chosen its own: every view.</summary>

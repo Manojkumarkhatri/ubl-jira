@@ -12,6 +12,7 @@
 @inject ViewerTimeZone ViewerTimeZone
 @inject TimeProvider Time
 @inject CreateWorkLauncher Launcher
+@implements IDisposable
 
 <PageTitle>Home · U-PMS</PageTitle>
 
@@ -34,14 +35,11 @@ else
                 </p>
             </div>
             <div class="home-actions" role="group" aria-label="Quick actions">
-                @* One solid button, for the most common action (theme of 2026-10-28). *@
-                @if (CanCreateWork)
-                {
-                    <button type="button" class="btn btn-primary" @onclick="() => Launcher.Open()"><Icon Name="plus" /> Create work item</button>
-                }
+                @* Work items are created from the header's "+ Create", on every screen (Jira); Home does not repeat it
+                   (live test, 2026-10-28). *@
                 @if (_access.Can(Rights.CreateSpaces))
                 {
-                    <a class="btn @(CanCreateWork ? "" : "btn-primary")" href="create-space" data-testid="home-create-space"><Icon Name="plus" /> Create space</a>
+                    <a class="btn" href="create-space" data-testid="home-create-space"><Icon Name="plus" /> Create space</a>
                 }
                 <a class="btn" href="search"><Icon Name="search" /> Search work</a>
                 @if (CanDownloadMis)
@@ -111,7 +109,7 @@ else
                         @foreach (var space in _spaces.Items)
                         {
                             <li>
-                                <span class="space-icon space-icon-@ProjectHeader.SpaceColor(space.Key)" aria-hidden="true">@space.Key[..1]</span>
+                                <span class="space-icon space-icon-@ProjectHeader.SpaceColor(space.Key)" aria-hidden="true">@ProjectHeader.SpaceInitials(space.Key)</span>
                                 <span class="home-item">
                                     <a href="spaces/@space.Key/board"><strong>@space.Name</strong></a>
                                     <span class="home-meta">@space.Key · @ProjectHeader.TemplateName(space.Template) · @(space.MyRole is { } role ? role.DisplayName() : "Admin access")</span>
@@ -187,10 +185,25 @@ else
         _hour = TimeZoneInfo.ConvertTime(Time.GetUtcNow(), await ViewerTimeZone.GetAsync()).Hour;
         _access = await Organization.MyAccessAsync(CancellationToken.None);
         _name = (await Accounts.GetProfileAsync(CancellationToken.None)).Value?.DisplayName ?? "";
+        await LoadNumbersAsync();
+        Launcher.Created += OnCreated;
+    }
+
+    private async Task LoadNumbersAsync()
+    {
         _spaces = (await Projects.ListAsync(new PageRequest(1, 6), CancellationToken.None)).Value ?? Page<ProjectSummary>.Empty(PageRequest.First);
         _gates = (await MyWork.ListGatesAsync(CancellationToken.None)).Value ?? [];
         _work = (await MyWork.SummaryAsync(_today, CancellationToken.None)).Value ?? MyWorkSummary.Empty;
     }
+
+    /// <summary>Work created from the header while Home is open shows in its numbers at once (live test, 2026-10-28).</summary>
+    private void OnCreated(string spaceKey, string itemKey) => _ = InvokeAsync(async () =>
+    {
+        await LoadNumbersAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Launcher.Created -= OnCreated;
 
     private string Greeting => _hour switch
     {
@@ -207,8 +220,6 @@ else
         1 => "Here is your work in 1 space.",
         var n => $"Here is your work across {n} spaces.",
     };
-
-    private bool CanCreateWork => _spaces is { TotalCount: > 0 } && _access.Can(Rights.EditWork);
 
     private bool CanDownloadMis => _access.Can(Rights.DownloadSpaceMis) || _access.Can(Rights.DownloadPortfolioMis)
         || _access.Can(Rights.DownloadDepartmentMis) || _access.Can(Rights.DownloadAllMis);

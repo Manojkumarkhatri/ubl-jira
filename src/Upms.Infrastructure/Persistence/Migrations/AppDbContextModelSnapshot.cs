@@ -219,7 +219,7 @@ namespace Upms.Infrastructure.Persistence.Migrations
                         new
                         {
                             Id = 1,
-                            DefaultTimeZoneId = "UTC",
+                            DefaultTimeZoneId = "Asia/Karachi",
                             IdleTimeoutMinutes = 30
                         });
                 });
@@ -841,6 +841,11 @@ namespace Upms.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("ResponseCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("SpaceFieldIds")
+                        .HasMaxLength(1000)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(1000)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");

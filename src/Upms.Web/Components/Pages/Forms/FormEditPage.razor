@@ -53,6 +53,11 @@ else
                 {
                     <label class="filter-option"><input type="checkbox" checked="@_fields.HasFlag(field)" @onchange="() => _fields ^= field" /> @FieldName(field)</label>
                 }
+                @* The space's own fields too (live test, 2026-10-28), in the order they are ticked. *@
+                @foreach (var field in _form?.AvailableFields ?? [])
+                {
+                    <label class="filter-option"><input type="checkbox" checked="@_spaceFields.Contains(field.Id)" @onchange="() => ToggleSpaceField(field.Id)" /> @field.Name</label>
+                }
             </fieldset>
             <label class="filter-option fb-open"><input type="checkbox" @bind="_open" /> Taking responses</label>
             @if (_error is not null)
@@ -106,6 +111,10 @@ else
                 {
                     <div class="field"><label>Labels</label><input class="input" /></div>
                 }
+                @foreach (var field in _spaceFields.Select(id => _form?.AvailableFields.FirstOrDefault(f => f.Id == id)).OfType<CustomFieldView>())
+                {
+                    <SpaceFieldBox @key="field.Id" Field="field" IdPrefix="preview-field" />
+                }
                 <button type="button" class="btn btn-primary">Submit</button>
             </div>
         </section>
@@ -146,6 +155,17 @@ else
             _type = _form.WorkType;
             _fields = _form.Fields;
             _open = _form.IsOpen;
+            _spaceFields = _form.AskedFields.Select(f => f.Id).ToList();
+        }
+    }
+
+    private List<long> _spaceFields = [];
+
+    private void ToggleSpaceField(long id)
+    {
+        if (!_spaceFields.Remove(id))
+        {
+            _spaceFields.Add(id);
         }
     }
 
@@ -166,7 +186,7 @@ else
         _busy = true;
         try
         {
-            var saved = await Forms.SaveAsync(Key, FormId, new FormSettings(_name, _intro, _type, _fields, _open), CancellationToken.None);
+            var saved = await Forms.SaveAsync(Key, FormId, new FormSettings(_name, _intro, _type, _fields, _open, _spaceFields), CancellationToken.None);
             if (saved.IsSuccess)
             {
                 _form = saved.Value!;

@@ -88,7 +88,17 @@ public sealed record BoardView(
     ProjectTemplate Template = ProjectTemplate.Kanban,
     ActiveSprintInfo? Sprint = null,
     bool CanManageSprints = false,
-    WorkTypeSet WorkTypes = WorkTypeSet.All);
+    WorkTypeSet WorkTypes = WorkTypeSet.All)
+{
+    /// <summary>The viewer may delete any card (an Admin, or "Delete any work item").</summary>
+    public bool CanDeleteAny { get; init; }
+
+    /// <summary>The viewer may delete the cards they created ("Delete work items they created").</summary>
+    public bool CanDeleteOwn { get; init; }
+
+    /// <summary>Whether the card's menu offers "Delete": never an action the server would refuse (live test, 2026-10-28).</summary>
+    public bool CanDelete(CardView card) => CanDeleteAny || (CanDeleteOwn && card.CreatedById == ViewerId);
+}
 
 /// <summary>The sprint a Scrum board shows (Phase 3 FR-027); a Scrum board without one shows no cards.</summary>
 /// <param name="Destinations">The planned sprints its open cards can go to when it is completed (FR-028).</param>
@@ -138,4 +148,7 @@ public sealed record CardView(
     public string? CoverColor { get; init; }
 
     public long? CoverImageId { get; init; }
+
+    /// <summary>Who created the card: someone who may delete only their own work sees "Delete" only on these.</summary>
+    public Guid CreatedById { get; init; }
 }

@@ -15,6 +15,7 @@ function handleReconnectStateChanged(event) {
         reconnectModal.close();
     } else if (event.detail.state === "failed") {
         document.addEventListener("visibilitychange", retryWhenDocumentBecomesVisible);
+        retryWhenServerIsBack();
     } else if (event.detail.state === "rejected") {
         location.reload();
     }
@@ -60,4 +61,30 @@ async function retryWhenDocumentBecomesVisible() {
     if (document.visibilityState === "visible") {
         await retry();
     }
+}
+
+// After a server restart nobody should have to press Retry: every few seconds, ask whether the server answers again, and
+// then reconnect (or reload the page when the old session is gone) (live test, 2026-10-28).
+let serverCheck = null;
+function retryWhenServerIsBack() {
+    if (serverCheck) return;
+    serverCheck = setInterval(async () => {
+        try {
+            const reply = await fetch(location.href, { method: "HEAD", cache: "no-store" });
+            if (reply.ok) {
+                clearInterval(serverCheck);
+                serverCheck = null;
+                // Back on the same session if it still exists; otherwise (a restart, or a sign-in that ran out while the
+                // computer slept) reload, which signs in again or shows the sign-in page.
+                const rejoined = await Blazor.reconnect().catch(() => false);
+                if (rejoined) {
+                    reconnectModal.close();
+                } else {
+                    location.reload();
+                }
+            }
+        } catch {
+            // still not answering
+        }
+    }, 5000);
 }

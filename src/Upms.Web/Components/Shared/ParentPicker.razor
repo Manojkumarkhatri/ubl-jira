@@ -67,7 +67,26 @@
     [Parameter]
     public string? Error { get; set; }
 
+    private (string Space, WorkItemType Type)? _for;
+
     private bool Open => _found.Count > 0;
+
+    /// <summary>True while the box holds text that was not picked from the list; the form refuses it rather than saving
+    /// the item without a parent (live test, 2026-10-28).</summary>
+    public bool HasUnpickedText => Value is null && _text.Trim().Length > 0;
+
+    protected override void OnParametersSet()
+    {
+        // Text typed for another space or work type does not carry over to the new one.
+        if (_for is { } was && (was.Space != SpaceKey || was.Type != Type))
+        {
+            _text = "";
+            _found = [];
+            _active = -1;
+        }
+
+        _for = (SpaceKey, Type);
+    }
 
     private string? ActiveId => Open && _active >= 0 ? OptionId(_active) : null;
 

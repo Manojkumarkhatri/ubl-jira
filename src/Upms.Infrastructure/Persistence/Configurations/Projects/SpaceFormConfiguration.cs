@@ -13,6 +13,8 @@ internal sealed class SpaceFormConfiguration : IEntityTypeConfiguration<SpaceFor
         builder.Property(f => f.Name).HasMaxLength(SpaceForm.NameMaxLength).IsRequired();
         builder.Property(f => f.Intro).HasMaxLength(SpaceForm.IntroMaxLength);
         builder.Property(f => f.WorkType).HasConversion<string>().HasMaxLength(20).IsUnicode(false);
+        builder.Property(f => f.SpaceFieldIds).HasMaxLength(SpaceForm.SpaceFieldsMaxLength).IsUnicode(false);
+        builder.Ignore(f => f.SpaceFields);
         builder.HasIndex(f => f.ProjectId);
         builder.HasOne<Project>().WithMany().HasForeignKey(f => f.ProjectId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<User>().WithMany().HasForeignKey(f => f.CreatedById).OnDelete(DeleteBehavior.Restrict);

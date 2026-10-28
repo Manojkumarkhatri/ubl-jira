@@ -29,6 +29,11 @@ else
             <Icon Name="search" />
             <input type="search" class="input" aria-label="Search attachments" placeholder="Search attachments" @bind="_search" @bind:event="oninput" />
         </div>
+        @if (_menu != Menu.None)
+        {
+            @* A click anywhere else closes the open filter, as with the other menus. *@
+            <div class="menu-backdrop" @onclick="() => _menu = Menu.None"></div>
+        }
         <div class="tab-menu">
             <button type="button" id="att-by-button" class="filter-btn @(_people.Count > 0 ? "is-active" : "")" aria-expanded="@Expanded(Menu.AddedBy)"
                     @onclick="() => Toggle(Menu.AddedBy)"><Icon Name="person" /> Added by@(Badge(_people.Count))</button>

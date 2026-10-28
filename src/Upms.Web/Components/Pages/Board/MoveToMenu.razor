@@ -7,6 +7,7 @@
     </button>
     @if (_open)
     {
+        <div class="menu-backdrop" @onclick="() => _open = false"></div>
         @* One line per column, its name and then "to top" and "to bottom" arrows, so ten long column names still make a short menu; the
            buttons are named "Done: top" and "Done: bottom" for screen readers, as before. *@
         <div id="@_menuId" class="move-list card-actions" role="group" aria-label="Actions for @CardKey">
@@ -15,7 +16,8 @@
                 @foreach (var column in Columns)
                 {
                     <div class="move-row">
-                        <span class="move-name" title="@column.Name" aria-hidden="true">@column.Name</span>
+                        @* The name moves the card to the top of the column with one click (Jira); the arrows below are the named buttons. *@
+                        <span class="move-name" title="Move to @column.Name" aria-hidden="true" @onclick="() => ChooseAsync(new MoveRequest(column.Id, CardPlacement.AtTop))">@column.Name</span>
                         <button type="button" class="menu-item move-pos" title="Top of @column.Name" @onclick="() => ChooseAsync(new MoveRequest(column.Id, CardPlacement.AtTop))"><span class="sr-only">@($"{column.Name}: top")</span><Icon Name="to-top" /></button>
                         <button type="button" class="menu-item move-pos" title="Bottom of @column.Name" @onclick="() => ChooseAsync(new MoveRequest(column.Id, CardPlacement.AtEnd))"><span class="sr-only">@($"{column.Name}: bottom")</span><Icon Name="to-bottom" /></button>
                     </div>

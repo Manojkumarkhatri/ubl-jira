@@ -82,7 +82,14 @@ public sealed record WorkItemListView(
     IReadOnlyList<AssigneeOption> People,
     Page<WorkItemRow> Rows,
     ProjectTemplate Template = ProjectTemplate.Kanban,
-    WorkTypeSet WorkTypes = WorkTypeSet.All);
+    WorkTypeSet WorkTypes = WorkTypeSet.All)
+{
+    /// <summary>The space's own fields, which the list can show as columns (live test, 2026-10-28).</summary>
+    public IReadOnlyList<ListFieldColumn> Fields { get; init; } = [];
+}
+
+/// <summary>A space field the list can show as a column.</summary>
+public sealed record ListFieldColumn(long Id, string Name);
 
 /// <param name="ParentKey">The parent task of a sub-task.</param>
 /// <param name="IsOpen">Not in a "done" column, so it can be overdue.</param>
@@ -116,4 +123,7 @@ public sealed record WorkItemRow(
 
     /// <summary>For changing it from the list.</summary>
     public byte[] Version { get; init; } = [];
+
+    /// <summary>The item's space-field values in words, by field id; a field without a value is absent.</summary>
+    public IReadOnlyDictionary<long, string> FieldText { get; init; } = new Dictionary<long, string>();
 }

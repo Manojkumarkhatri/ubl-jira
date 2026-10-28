@@ -11,7 +11,7 @@
 <div class="space-head">
     <div class="crumbs"><a href="spaces">Spaces</a></div>
     <div class="space-title-row">
-        <span class="space-icon space-icon-@SpaceColor(ProjectKey)" aria-hidden="true">@ProjectKey[..1]</span>
+        <span class="space-icon space-icon-@SpaceColor(ProjectKey)" aria-hidden="true">@SpaceInitials(ProjectKey)</span>
         <h1>@Title</h1>
         <span class="sr-only">, @TemplateName(Template) space</span>
         <a class="icon-btn space-head-btn" href="spaces/@ProjectKey/members" aria-label="Members of @Title" title="Members"><Icon Name="people" /></a>
@@ -218,6 +218,10 @@
 
     /// <summary>The colour of a space's icon, from its key, so a space keeps its colour everywhere.</summary>
     public static int SpaceColor(string key) => key.Sum(c => c) % 6;
+
+    /// <summary>The letters on a space's icon: the first two of its key, so spaces that start alike ("MOB", "MBA") still look
+    /// different (live test, 2026-10-28).</summary>
+    public static string SpaceInitials(string key) => key.Length > 2 ? key[..2] : key;
 
     /// <summary>The template's name as people read it.</summary>
     public static string TemplateName(ProjectTemplate template) => template switch

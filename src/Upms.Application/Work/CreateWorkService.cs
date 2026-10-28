@@ -69,6 +69,25 @@ internal sealed class CreateWorkService(IAppDbContext db, IProjectAccess access,
             sprints);
     }
 
+    public async Task<Result<IReadOnlyList<CustomFieldView>>> FieldsAsync(string spaceKey, WorkItemType type, CancellationToken ct)
+    {
+        var allowed = await access.RequireAsync(spaceKey, ProjectRight.Contribute, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error!;
+        }
+
+        var caller = allowed.Value!;
+        var fields = await FieldReads.LiveFieldsAsync(db, caller.ProjectId, ct);
+        var (placements, _) = await FieldReads.LayoutAsync(db, caller.ProjectId, type, caller.Template, fields, ct);
+        var shown = placements.Select(p => SystemFields.FieldIdOf(p.Key)).OfType<long>().ToList();
+        return fields
+            .Where(f => shown.Contains(f.Id) && f.Type != FieldType.Formula)
+            .OrderBy(f => shown.IndexOf(f.Id))
+            .Select(f => new CustomFieldView(f.Id, SystemFields.KeyOf(f.Id), f.Name, f.Type, f.Description, f.Options, null, [], null, []))
+            .ToList();
+    }
+
     public async Task<Result<IReadOnlyList<ParentOption>>> FindParentsAsync(string spaceKey, WorkItemType type, string text,
         CancellationToken ct)
     {

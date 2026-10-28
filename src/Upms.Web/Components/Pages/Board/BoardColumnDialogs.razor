@@ -157,8 +157,17 @@
     }
 
     private Task AddAsync() =>
-        InDialogAsync(_addDialog, v => ColumnService.AddAsync(SpaceKey, _name, _category, Columns!.Columns.Count, v, CancellationToken.None),
+        InDialogAsync(_addDialog, v => ColumnService.AddAsync(SpaceKey, _name, _category, NewColumnPosition(), v, CancellationToken.None),
             $"Added the column {_name.Trim()}.", "Name");
+
+    /// <summary>A new to-do or in-progress column goes in front of the first done column, so work still flows left to right
+    /// into Done; a done column goes at the end (live test, 2026-10-28).</summary>
+    private int NewColumnPosition()
+    {
+        var columns = Columns!.Columns.OrderBy(c => c.Position).ToList();
+        var firstDone = columns.FindIndex(c => c.Category == StatusCategory.Done);
+        return _category == StatusCategory.Done || firstDone < 0 ? columns.Count : firstDone;
+    }
 
     private Task RenameAsync() =>
         InDialogAsync(_renameDialog, v => ColumnService.RenameAsync(SpaceKey, _column!.Id, _name, v, CancellationToken.None),

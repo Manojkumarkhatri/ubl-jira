@@ -140,7 +140,7 @@
             <ul>
                 @foreach (var space in spaces)
                 {
-                    <li><NavItem Href="@($"spaces/{space.Key}")"><span class="space-mark" aria-hidden="true">@space.Key[..1]</span> <span class="side-name" title="@space.Name">@space.Name</span></NavItem></li>
+                    <li><NavItem Href="@($"spaces/{space.Key}")"><span class="space-mark" aria-hidden="true">@Upms.Web.Components.Shared.ProjectHeader.SpaceInitials(space.Key)</span> <span class="side-name" title="@space.Name">@space.Name</span></NavItem></li>
                 }
             </ul>
         }

@@ -146,6 +146,29 @@
     });
   });
 
+  // While a card is dragged near the left or right edge of a board, the board scrolls, so a column out of view can still be
+  // reached (live test, 2026-10-28: To Do and Done were never on screen together).
+  document.addEventListener('dragover', (e) => {
+    const wrap = e.target && e.target.closest ? e.target.closest('.board-wrap') : null;
+    if (!wrap || wrap.scrollWidth <= wrap.clientWidth) return;
+    const box = wrap.getBoundingClientRect();
+    const edge = 70;
+    if (e.clientX > box.right - edge) wrap.scrollLeft += 18;
+    else if (e.clientX < box.left + edge) wrap.scrollLeft -= 18;
+  });
+
+  // Escape closes an open menu even when focus has left it (after a click elsewhere, for example), as a click on its
+  // backdrop would. A menu that holds the focus handles Escape itself and puts focus back on its button.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const backdrops = document.querySelectorAll('.menu-backdrop');
+    if (backdrops.length === 0) return;
+    const backdrop = backdrops[backdrops.length - 1];
+    const menu = backdrop.nextElementSibling;
+    if (menu && menu.contains(document.activeElement)) return;
+    backdrop.click();
+  });
+
   upms.focusById = (id) => {
     const el = document.getElementById(id);
     if (el) el.focus();

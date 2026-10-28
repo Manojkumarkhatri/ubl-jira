@@ -245,13 +245,13 @@ else
            without lanes. *@
         @if (!Grouped)
         {
-        <div class="board">
+        <div class="board" style="--board-cols: @_board.Columns.Count">
             @foreach (var column in _board.Columns)
             {
-                <BoardColumn @key="column.Id" Column="column" HeaderOnly="false" ShowEmptyState="@(column.Id == _board.Columns[0].Id && !AllCards.Any())" ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
+                <BoardColumn @key="column.Id" Column="column" HeaderOnly="false" ShowEmptyState="@(column.Id == _board.Columns[0].Id && !AllCards.Any())" EmptyHint="@(IsScrum ? "Move work into the sprint from the backlog. It will appear here." : null)" ProjectKey="@Key" ShowAllDone="_board.ShowingAllDone" MoveTargets="_moveTargets" DraggingKey="@_dragging?.Key"
                              CanContribute="_board.CanContribute && !NoSprint" Filter="CardFilter" FilterQuery="@_filter.QueryPrefix" Today="_today"
                              OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
-                             OnDropBefore="target => DropBeforeAsync(target)" OnDropAtEnd="column => DropAtEndAsync(column)" OnMove="MoveFromMenuAsync" OnDelete="AskDeleteAsync" RevealKey="@_revealKey"
+                             OnDropBefore="target => DropBeforeAsync(target)" OnDropAtEnd="column => DropAtEndAsync(column)" OnMove="MoveFromMenuAsync" OnDelete="AskDeleteAsync" CanDelete="_board!.CanDelete" RevealKey="@_revealKey"
                              CreateTypes="CardTypes" DefaultType="DefaultCardType" OnCreate="CreateAsync" OnRequestCreate="column => Launcher.Open(Key, column.Id)">
                     <HeaderActions>
                         @if (_columnsView?.Columns.FirstOrDefault(c => c.Id == column.Id) is { } managed)
@@ -282,7 +282,7 @@ else
                 var expanded = IsExpanded(lane);
                 <div @key="lane.Id" class="lane" role="group" data-testid="lane" aria-label="@lane.Title">
                     <LaneHeader Lane="lane" Expanded="expanded" BodyId="@($"{lane.Id}-body")" OnToggle="() => ToggleLane(lane)" />
-                    <div id="@($"{lane.Id}-body")" class="board lane-body" hidden="@(!expanded)">
+                    <div id="@($"{lane.Id}-body")" class="board lane-body" style="--board-cols: @_board.Columns.Count" hidden="@(!expanded)">
                         @foreach (var column in _board.Columns)
                         {
                             <LaneCell @key="column.Id" Column="column" Lane="lane" Cards="lane.Cards.Where(c => c.ColumnId == column.Id).ToList()"
@@ -290,7 +290,7 @@ else
                                       LanesFor="card => LanesFor(card, lane, lanes)" DraggingKey="@_dragging?.Key" CanContribute="_board.CanContribute && !NoSprint"
                                       Today="_today" OnDragStart="card => _dragging = card" OnDragEnd="() => _dragging = null"
                                       OnDropBefore="target => DropBeforeAsync(target, lane)" OnDropAtEnd="() => DropAtEndAsync(column, lane)"
-                                      OnMove="MoveFromMenuAsync" OnDelete="AskDeleteAsync" RevealKey="@_revealKey"
+                                      OnMove="MoveFromMenuAsync" OnDelete="AskDeleteAsync" CanDelete="_board!.CanDelete" RevealKey="@_revealKey"
                                       OnRequestCreate="() => Launcher.Open(Key, column.Id)" />
                         }
                         @if (_columnsView is not null)
@@ -694,8 +694,9 @@ else
     private void OpenComplete()
     {
         var sprint = _board!.Sprint!;
-        var done = _board.Columns.Where(c => c.Category == StatusCategory.Done).Sum(c => c.Cards.Count);
-        var all = _board.Columns.Sum(c => c.Cards.Count);
+        // The sprint's items, as the backlog counts them: sub-tasks go with their parent (Jira; live test, 2026-10-28).
+        var done = _board.Columns.Where(c => c.Category == StatusCategory.Done).Sum(c => c.Cards.Count(card => card.Type != WorkItemType.Subtask));
+        var all = _board.Columns.Sum(c => c.Cards.Count(card => card.Type != WorkItemType.Subtask));
         _sprintDialogs!.OpenComplete(sprint.Id, sprint.Name, sprint.Version, done, all - done, sprint.Destinations);
     }
 

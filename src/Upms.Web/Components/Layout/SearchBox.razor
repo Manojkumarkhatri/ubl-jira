@@ -3,24 +3,32 @@
 @inject ISearchService Search
 @inject NavigationManager Navigation
 @* The search box on every screen (Phase 4 FR-032, FR-033; research R16, R25), a combobox: focused while empty it lists the
-   items opened last; a key and Enter opens that item; words and Enter open the search page. *@
+   items opened last; while typing it lists the first matching items and "Search for …", as Jira does (live test,
+   2026-10-28); a key and Enter opens that item; words and Enter open the search page. *@
 <div class="search-box" role="search">
     <input id="global-search" class="input search-input" type="text" role="combobox" autocomplete="off" spellcheck="false"
            aria-label="Search or type a key" placeholder="Search or type a key" aria-autocomplete="list"
            aria-expanded="@(Open ? "true" : "false")" aria-controls="global-search-list" aria-activedescendant="@ActiveId"
-           aria-describedby="global-search-message" @bind="_text" @bind:event="oninput" @bind:after="Typed" @onfocus="FocusedAsync" @onblur="Blurred"
+           aria-describedby="global-search-message" @bind="_text" @bind:event="oninput" @bind:after="TypedAsync" @onfocus="FocusedAsync" @onblur="Blurred"
            @onkeydown="KeyDownAsync" />
     @if (Open)
     {
-        <ul id="global-search-list" class="search-recent" role="listbox" aria-label="Recently viewed">
-            @for (var i = 0; i < _recent.Count; i++)
+        <ul id="global-search-list" class="search-recent" role="listbox" aria-label="@(Typing ? "Matching work items" : "Recently viewed")">
+            @for (var i = 0; i < Items.Count; i++)
             {
                 var index = i;
-                var item = _recent[i];
+                var item = Items[i];
                 <li id="@OptionId(index)" role="option" aria-selected="@(index == _active ? "true" : "false")"
                     class="@(index == _active ? "is-active" : "")" @onmousedown="() => Go(item)" @onmousedown:preventDefault="true">
                     <TypeIcon Type="item.Type" /> <span class="key">@item.Key</span> <span class="recent-title">@item.Title</span>
                     <span class="hint">@item.ProjectName</span>
+                </li>
+            }
+            @if (Typing)
+            {
+                <li id="@OptionId(Items.Count)" role="option" aria-selected="@(_active == Items.Count ? "true" : "false")"
+                    class="search-all @(_active == Items.Count ? "is-active" : "")" @onmousedown="SubmitAsync" @onmousedown:preventDefault="true">
+                    <Icon Name="search" Size="14" /> Search for "@_text.Trim()"
                 </li>
             }
         </ul>
@@ -29,13 +37,26 @@
 </div>
 
 @code {
+    private const int MatchesShown = 6;
+
     private IReadOnlyList<SearchResultRow> _recent = [];
+    private IReadOnlyList<SearchResultRow> _matches = [];
     private string _text = "";
     private string? _message;
     private int _active = -1;
     private bool _showRecent;
+    private bool _showMatches;
+    private int _request;
 
-    private bool Open => _showRecent && _text.Length == 0 && _recent.Count > 0;
+    /// <summary>Two letters or more: the list shows matches instead of the recent items.</summary>
+    private bool Typing => _showMatches && _text.Trim().Length >= 2;
+
+    private IReadOnlyList<SearchResultRow> Items => Typing ? _matches : _recent;
+
+    private bool Open => Typing || (_showRecent && _text.Length == 0 && _recent.Count > 0);
+
+    /// <summary>The options: the items, and while typing "Search for …" after them.</summary>
+    private int OptionCount => Items.Count + (Typing ? 1 : 0);
 
     private string? ActiveId => Open && _active >= 0 ? OptionId(_active) : null;
 
@@ -50,16 +71,47 @@
             _showRecent = true;
             _active = -1;
         }
+        else
+        {
+            _showMatches = true;
+        }
     }
 
-    private void Blurred() => _showRecent = false;
+    private void Blurred()
+    {
+        _showRecent = false;
+        _showMatches = false;
+    }
 
     // @bind keeps characters typed while the server is busy; value= with @oninput would put back an older value.
-    private void Typed()
+    private async Task TypedAsync()
     {
         _message = null;
         _active = -1;
         _showRecent = _text.Length == 0;
+        var text = _text.Trim();
+        var request = ++_request;
+        if (text.Length < 2)
+        {
+            _matches = [];
+            return;
+        }
+
+        // A short pause, so a quick typist does not search every letter; an answer for older text is dropped.
+        await Task.Delay(200);
+        if (request != _request)
+        {
+            return;
+        }
+
+        var found = await Search.SearchAsync(new SearchQuery(text), new PageRequest(1, MatchesShown), CancellationToken.None);
+        if (request != _request || _text.Trim() != text)
+        {
+            return;
+        }
+
+        _matches = found.IsSuccess ? found.Value!.Rows.Items : [];
+        _showMatches = true;
     }
 
     private async Task KeyDownAsync(KeyboardEventArgs e)
@@ -67,17 +119,18 @@
         switch (e.Key)
         {
             case "ArrowDown" or "ArrowUp" when Open:
-                _active = e.Key == "ArrowDown" ? (_active + 1) % _recent.Count : (_active <= 0 ? _recent.Count : _active) - 1;
+                _active = e.Key == "ArrowDown" ? (_active + 1) % OptionCount : (_active <= 0 ? OptionCount : _active) - 1;
                 break;
             case "ArrowDown" when _text.Length == 0:
                 await FocusedAsync();
                 break;
             case "Escape":
                 _showRecent = false;
+                _showMatches = false;
                 _message = null;
                 break;
-            case "Enter" when Open && _active >= 0:
-                Go(_recent[_active]);
+            case "Enter" when Open && _active >= 0 && _active < Items.Count:
+                Go(Items[_active]);
                 break;
             case "Enter":
                 await SubmitAsync();
@@ -121,9 +174,12 @@
 
     private void Reset()
     {
+        _request++;
         _text = "";
         _message = null;
         _showRecent = false;
+        _showMatches = false;
+        _matches = [];
         _active = -1;
     }
 }

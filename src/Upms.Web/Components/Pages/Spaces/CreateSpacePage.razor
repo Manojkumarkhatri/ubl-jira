@@ -154,13 +154,17 @@ else
                                         @onmousedown="() => Invite(person)" @onmousedown:preventDefault>
                                         <span class="avatar avatar-@Avatar.ColorIndex(person.UserId)" aria-hidden="true">@Initials(person.DisplayName)</span>
                                         <span>@person.DisplayName <span class="hint">@person.UserName</span></span>
+                                        <UserTypeBadge Type="person.Type" />
                                     </li>
                                 }
                             </ul>
                         }
                         else if (_term.Trim().Length > 1 && _searched)
                         {
-                            <p class="hint" role="status">No one matches "@_term.Trim()".</p>
+                            @* Someone already in the space is named, not reported as unknown (live test, 2026-10-28). *@
+                            <p class="hint" role="status">@(_alreadyIn.Count > 0
+                                ? $"{string.Join(", ", _alreadyIn)} {(_alreadyIn.Count == 1 ? "is" : "are")} already in this space."
+                                : $"No one matches \"{_term.Trim()}\".")</p>
                         }
                     </div>
                     <p class="hint">Each person gets the access their type and rights give: a Portfolio lead manages the space, a Member works on it, Read-only looks.</p>
@@ -212,6 +216,8 @@ else
     private string _term = "";
     private int _search;
     private bool _searched;
+    private bool _enterPending;
+    private IReadOnlyList<string> _alreadyIn = [];
     private int _active = -1;
     private bool _inviteFocused;
     private IReadOnlyList<PortfolioChoice> _portfolios = [];
@@ -257,6 +263,7 @@ else
 
     private async Task SuggestKeyAsync()
     {
+        ClearFixedErrors();
         if (_keyEditedByUser || _keyFocused)
         {
             return;
@@ -268,12 +275,38 @@ else
         {
             _key = suggested;
         }
+
+        ClearFixedErrors();
     }
 
     private void KeyEdited()
     {
         _keyEditedByUser = _key.Length > 0;
         _key = _key.ToUpperInvariant();
+        ClearFixedErrors();
+    }
+
+    /// <summary>A field's error goes as soon as the field is right again, not only at the next "Next" (live test,
+    /// 2026-10-28: a stale key error stayed under a valid suggested key).</summary>
+    private void ClearFixedErrors()
+    {
+        if (_error is null)
+        {
+            return;
+        }
+
+        var nameFixed = _name.Trim().Length > 0;
+        var keyFixed = Upms.Domain.Projects.Project.IsValidKey(_key.Trim());
+        if (_error.FieldErrors is { } fields && fields.Keys.Any(k => k is "Name" or "Key"))
+        {
+            var left = fields.Where(f => !(f.Key == "Name" && nameFixed) && !(f.Key == "Key" && keyFixed))
+                .ToDictionary(f => f.Key, f => f.Value);
+            _error = left.Count == 0 ? null : _error with { FieldErrors = left };
+        }
+        else if (_error.Code == ErrorCodes.InvalidProjectKey && keyFixed)
+        {
+            _error = null;
+        }
     }
 
     /// <summary>Step 1's "Next" creates the space, as Jira does; step 2 adds people to it.</summary>
@@ -281,6 +314,26 @@ else
     {
         if (_busy || _card is null)
         {
+            return;
+        }
+
+        // Every missing or wrong field at once, before asking the server (live test, 2026-10-28: only the key was flagged).
+        var missing = new Dictionary<string, string[]>();
+        if (_name.Trim().Length == 0)
+        {
+            missing["Name"] = ["Enter a name for the space."];
+        }
+
+        if (!Upms.Domain.Projects.Project.IsValidKey(_key.Trim()))
+        {
+            missing["Key"] = [_key.Trim().Length == 0
+                ? "Enter a key, for example WEB."
+                : "The key must be 2–10 capital letters or digits and start with a letter, for example WEB."];
+        }
+
+        if (missing.Count > 0)
+        {
+            _error = new AppError(ErrorKind.Validation, ErrorCodes.Validation, "Fill in the space's name and key.", missing);
             return;
         }
 
@@ -318,10 +371,12 @@ else
     {
         var term = _term.Trim();
         var request = ++_search;
+        _enterPending = false; // Enter counts for the search of what is typed now
         if (term.Length < 2 || _createdKey is null)
         {
             _matches = [];
             _searched = false;
+            _alreadyIn = [];
             return;
         }
 
@@ -333,7 +388,23 @@ else
 
         _matches = (found.Value ?? []).Where(p => _invited.All(i => i.UserId != p.UserId)).Take(8).ToList();
         _active = _matches.Count > 0 ? 0 : -1;
+        _alreadyIn = [];
+        if (_matches.Count == 0)
+        {
+            // The search leaves out the space's own people; say so when they are who was meant.
+            var team = await Members.GetTeamAsync(_createdKey, CancellationToken.None);
+            _alreadyIn = (team.Value?.Members ?? [])
+                .Where(m => m.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase) || m.UserName.Contains(term, StringComparison.OrdinalIgnoreCase))
+                .Select(m => m.DisplayName).ToList();
+        }
+
         _searched = true;
+        if (_enterPending && _matches.Count > 0)
+        {
+            Invite(_matches[0]); // Enter pressed before the list came back (live test, 2026-10-28)
+        }
+
+        _enterPending = false;
     }
 
     private void Invite(PersonOption person)
@@ -362,6 +433,9 @@ else
                 break;
             case "Enter" when _active >= 0 && _active < _matches.Count:
                 Invite(_matches[_active]);
+                break;
+            case "Enter" when _term.Trim().Length > 1 && !_searched:
+                _enterPending = true; // the list is still on its way: take its first match when it comes
                 break;
             case "Escape":
                 _matches = [];

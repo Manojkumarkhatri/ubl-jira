@@ -1,0 +1,107 @@
+@using Upms.Application.Work
+@using Upms.Domain.Work
+@* One space field to fill in before the work item exists: in the Create form and in a form's response (live test,
+   2026-10-28). A single value comes back as text, a checkbox, people or labels field as its items; the item's details then
+   edit it with CustomFieldInput. *@
+<div class="field @(Field.Type is FieldType.Paragraph or FieldType.Checkbox ? "field-wide" : "")">
+    @if (Field.Type == FieldType.Checkbox)
+    {
+        <fieldset class="custom-checks">
+            <legend>@Field.Name</legend>
+            @foreach (var option in Field.Options)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@Items.Contains(option.Id)" @onchange="e => ToggleAsync(option.Id, e.Value is true)" /> @option.Name
+                </label>
+            }
+        </fieldset>
+    }
+    else
+    {
+        <label for="@InputId" title="@Field.Description">@Field.Name</label>
+        @switch (Field.Type)
+        {
+            case FieldType.Paragraph:
+                <textarea id="@InputId" class="input" rows="2" value="@Value" @onchange="e => SetAsync(e.Value)"></textarea>
+                break;
+            case FieldType.Number:
+                <input id="@InputId" class="input" type="text" inputmode="decimal" maxlength="20" autocomplete="off" value="@Value" @onchange="e => SetAsync(e.Value)" />
+                break;
+            case FieldType.Date:
+                <input id="@InputId" class="input" type="date" min="2000-01-01" max="2099-12-31" value="@Value" @onchange="e => SetAsync(e.Value)" />
+                break;
+            case FieldType.Timestamp:
+                <input id="@InputId" class="input" type="datetime-local" value="@Value" @onchange="e => SetAsync(e.Value)" />
+                break;
+            case FieldType.Url:
+                <input id="@InputId" class="input" type="url" placeholder="https://" autocomplete="off" value="@Value" @onchange="e => SetAsync(e.Value)" />
+                break;
+            case FieldType.Dropdown:
+                <select id="@InputId" class="select" value="@(Value ?? "")" @onchange="e => SetAsync(e.Value)">
+                    <option value="">None</option>
+                    @foreach (var option in Field.Options)
+                    {
+                        <option value="@option.Id">@option.Name</option>
+                    }
+                </select>
+                break;
+            case FieldType.People:
+                <select id="@InputId" class="select" value="@(Items.FirstOrDefault() ?? "")" @onchange="e => PersonAsync(e.Value)">
+                    <option value="">Nobody</option>
+                    @foreach (var (id, name) in People)
+                    {
+                        <option value="@id">@name</option>
+                    }
+                </select>
+                break;
+            case FieldType.Labels:
+                <input id="@InputId" class="input" type="text" autocomplete="off" placeholder="Words, separated by commas"
+                       value="@LabelsText" @onchange="e => LabelsAsync(e.Value)" />
+                break;
+            default:
+                <input id="@InputId" class="input" type="text" autocomplete="off" value="@Value" @onchange="e => SetAsync(e.Value)" />
+                break;
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public CustomFieldView Field { get; set; } = default!;
+
+    /// <summary>Starts the input's id, so two forms on one page do not share ids.</summary>
+    [Parameter]
+    public string IdPrefix { get; set; } = "field";
+
+    [Parameter]
+    public string? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> ValueChanged { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<string> Items { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<IReadOnlyList<string>> ItemsChanged { get; set; }
+
+    /// <summary>The people a people field can name.</summary>
+    [Parameter]
+    public IReadOnlyList<(Guid Id, string Name)> People { get; set; } = [];
+
+    private string InputId => $"{IdPrefix}-{Field.Id}";
+
+    private string LabelsText => string.Join(", ", Items);
+
+    private Task SetAsync(object? value) =>
+        ValueChanged.InvokeAsync(value?.ToString() is { Length: > 0 } text ? text.Trim() : null);
+
+    private Task PersonAsync(object? value) =>
+        ItemsChanged.InvokeAsync(value?.ToString() is { Length: > 0 } id ? [id] : []);
+
+    private Task LabelsAsync(object? value) =>
+        ItemsChanged.InvokeAsync((value?.ToString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList());
+
+    private Task ToggleAsync(string item, bool on) =>
+        ItemsChanged.InvokeAsync(on ? Items.Append(item).Distinct().ToList() : Items.Where(i => i != item).ToList());
+}

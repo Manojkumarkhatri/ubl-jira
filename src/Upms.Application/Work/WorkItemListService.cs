@@ -96,6 +96,26 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
         var people = await assignees.DescribeAsync(team,
             rows.Values.Where(r => r.AssigneeId != null).Select(r => r.AssigneeId!.Value).Concat(rows.Values.Select(r => r.CreatedById)), ct);
         var labelsOf = await LabelReads.ForItemsAsync(db, pageIds, ct);
+
+        // The space's own fields, as columns: their values on this page in words (formulas are left out: they are worked
+        // out per item in its details).
+        var fields = (await FieldReads.LiveFieldsAsync(db, info.ProjectId, ct)).Where(f => f.Type != FieldType.Formula).ToList();
+        var stored = fields.Count == 0 ? [] : await db.FieldValues.AsNoTracking()
+            .Where(v => pageIds.Contains(v.WorkItemId))
+            .Select(v => new { v.WorkItemId, v.FieldId, v.Value })
+            .ToListAsync(ct);
+        var fieldPeople = await assignees.DescribeAsync(team,
+            stored.Where(v => fields.Any(f => f.Id == v.FieldId && f.Type == FieldType.People))
+                .SelectMany(v => FieldValues.Items(v.Value)).Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty).Distinct(), ct);
+        string NameOf(Guid id) => fieldPeople.TryGetValue(id, out var person) ? person.DisplayName : "Former member";
+        var fieldText = stored
+            .Select(v => (v.WorkItemId, v.FieldId, Text: fields.FirstOrDefault(f => f.Id == v.FieldId) is { } field
+                ? FieldValues.Display(field, v.Value, NameOf) : null))
+            .Where(v => v.Text is not null)
+            .GroupBy(v => v.WorkItemId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<long, string>)g.ToDictionary(v => v.FieldId, v => v.Text!));
+
         var items = pageIds.ConvertAll(id =>
         {
             var row = rows[id];
@@ -109,6 +129,7 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
                 CreatedAt = row.CreatedAt,
                 ResolvedAt = row.ResolvedAt,
                 Version = row.RowVersion,
+                FieldText = fieldText.GetValueOrDefault(id) ?? new Dictionary<long, string>(),
             };
         });
 
@@ -123,7 +144,8 @@ internal sealed class WorkItemListService(IAppDbContext db, IProjectAccess acces
             await PeopleAsync(info.ProjectId, team, caller.UserId, ct),
             new Page<WorkItemRow>(items, total, page.Page, page.PageSize),
             info.Template,
-            caller.WorkTypes);
+            caller.WorkTypes)
+        { Fields = fields.Select(f => new ListFieldColumn(f.Id, f.Name)).ToList() };
     }
 
     /// <param name="containerIds">The epics or stages asked for, already read from their keys (Phase 3 FR-020).</param>
